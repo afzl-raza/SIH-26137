@@ -8,7 +8,8 @@ import {
   Activity,
   ChevronRight,
   ChevronDown,
-  RotateCcw
+  RotateCcw,
+  CloudRain
 } from 'lucide-react';
 import RecoveryTimeline from './RecoveryTimeline';
 import { apiFetch } from '../api';
@@ -29,13 +30,19 @@ export default function ControlPanel({
   networkState,
   incidentInfo,
   currentResult,
-  timeline
+  timeline,
+  conditionMeta,
+  trafficMode = 'normal',
+  weatherEnabled = false,
+  conditionsDirty = false,
+  onApplyConditions
 }) {
   // Demo state-machine guards: an incident can't be simulated before there's
   // an optimized route to disrupt, and re-optimization is meaningless before
-  // an incident has actually changed the scenario's traffic state.
+  // something has actually changed the scenario's edge costs - either an
+  // incident or an environmental condition change.
   const canSimulateIncident = Boolean(currentResult) && !loading;
-  const canReOptimize = Boolean(incidentInfo) && !loading;
+  const canReOptimize = Boolean(incidentInfo || conditionsDirty) && !loading;
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const handleConfigChange = (key, value) => {
@@ -108,8 +115,11 @@ export default function ControlPanel({
             <span className="text-gray-600">·</span>
             <span>{scenario.jobs?.length || 0} Delivery Points</span>
             <span className="text-gray-600">·</span>
-            <span className={hasCongestion ? 'text-[#E8A93A]' : 'text-[#6B9A57]'}>
-              Traffic: {hasCongestion ? 'Congested' : 'Normal'}
+            <span
+              className={hasCongestion ? 'text-[#E8A93A]' : 'text-[#6B9A57]'}
+              title="Simulated congestion from the traffic model - not a live traffic feed"
+            >
+              Sim. Traffic: {hasCongestion ? 'Congested' : 'Free flow'}
             </span>
             <span className="text-gray-600">·</span>
             <span className="text-[#C6602E] font-bold">{healthLabel}</span>
@@ -174,6 +184,107 @@ export default function ControlPanel({
           <BarChart2 size={12} />
           Run Benchmark
         </button>
+      </div>
+
+      {/* 1b. ENVIRONMENTAL CONDITIONS */}
+      {/* Every value displayed here comes from the backend condition engine.
+          Nothing is computed in React - the selects send a request, and the
+          status lines below echo what the backend reported back. */}
+      <div className="bg-[#141210]/50 border border-[#332E29] rounded-lg p-2.5 space-y-2">
+        <div className="flex items-center gap-1.5 text-gray-300 font-semibold uppercase tracking-wider text-[10px]">
+          <CloudRain size={12} className="text-[#5F8A80]" />
+          Conditions
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <label htmlFor="traffic-mode" className="text-gray-400 block text-[10px]">
+              Simulated Traffic
+            </label>
+            <select
+              id="traffic-mode"
+              value={trafficMode}
+              disabled={loading || !scenarioId}
+              onChange={(e) => onApplyConditions?.(e.target.value, weatherEnabled)}
+              className="w-full bg-[#26221D] border border-[#3A342E] text-gray-200 rounded px-2 py-1 outline-none focus:border-[#C6602E] focus-visible:ring-2 focus-visible:ring-[#C6602E] text-[10px] disabled:opacity-40"
+            >
+              <option value="normal">Normal (1.0x)</option>
+              <option value="moderate">Moderate (1.5x)</option>
+              <option value="heavy">Heavy (2.5x)</option>
+              <option value="severe">Severe (4.0x)</option>
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <span className="text-gray-400 block text-[10px]">Weather</span>
+            <button
+              onClick={() => onApplyConditions?.(trafficMode, !weatherEnabled)}
+              disabled={loading || !scenarioId}
+              aria-pressed={weatherEnabled}
+              className={`w-full px-2 py-1 rounded border text-[10px] transition-colors disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-[#5F8A80] ${
+                weatherEnabled
+                  ? 'bg-[#1E2A28] border-[#3A5A52] text-[#8FC9BA]'
+                  : 'bg-[#26221D] border-[#3A342E] text-gray-400'
+              }`}
+            >
+              {weatherEnabled ? 'Enabled' : 'Disabled'}
+            </button>
+          </div>
+        </div>
+
+        {/* Condition status - backend-reported provenance only. */}
+        {conditionMeta && (
+          <div className="grid grid-cols-[auto,1fr] gap-x-2 gap-y-0.5 font-mono text-[9px] text-gray-400 border-t border-[#332E29]/60 pt-1.5">
+            <span className="text-gray-500">Traffic:</span>
+            <span className="text-[#E8C578]">
+              {conditionMeta.trafficSource === 'simulated' ? 'Simulated model' : conditionMeta.trafficSource}
+              {conditionMeta.trafficMode ? ` · ${conditionMeta.trafficMode}` : ''}
+            </span>
+
+            <span className="text-gray-500">Weather:</span>
+            <span className={conditionMeta.fallbackUsed ? 'text-[#E8918A]' : 'text-[#8FC9BA]'}>
+              {conditionMeta.weatherSource
+                ? `${conditionMeta.weatherSource}${conditionMeta.weatherCondition ? ` · ${conditionMeta.weatherCondition}` : ''}`
+                : 'not applied'}
+            </span>
+
+            {conditionMeta.conditions?.weather?.temperature_c != null && (
+              <>
+                <span className="text-gray-500">Observed:</span>
+                <span>
+                  {conditionMeta.conditions.weather.description}
+                  {` · ${conditionMeta.conditions.weather.temperature_c}°C`}
+                  {` · ×${conditionMeta.conditions.weather.multiplier}`}
+                </span>
+              </>
+            )}
+
+            {conditionMeta.conditions?.updated_at && (
+              <>
+                <span className="text-gray-500">Updated:</span>
+                <span>{new Date(conditionMeta.conditions.updated_at).toLocaleTimeString()}</span>
+              </>
+            )}
+          </div>
+        )}
+
+        {conditionMeta?.fallbackUsed && (
+          <div className="text-[9px] text-[#E8918A] bg-[#3A1C18]/40 border border-[#5A2C26]/60 rounded px-2 py-1 leading-snug">
+            Weather provider unavailable - fallback in use. No weather effect applied to edge costs.
+          </div>
+        )}
+
+        <p className="text-[9px] text-gray-600 leading-snug">
+          Traffic congestion is a documented simulation, not a live feed. Weather is a real
+          Open-Meteo observation when the source above says network/cache.
+        </p>
+
+        {conditionsDirty && (
+          <div className="text-[9px] text-[#E8C578] bg-[#3A2E14]/40 border border-[#5A4A22]/60 rounded px-2 py-1 leading-snug">
+            Conditions changed - the routes shown were computed against the previous edge costs.
+            Re-Optimize to update them.
+          </div>
+        )}
       </div>
 
       {/* 2. INCIDENT INFO PANEL */}

@@ -13,6 +13,21 @@ import Logo from './components/Logo';
 import { apiFetch } from './api';
 import { Activity } from 'lucide-react';
 
+// Pulls the condition-provenance envelope out of any scenario-carrying
+// response. Pure field selection - no value is derived or invented here; the
+// backend is the only place edge costs and multipliers are computed.
+function extractConditionMeta(data) {
+  if (!data) return null;
+  return {
+    trafficSource: data.traffic_source ?? null,
+    trafficMode: data.traffic_mode ?? null,
+    weatherSource: data.weather_source ?? null,
+    weatherCondition: data.weather_condition ?? null,
+    fallbackUsed: Boolean(data.fallback_used),
+    conditions: data.conditions ?? null
+  };
+}
+
 export default function App() {
   // ─── Core State ──────────────────────────────────
   const [scenario, setScenario] = useState(null);
@@ -28,6 +43,19 @@ export default function App() {
 
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [selectedRoute, setSelectedRoute] = useState(null);
+
+  // Environmental conditions currently baked into the scenario's edge costs.
+  // Every field here is produced by the backend condition engine - nothing in
+  // this component computes a multiplier, a travel time or a cost.
+  const [conditionMeta, setConditionMeta] = useState(null);
+  // The requested condition state. Separate from conditionMeta because the
+  // select/toggle change immediately while the backend call is in flight.
+  const [trafficMode, setTrafficMode] = useState('normal');
+  const [weatherEnabled, setWeatherEnabled] = useState(false);
+  // Set when conditions change after an optimization, so the UI can offer
+  // Re-Optimize for the same reason it does after an incident: the routes on
+  // screen were computed against edge costs that no longer apply.
+  const [conditionsDirty, setConditionsDirty] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -133,6 +161,8 @@ export default function App() {
       setStatusState('READY');
       setNetworkState('NORMAL');
       setTimeline(null);
+      setConditionMeta(extractConditionMeta(data));
+      setConditionsDirty(false);
       return data;
     } catch (err) {
       setError(err.message);
@@ -173,6 +203,8 @@ export default function App() {
       }
       setCurrentResult(data);
       setStatusState('OPTIMIZED');
+      // The routes on screen now match the current edge costs again.
+      setConditionsDirty(false);
       if (isReopt) {
         setNetworkState('RE-OPTIMIZED');
         // Recovery Timeline: the "Optimizing" duration is the backend's own
@@ -188,6 +220,51 @@ export default function App() {
     } catch (err) {
       setError(err.message);
       setStatusState('ERROR');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── API: Apply environmental conditions ────────────────────────
+  // Sends the requested traffic level / weather toggle to the backend, which
+  // recomputes every edge cost through the one condition engine and hands the
+  // updated scenario back. This deliberately does NOT re-optimize: the user
+  // clicks Re-Optimize, so "conditions changed -> routes changed" stays
+  // visible as two separate steps.
+  const handleApplyConditions = async (nextMode, nextWeather) => {
+    if (!scenarioId) return;
+    const mode = nextMode ?? trafficMode;
+    const weather = nextWeather ?? weatherEnabled;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiFetch('/api/scenario/conditions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scenario_id: scenarioId,
+          traffic_mode: mode,
+          weather_enabled: weather
+        })
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.detail || 'Failed to apply conditions');
+      }
+      const data = await res.json();
+      setScenario(data.scenario);
+      setConditionMeta(extractConditionMeta(data));
+      setTrafficMode(mode);
+      setWeatherEnabled(weather);
+
+      // Routes already on screen were computed against the old edge costs.
+      if (currentResult) {
+        setConditionsDirty(true);
+        setNetworkState('DISRUPTED');
+      }
+    } catch (err) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -247,6 +324,7 @@ export default function App() {
       if (!res.ok) throw new Error('Failed to update traffic incident');
       const data = await res.json();
       setScenario(data.scenario);
+      setConditionMeta(extractConditionMeta(data));
       setStatusState('INCIDENT');
       setNetworkState('DISRUPTED');
     } catch (err) {
@@ -423,6 +501,7 @@ export default function App() {
         <div className="space-y-4 flex flex-col">
           <ControlPanel
             scenario={scenario}
+            scenarioId={scenarioId}
             config={config}
             setConfig={setConfig}
             onGenerate={handleGenerateScenario}
@@ -437,6 +516,11 @@ export default function App() {
             incidentInfo={incidentInfo}
             currentResult={currentResult}
             timeline={timeline}
+            conditionMeta={conditionMeta}
+            trafficMode={trafficMode}
+            weatherEnabled={weatherEnabled}
+            conditionsDirty={conditionsDirty}
+            onApplyConditions={handleApplyConditions}
           />
 
           <VehicleInspector

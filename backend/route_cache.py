@@ -11,18 +11,28 @@ shortest-path result*:
 
   * the node set                      - graph identity
   * every directed edge, as
-    (source, destination, current_travel_time, distance, traffic_factor)
+    (source, destination, current_travel_time, distance, traffic_factor,
+     traffic_multiplier, weather_multiplier, incident_multiplier)
   * the routing terminal set
 
 `current_travel_time` is the Dijkstra edge weight, so it is what actually
-decides routes; `distance` feeds the distance matrix. `traffic_factor` does not
-influence the matrix on its own - it only matters through current_travel_time -
-but it is included deliberately: over-invalidating is harmless, while serving a
-stale matrix after an incident would be a correctness bug.
+decides routes; `distance` feeds the distance matrix. The four multipliers do
+not influence the matrix on their own - they only matter through
+current_travel_time - but they are included deliberately: over-invalidating is
+harmless, while serving a stale matrix after a condition change would be a
+correctness bug.
 
 Keying on content rather than on a scenario id or Python object identity is
-what makes the "no stale matrix after a traffic incident" guarantee hold: an
-incident changes an edge's travel time, which changes the key, which misses.
+what makes the "no stale matrix after a condition change" guarantee hold. A
+traffic level change, a weather change or an incident each alter edge travel
+times, which alters the key, which misses. Because the individual multipliers
+are keyed too, the guarantee survives even the pathological case where a
+different combination of conditions happens to multiply out to the same
+effective travel time.
+
+Conversely, re-applying the *same* conditions reproduces byte-identical edge
+values (realdata.conditions rounds every multiplier for exactly this reason),
+so an unchanged condition state still hits.
 """
 from __future__ import annotations
 
@@ -45,7 +55,10 @@ def _canonical_scenario_repr(scenario: ProblemScenario, terminals: List[int]) ->
     `repr()` on a float round-trips exactly in Python 3, so two structurally
     identical scenarios always produce byte-identical text.
     """
-    parts: List[str] = ["v1"]
+    # Version tag: bumped to v2 when the per-condition multipliers joined the
+    # key. It exists so a stored key can never be misread against a different
+    # canonical format.
+    parts: List[str] = ["v2"]
 
     parts.append("nodes:" + ",".join(str(n) for n in sorted(n.id for n in scenario.nodes)))
     parts.append("terminals:" + ",".join(str(t) for t in sorted(terminals)))
@@ -57,11 +70,15 @@ def _canonical_scenario_repr(scenario: ProblemScenario, terminals: List[int]) ->
             repr(float(e.current_travel_time)),
             repr(float(e.distance)),
             repr(float(e.traffic_factor)),
+            repr(float(e.traffic_multiplier)),
+            repr(float(e.weather_multiplier)),
+            repr(float(e.incident_multiplier)),
         )
         for e in scenario.edges
     )
     parts.append("edges:" + ";".join(
-        f"{s}>{d}:{ctt}:{dist}:{tf}" for s, d, ctt, dist, tf in edge_rows
+        f"{s}>{d}:{ctt}:{dist}:{tf}:{tm}:{wm}:{im}"
+        for s, d, ctt, dist, tf, tm, wm, im in edge_rows
     ))
 
     return "|".join(parts)

@@ -22,6 +22,20 @@ from realdata.scenario_store import SCENARIO_STORE, ScenarioNotFoundError
 from realdata.geocoding import GeocodingError, resolve_location
 from realdata.osm_loader import OsmLoaderError, load_osm_graph
 from realdata.osm_scenario import osm_graph_to_scenario
+from realdata.conditions import (
+    ConditionRequest,
+    apply_conditions,
+    apply_incidents,
+    scenario_center,
+    weather_multiplier_for,
+)
+from realdata.traffic_model import (
+    MODE_NORMAL,
+    TRAFFIC_MODES,
+    TRAFFIC_SOURCE_SIMULATED,
+    TrafficProviderError,
+)
+from realdata.weather import DEFAULT_WEATHER_PROVIDER
 from route_cache import ROUTE_MATRIX_CACHE
 from optimizers.greedy import GreedyOptimizer
 from optimizers.pso import PSOOptimizer
@@ -175,18 +189,48 @@ def generate_problem(req: GenerateRequest):
     record = SCENARIO_STORE.create(scenario, data_source="synthetic")
     return {
         **record.metadata(),
+        **_condition_envelope(record.scenario),
         "scenario": record.scenario,
-        "traffic_source": TRAFFIC_SOURCE_LABEL,
-        "weather_source": None,
     }
 
 
 # OpenStreetMap supplies the road network only. It carries no traffic
-# information, so congestion stays what it has always been in this prototype:
-# a simulation the operator drives. These labels exist so the UI can never
-# imply a live traffic feed.
-TRAFFIC_SOURCE_LABEL = "simulated"
-WEATHER_SOURCE_LABEL = None  # Phase 8
+# information, so congestion is a simulation the operator drives. These labels
+# exist so the UI can never imply a live traffic feed.
+#
+# Weather is different: it IS fetched from a real provider (Open-Meteo), but
+# only once conditions are applied with weather enabled, so a freshly
+# generated scenario reports no weather source yet.
+TRAFFIC_SOURCE_LABEL = TRAFFIC_SOURCE_SIMULATED
+WEATHER_SOURCE_LABEL = None
+
+
+def _condition_envelope(scenario: ProblemScenario) -> dict:
+    """The condition metadata every scenario-carrying response reports.
+
+    Always answers "where did these numbers come from": which traffic source,
+    which weather source, whether a fallback was used. A scenario that has had
+    no conditions applied reports free-flow defaults rather than nothing, so a
+    client never has to distinguish missing from normal.
+    """
+    conditions = scenario.conditions
+    if conditions is None:
+        return {
+            "traffic_source": TRAFFIC_SOURCE_LABEL,
+            "traffic_mode": MODE_NORMAL,
+            "weather_source": WEATHER_SOURCE_LABEL,
+            "weather_condition": None,
+            "fallback_used": False,
+            "conditions": None,
+        }
+    return {
+        "traffic_source": conditions.traffic_source,
+        "traffic_mode": conditions.traffic_mode,
+        "weather_source": conditions.weather_source,
+        "weather_condition": conditions.weather_condition,
+        "fallback_used": conditions.fallback_used,
+        "conditions": conditions,
+    }
 
 
 def _generate_from_openstreetmap(req: GenerateRequest):
@@ -222,14 +266,13 @@ def _generate_from_openstreetmap(req: GenerateRequest):
 
     record = SCENARIO_STORE.create(scenario, data_source="openstreetmap")
     body = {**record.metadata(), **location.to_dict()}
+    body.update(_condition_envelope(record.scenario))
     body.update({
         "scenario": record.scenario,
         "provenance": graph.provenance,
         "retrieved_at": graph.retrieved_at,
         "osm": graph.stats,
         "osm_endpoint": graph.endpoint,
-        "traffic_source": TRAFFIC_SOURCE_LABEL,
-        "weather_source": WEATHER_SOURCE_LABEL,
     })
     return body
 
@@ -259,36 +302,44 @@ def optimize_route(payload: OptimizePayload):
 
 @app.post("/api/traffic/update")
 def update_traffic(payload: TrafficPayload):
-    """Applies simulated congestion to selected edges and persists the result.
+    """Injects a simulated road incident on selected edges and persists it.
 
-    The stored scenario is never mutated in place: a copy is edited and handed
-    back to the store. The route-matrix cache needs no explicit invalidation
-    because its key is derived from edge travel times - a changed edge simply
-    produces a different key, so a stale matrix can never be served.
+    The request field is still called `traffic_factor`, unchanged, so existing
+    clients keep working. What it sets is the edge's *incident* multiplier:
+    the operator is disrupting one specific road, which is a different axis
+    from the network-wide traffic level and from weather. When no traffic
+    level or weather is applied - the default - the resulting effective
+    multiplier is exactly the requested number, so behaviour is identical to
+    before Phase 5. When they are applied, the three compose, which is the
+    point of separating them.
+
+    The incident goes through realdata.conditions like every other condition,
+    so there is no second edge-cost calculation anywhere.
+
+    The stored scenario is never mutated in place: a copy is conditioned and
+    handed back to the store. The route-matrix cache needs no explicit
+    invalidation because its key is derived from the edge costs themselves -
+    a changed edge simply produces a different key, so a stale matrix cannot
+    be served.
     """
     stored_scenario, scenario_id = _resolve_scenario(payload)
 
     try:
-        scenario = stored_scenario.model_copy(deep=True)
-
-        update_map = {(u.source, u.destination): u.traffic_factor for u in payload.updates}
-        # Also map symmetric reverse directions
-        for u in payload.updates:
-            update_map[(u.destination, u.source)] = u.traffic_factor
-
-        updated_edges = 0
-        for edge in scenario.edges:
-            pair = (edge.source, edge.destination)
-            if pair in update_map:
-                edge.traffic_factor = round(update_map[pair], 2)
-                edge.current_travel_time = round(edge.base_travel_time * edge.traffic_factor, 2)
-                updated_edges += 1
+        updates = {
+            (u.source, u.destination): u.traffic_factor for u in payload.updates
+        }
+        scenario, updated_edges = apply_incidents(stored_scenario, updates)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
     if scenario_id is not None:
         record = SCENARIO_STORE.update(scenario_id, scenario)
-        return {**record.metadata(), "updated_edges": updated_edges, "scenario": record.scenario}
+        return {
+            **record.metadata(),
+            **_condition_envelope(record.scenario),
+            "updated_edges": updated_edges,
+            "scenario": record.scenario,
+        }
 
     # Legacy inline-scenario call: nothing stored, so echo the updated scenario.
     return {
@@ -299,8 +350,149 @@ def update_traffic(payload: TrafficPayload):
         "edge_count": len(scenario.edges),
         "job_count": len(scenario.jobs),
         "vehicle_count": len(scenario.vehicles),
+        **_condition_envelope(scenario),
         "updated_edges": updated_edges,
         "scenario": scenario,
+    }
+
+
+class ConditionsPayload(ScenarioRefMixin):
+    """Requests a new environmental condition state for a scenario.
+
+    Incidents are not settable here: they are per-road operator actions with
+    their own endpoint (/api/traffic/update), and they deliberately survive a
+    traffic or weather change rather than being reset by one.
+    """
+    traffic_mode: str = MODE_NORMAL          # normal | moderate | heavy | severe
+    traffic_source: str = TRAFFIC_SOURCE_SIMULATED  # simulated | external
+    weather_enabled: bool = False
+    # Opt in to the BPR volume-delay formulation instead of the flat level
+    # table. Both are documented model assumptions; see realdata.traffic_model.
+    use_bpr: bool = False
+
+
+@app.post("/api/scenario/conditions")
+def set_scenario_conditions(payload: ConditionsPayload):
+    """Applies a traffic level and (optionally) real weather to a scenario.
+
+    This only changes edge costs. It does not re-optimize: the client calls
+    /api/optimize afterwards, exactly as it does after an incident, so the
+    "conditions changed -> routes changed" causality stays visible instead of
+    being hidden inside one endpoint.
+
+    A weather-provider failure is not an error here. The provider returns an
+    explicit fallback observation, no weather multiplier is applied, and the
+    response says `weather_source: "fallback"` with `fallback_used: true`.
+    """
+    stored_scenario, scenario_id = _resolve_scenario(payload)
+
+    try:
+        request = ConditionRequest(
+            traffic_mode=payload.traffic_mode,
+            traffic_source=payload.traffic_source,
+            weather_enabled=payload.weather_enabled,
+            use_bpr=payload.use_bpr,
+        )
+        scenario = apply_conditions(stored_scenario, request)
+    except TrafficProviderError as e:
+        # Unknown mode, or the external provider that deliberately refuses to
+        # fabricate data. Both are client-visible configuration problems.
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if scenario_id is not None:
+        record = SCENARIO_STORE.update(scenario_id, scenario)
+        return {
+            **record.metadata(),
+            **_condition_envelope(record.scenario),
+            "scenario": record.scenario,
+        }
+
+    return {
+        "scenario_id": None,
+        "scenario_hash": scenario.scenario_hash,
+        "data_source": "inline",
+        "node_count": len(scenario.nodes),
+        "edge_count": len(scenario.edges),
+        "job_count": len(scenario.jobs),
+        "vehicle_count": len(scenario.vehicles),
+        **_condition_envelope(scenario),
+        "scenario": scenario,
+    }
+
+
+@app.get("/api/weather")
+def get_weather(
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
+    scenario_id: Optional[str] = None,
+):
+    """Current weather at a coordinate, or at a stored scenario's own location.
+
+    Read-only: it does not touch any scenario's edge costs. Useful for showing
+    conditions before deciding to apply them, and for making the fallback
+    behaviour observable on its own.
+    """
+    if scenario_id:
+        try:
+            record = SCENARIO_STORE.get(scenario_id)
+        except ScenarioNotFoundError:
+            raise HTTPException(
+                status_code=404, detail=f"Unknown scenario_id '{scenario_id}'."
+            )
+        latitude, longitude = scenario_center(record.scenario)
+
+    if latitude is None or longitude is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide either 'scenario_id' or both 'latitude' and 'longitude'.",
+        )
+
+    observation = DEFAULT_WEATHER_PROVIDER.get_weather(latitude, longitude)
+    body = observation.to_dict()
+    body["multiplier"] = weather_multiplier_for(observation)
+    return body
+
+
+@app.get("/api/conditions/model")
+def get_condition_model():
+    """The condition model's own parameters, served so the UI and any report
+    can state the assumptions rather than restating them by hand (and drifting).
+
+    Everything under `simulated` is a model assumption. Everything under `real`
+    is genuinely observed or measured data.
+    """
+    from realdata.conditions import DEFAULT_INCIDENT_MULTIPLIER, WEATHER_IMPACT
+    from realdata.traffic_model import (
+        CLASS_SUSCEPTIBILITY,
+        LEVEL_MULTIPLIERS,
+        MODE_SATURATIONS,
+    )
+
+    return {
+        "formula": (
+            "current_travel_time = base_travel_time * traffic_multiplier "
+            "* weather_multiplier * incident_multiplier"
+        ),
+        "simulated": {
+            "traffic_modes": TRAFFIC_MODES,
+            "traffic_level_multipliers": LEVEL_MULTIPLIERS,
+            "traffic_bpr_saturations": MODE_SATURATIONS,
+            "road_class_susceptibility": CLASS_SUSCEPTIBILITY,
+            "weather_impact_multipliers": WEATHER_IMPACT,
+            "default_incident_multiplier": DEFAULT_INCIDENT_MULTIPLIER,
+            "disclaimer": (
+                "Model parameters / calibration assumptions for a prototype. "
+                "Not traffic measurements, and not calibrated weather-impact "
+                "research findings."
+            ),
+        },
+        "real": {
+            "road_network": "OpenStreetMap (geometry, topology, speed limits)",
+            "geocoding": "Nominatim",
+            "weather_observations": "Open-Meteo",
+        },
     }
 
 
