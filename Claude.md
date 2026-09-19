@@ -227,3 +227,7 @@ the fact.
 This does not override the general rule against destructive git operations
 (`push --force`, `reset --hard`, etc.) — those still require explicit
 confirmation every time.
+
+Do not add a `Co-Authored-By: Claude ...` (or any Anthropic/Claude
+attribution) line to commit messages or PR descriptions on this project.
+The user does not want Claude to appear as a contributor on GitHub.
