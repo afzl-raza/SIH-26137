@@ -7,12 +7,26 @@ from typing import Tuple, Dict, List, Optional
 from models import Node, Edge, Vehicle, Job, ProblemScenario
 
 
-def compute_scenario_hash(num_nodes: int, num_jobs: int, num_vehicles: int, seed: int) -> str:
+def compute_scenario_hash(
+    num_nodes: int,
+    num_jobs: int,
+    num_vehicles: int,
+    seed: int,
+    extra: str = "",
+) -> str:
     """Deterministic short id of the generation parameters - same inputs
     always produce the same hash, since generation itself is deterministic.
     Used as a reproducible "Run ID" for display/replay, not as a security
-    hash."""
+    hash.
+
+    `extra` carries any additional input that distinguishes one scenario from
+    another; the OSM path passes its bounding box, so two different places
+    with the same job and vehicle counts do not collide. It defaults to empty
+    so synthetic hashes are byte-identical to what they have always been.
+    """
     raw = f"{num_nodes}:{num_jobs}:{num_vehicles}:{seed}"
+    if extra:
+        raw = f"{raw}:{extra}"
     return hashlib.sha256(raw.encode()).hexdigest()[:10]
 
 

@@ -19,6 +19,9 @@ from models import (
 )
 from problem_generator import generate_synthetic_scenario
 from realdata.scenario_store import SCENARIO_STORE, ScenarioNotFoundError
+from realdata.geocoding import GeocodingError, resolve_location
+from realdata.osm_loader import OsmLoaderError, load_osm_graph
+from realdata.osm_scenario import osm_graph_to_scenario
 from route_cache import ROUTE_MATRIX_CACHE
 from optimizers.greedy import GreedyOptimizer
 from optimizers.pso import PSOOptimizer
@@ -52,10 +55,23 @@ app.add_middleware(
 
 
 class GenerateRequest(BaseModel):
-    num_nodes: int = 30
+    # "synthetic" keeps the original generated network; "osm" builds the
+    # scenario from real OpenStreetMap road data for the requested location.
+    source: str = "synthetic"
+
     num_jobs: int = 15
     num_vehicles: int = 3
     seed: int = 42
+    num_nodes: int = 30  # synthetic only - OSM node count comes from the map
+
+    # Location inputs, any one of which resolves to a bounded area. No city is
+    # special: a place name goes through the geocoder, coordinates and boxes
+    # are used directly.
+    place: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    bbox: Optional[List[float]] = None  # [min_lat, min_lon, max_lat, max_lon]
+    radius_m: Optional[float] = None
 
 
 # Scenario-carrying payloads accept either a `scenario_id` (the backend owns
@@ -143,6 +159,9 @@ def generate_problem(req: GenerateRequest):
     needs the nodes and edges to draw the map. What moves server-side is the
     scenario on every *subsequent* request body.
     """
+    if req.source.strip().lower() in ("osm", "openstreetmap"):
+        return _generate_from_openstreetmap(req)
+
     try:
         scenario = generate_synthetic_scenario(
             num_nodes=req.num_nodes,
@@ -154,7 +173,65 @@ def generate_problem(req: GenerateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
     record = SCENARIO_STORE.create(scenario, data_source="synthetic")
-    return {**record.metadata(), "scenario": record.scenario}
+    return {
+        **record.metadata(),
+        "scenario": record.scenario,
+        "traffic_source": TRAFFIC_SOURCE_LABEL,
+        "weather_source": None,
+    }
+
+
+# OpenStreetMap supplies the road network only. It carries no traffic
+# information, so congestion stays what it has always been in this prototype:
+# a simulation the operator drives. These labels exist so the UI can never
+# imply a live traffic feed.
+TRAFFIC_SOURCE_LABEL = "simulated"
+WEATHER_SOURCE_LABEL = None  # Phase 8
+
+
+def _generate_from_openstreetmap(req: GenerateRequest):
+    """location -> bbox -> Overpass -> real road graph -> ProblemScenario."""
+    try:
+        location = resolve_location(
+            place=req.place,
+            latitude=req.latitude,
+            longitude=req.longitude,
+            bbox=tuple(req.bbox) if req.bbox else None,
+            radius_m=req.radius_m,
+        )
+    except GeocodingError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        graph = load_osm_graph(location)
+    except OsmLoaderError as e:
+        # Upstream is unavailable and nothing is cached. This deliberately
+        # fails rather than quietly returning a synthetic network, which would
+        # misrepresent generated roads as real map data.
+        raise HTTPException(status_code=502, detail=str(e))
+
+    try:
+        scenario = osm_graph_to_scenario(
+            graph,
+            num_jobs=req.num_jobs,
+            num_vehicles=req.num_vehicles,
+            seed=req.seed,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    record = SCENARIO_STORE.create(scenario, data_source="openstreetmap")
+    body = {**record.metadata(), **location.to_dict()}
+    body.update({
+        "scenario": record.scenario,
+        "provenance": graph.provenance,
+        "retrieved_at": graph.retrieved_at,
+        "osm": graph.stats,
+        "osm_endpoint": graph.endpoint,
+        "traffic_source": TRAFFIC_SOURCE_LABEL,
+        "weather_source": WEATHER_SOURCE_LABEL,
+    })
+    return body
 
 
 @app.post("/api/optimize", response_model=OptimizationResult)

@@ -8,6 +8,10 @@ class Node(BaseModel):
     lat: float
     lng: float
     is_depot: bool = False
+    # Populated only for scenarios built from OpenStreetMap. `id` stays a
+    # small contiguous integer because the optimizers and the route matrix
+    # index by it; the original OSM identity is preserved alongside it.
+    osm_id: Optional[int] = None
 
 
 class Edge(BaseModel):
@@ -18,6 +22,21 @@ class Edge(BaseModel):
     traffic_factor: float = 1.0  # multiplier (1.0 = normal, 3.0 = heavy congestion)
     current_travel_time: float  # base_travel_time * traffic_factor
     road_name: str = ""
+
+    # --- OpenStreetMap provenance (None for synthetic scenarios) ----------
+    osm_way_id: Optional[int] = None
+    highway: Optional[str] = None          # OSM highway class, e.g. "residential"
+    # Road shape as [[lat, lng], ...] including intermediate OSM nodes, so the
+    # map can draw the actual curve rather than a straight line between
+    # intersections. Ordered along the direction of travel.
+    geometry: Optional[List[List[float]]] = None
+    speed_kph: Optional[float] = None
+    # "osm_maxspeed" when the value came from an OSM maxspeed tag,
+    # "fallback:<highway class>" when it was derived from the road class.
+    speed_source: Optional[str] = None
+    lanes: Optional[int] = None
+    lanes_source: Optional[str] = None
+    capacity_vph: Optional[float] = None
 
 
 class Vehicle(BaseModel):
@@ -45,6 +64,9 @@ class ProblemScenario(BaseModel):
     depot_node_id: int
     seed: int = 42
     scenario_hash: str = ""  # deterministic id of the generation parameters, for display/replay
+    # "synthetic" or "openstreetmap". Travels with the scenario so the UI can
+    # state what the network actually is without a second lookup.
+    data_source: str = "synthetic"
 
 
 class ObjectiveWeights(BaseModel):
