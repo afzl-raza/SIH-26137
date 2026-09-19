@@ -211,3 +211,19 @@ Benchmark
 ```
 
 can be demonstrated end-to-end from the UI.
+
+---
+
+## Git Workflow
+
+This repo's remote is `https://github.com/afzl-raza/SIH-26137.git`, branch `main`.
+
+After completing any meaningful change to this project (a fix, a feature, a
+config change, a new file), commit it and push to `main` automatically —
+do not stop to ask for confirmation to commit or push. Still show the user
+what was committed (files changed, commit message) so they can see it after
+the fact.
+
+This does not override the general rule against destructive git operations
+(`push --force`, `reset --hard`, etc.) — those still require explicit
+confirmation every time.
