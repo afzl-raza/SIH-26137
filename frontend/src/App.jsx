@@ -10,6 +10,7 @@ import ArchitectureSnapshot from './components/ArchitectureSnapshot';
 import ScalabilityPanel from './components/ScalabilityPanel';
 import ReproducibilityPanel from './components/ReproducibilityPanel';
 import Logo from './components/Logo';
+import { apiFetch } from './api';
 import { Activity } from 'lucide-react';
 
 export default function App() {
@@ -104,7 +105,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/problem/generate', {
+      const res = await apiFetch('/api/problem/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -153,7 +154,7 @@ export default function App() {
     const reoptimizeClickedAt = isReopt ? Date.now() : null;
 
     try {
-      const res = await fetch('/api/optimize', {
+      const res = await apiFetch('/api/optimize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenario: activeScenario, config })
@@ -231,7 +232,7 @@ export default function App() {
       });
       setTimeline({ incidentAt: Date.now() });
 
-      const res = await fetch('/api/traffic/update', {
+      const res = await apiFetch('/api/traffic/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenario, updates })
@@ -296,7 +297,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/benchmark', {
+      const res = await apiFetch('/api/benchmark', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenario, config })

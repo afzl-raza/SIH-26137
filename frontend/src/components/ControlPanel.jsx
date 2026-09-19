@@ -11,6 +11,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import RecoveryTimeline from './RecoveryTimeline';
+import { apiFetch } from '../api';
 
 export default function ControlPanel({
   scenario,
@@ -68,7 +69,7 @@ export default function ControlPanel({
     }
     setPreviewLoading(true);
     const timer = setTimeout(() => {
-      fetch('/api/evaluate', {
+      apiFetch('/api/evaluate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

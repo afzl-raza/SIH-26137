@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { TrendingUp, Loader2, Play } from 'lucide-react';
+import { apiFetch } from '../api';
 
 export default function ScalabilityPanel() {
   const [data, setData] = useState(null);
@@ -8,7 +9,7 @@ export default function ScalabilityPanel() {
   const [runError, setRunError] = useState(null);
 
   const load = useCallback(() => {
-    return fetch('/api/experiments/E3_scalability')
+    return apiFetch('/api/experiments/E3_scalability')
       .then(res => {
         if (res.status === 404) {
           setStatus('not_run');
@@ -35,7 +36,7 @@ export default function ScalabilityPanel() {
   const handleRunNow = () => {
     setRunning(true);
     setRunError(null);
-    fetch('/api/experiments/E3_scalability/run', { method: 'POST' })
+    apiFetch('/api/experiments/E3_scalability/run', { method: 'POST' })
       .then(res => {
         if (!res.ok) throw new Error(`Run failed (${res.status})`);
         return res.json();

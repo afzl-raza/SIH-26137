@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Repeat, Loader2 } from 'lucide-react';
+import { apiFetch } from '../api';
 
 export default function ReproducibilityPanel() {
   const [data, setData] = useState(null);
@@ -7,7 +8,7 @@ export default function ReproducibilityPanel() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/experiments/E6_reproducibility')
+    apiFetch('/api/experiments/E6_reproducibility')
       .then(res => {
         if (res.status === 404) {
           if (!cancelled) setStatus('not_run');
