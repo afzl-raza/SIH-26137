@@ -1,0 +1,6 @@
+traffic_factor,total_cost,runtime_ms,is_feasible
+1.0,196.55,521.77,True
+1.5,196.22,534.43,True
+2.5,199.14,533.89,True
+3.5,200.92,555.81,True
+5.0,200.92,543.2,True

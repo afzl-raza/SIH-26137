@@ -1,0 +1,17 @@
+num_nodes,num_jobs,algorithm,total_cost,runtime_ms,is_feasible
+20,10,greedy,173.4,5.27,True
+20,10,pso,133.81,167.18,True
+20,10,ga,133.08,209.03,True
+20,10,qpso,133.08,170.35,True
+50,25,greedy,327.38,36.41,True
+50,25,pso,369.91,405.55,True
+50,25,ga,386.5,517.73,True
+50,25,qpso,392.09,415.45,True
+100,50,greedy,562.45,140.15,True
+100,50,pso,868.57,963.39,True
+100,50,ga,809.07,1273.76,True
+100,50,qpso,845.63,968.85,True
+200,100,greedy,1218.89,766.68,True
+200,100,pso,78145.37,2528.67,False
+200,100,ga,2142.74,3007.72,True
+200,100,qpso,41724.25,3369.11,False

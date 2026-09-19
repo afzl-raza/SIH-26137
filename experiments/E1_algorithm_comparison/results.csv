@@ -1,0 +1,5 @@
+algorithm_key,algorithm,total_cost,total_travel_time,total_distance,runtime_ms,constraint_violations,is_feasible
+greedy,Greedy (Nearest Neighbour),222.73,183.42,78.63,7.03,0,True
+pso,Classical PSO,192.98,162.84,60.28,521.57,0,True
+ga,Genetic Algorithm (GA),198.36,165.38,65.96,631.87,0,True
+qpso,QPSO (Quantum-behaved PSO),196.55,165.15,62.81,518.65,0,True

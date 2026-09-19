@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Editors / OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Env / secrets
+.env
+.env.*
+
+# Local Claude Code settings (machine-specific permissions)
+.claude/settings.local.json

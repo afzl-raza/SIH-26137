@@ -1,0 +1,24 @@
+{
+  "node_counts": [
+    20,
+    50,
+    100,
+    200
+  ],
+  "jobs_per_node_ratio": 0.5,
+  "jobs_per_vehicle": 5.0,
+  "seed": 42,
+  "solver": {
+    "algorithm": "qpso",
+    "population_size": 20,
+    "max_iterations": 30,
+    "seed": 42,
+    "weights": {
+      "alpha": 1.0,
+      "beta": 0.5,
+      "gamma": 1.0,
+      "penalty_weight": 1000.0
+    }
+  },
+  "note": "Uses a reduced solver budget relative to E1 so the sweep completes in reasonable time; do not compare these costs directly against E1's. Vehicle count scales with job count (jobs_per_vehicle) so the fleet stays large enough to remain feasible as the problem grows - this experiment measures optimizer scalability, not fleet sizing."
+}
