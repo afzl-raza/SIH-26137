@@ -16,6 +16,9 @@ import { Activity } from 'lucide-react';
 export default function App() {
   // ─── Core State ──────────────────────────────────
   const [scenario, setScenario] = useState(null);
+  // The backend owns the scenario after generation; requests refer to it
+  // by id instead of uploading the whole graph on every interaction.
+  const [scenarioId, setScenarioId] = useState(null);
   const [currentResult, setCurrentResult] = useState(null);
   const [previousResult, setPreviousResult] = useState(null);
   const [benchmarkData, setBenchmarkData] = useState(null);
@@ -117,7 +120,8 @@ export default function App() {
       });
       if (!res.ok) throw new Error('Failed to generate network scenario');
       const data = await res.json();
-      setScenario(data);
+      setScenario(data.scenario);
+      setScenarioId(data.scenario_id);
       setCurrentResult(null);
       setPreviousResult(null);
       setBenchmarkData(null);
@@ -144,9 +148,11 @@ export default function App() {
   // state. Guarded with a shape check rather than relying on the argument
   // being undefined, since this function is also used directly as a button
   // onClick handler, which would otherwise pass the DOM click event here.
-  const handleOptimize = async (scenarioOverride) => {
-    const activeScenario = (scenarioOverride && scenarioOverride.nodes) ? scenarioOverride : scenario;
-    if (!activeScenario) return;
+  const handleOptimize = async (scenarioIdOverride) => {
+    const activeScenarioId = (typeof scenarioIdOverride === 'string')
+      ? scenarioIdOverride
+      : scenarioId;
+    if (!activeScenarioId) return;
     setLoading(true);
     setError(null);
     const isReopt = networkState === 'DISRUPTED';
@@ -157,7 +163,7 @@ export default function App() {
       const res = await apiFetch('/api/optimize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario: activeScenario, config })
+        body: JSON.stringify({ scenario_id: activeScenarioId, config })
       });
       if (!res.ok) throw new Error('Optimization failed');
       const data = await res.json();
@@ -235,12 +241,12 @@ export default function App() {
       const res = await apiFetch('/api/traffic/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario, updates })
+        body: JSON.stringify({ scenario_id: scenarioId, updates })
       });
 
       if (!res.ok) throw new Error('Failed to update traffic incident');
-      const updatedScenario = await res.json();
-      setScenario(updatedScenario);
+      const data = await res.json();
+      setScenario(data.scenario);
       setStatusState('INCIDENT');
       setNetworkState('DISRUPTED');
     } catch (err) {
@@ -285,9 +291,9 @@ export default function App() {
   // server-side in test_e6_reproducibility_determinism_and_stats) - this
   // doesn't simulate anything, it just runs the same real requests again.
   const handleReplay = async () => {
-    const freshScenario = await handleGenerateScenario();
-    if (freshScenario) {
-      await handleOptimize(freshScenario);
+    const fresh = await handleGenerateScenario();
+    if (fresh?.scenario_id) {
+      await handleOptimize(fresh.scenario_id);
     }
   };
 
@@ -300,7 +306,7 @@ export default function App() {
       const res = await apiFetch('/api/benchmark', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario, config })
+        body: JSON.stringify({ scenario_id: scenarioId, config })
       });
       if (!res.ok) throw new Error('Benchmark failed');
       const data = await res.json();
@@ -399,6 +405,7 @@ export default function App() {
         <div className="lg:col-span-3 min-h-[620px] h-full w-full">
           <NetworkMap
             scenario={scenario}
+            scenarioId={scenarioId}
             currentResult={currentResult}
             previousResult={previousResult}
             selectedIncidentEdge={selectedIncidentEdge}

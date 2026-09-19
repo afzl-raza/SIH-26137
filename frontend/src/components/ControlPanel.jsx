@@ -15,6 +15,7 @@ import { apiFetch } from '../api';
 
 export default function ControlPanel({
   scenario,
+  scenarioId,
   config,
   setConfig,
   onGenerate,
@@ -63,7 +64,7 @@ export default function ControlPanel({
   const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
-    if (!currentResult?.routes?.length || !scenario) {
+    if (!currentResult?.routes?.length || !scenarioId) {
       setPreviewCost(null);
       return;
     }
@@ -73,7 +74,7 @@ export default function ControlPanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          scenario,
+          scenario_id: scenarioId,
           routes: currentResult.routes,
           weights: config.weights
         })
@@ -85,7 +86,7 @@ export default function ControlPanel({
     }, 400);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.weights, currentResult, scenario]);
+  }, [config.weights, currentResult, scenarioId]);
 
   // Scenario Health Strip - every field reads directly from real
   // scenario/state data already held by App.jsx, nothing invented here.

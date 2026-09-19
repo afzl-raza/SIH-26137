@@ -18,6 +18,8 @@ from models import (
     ObjectiveWeights
 )
 from problem_generator import generate_synthetic_scenario
+from realdata.scenario_store import SCENARIO_STORE, ScenarioNotFoundError
+from route_cache import ROUTE_MATRIX_CACHE
 from optimizers.greedy import GreedyOptimizer
 from optimizers.pso import PSOOptimizer
 from optimizers.qpso import QPSOOptimizer
@@ -56,20 +58,52 @@ class GenerateRequest(BaseModel):
     seed: int = 42
 
 
-class OptimizePayload(BaseModel):
-    scenario: ProblemScenario
+# Scenario-carrying payloads accept either a `scenario_id` (the backend owns
+# the scenario, which is what keeps request bodies small once scenarios carry
+# OpenStreetMap geometry) or a full inline `scenario` (the original format,
+# kept working during the migration). When both are present, scenario_id wins.
+class ScenarioRefMixin(BaseModel):
+    scenario: Optional[ProblemScenario] = None
+    scenario_id: Optional[str] = None
+
+
+class OptimizePayload(ScenarioRefMixin):
     config: OptimizationConfig
 
 
-class TrafficPayload(BaseModel):
-    scenario: ProblemScenario
+class TrafficPayload(ScenarioRefMixin):
     updates: List[TrafficUpdate]
 
 
-class EvaluatePayload(BaseModel):
-    scenario: ProblemScenario
+class EvaluatePayload(ScenarioRefMixin):
     routes: List[VehicleRoute]
     weights: ObjectiveWeights
+
+
+def _resolve_scenario(payload: ScenarioRefMixin):
+    """Returns (scenario, scenario_id). `scenario_id` is None when the caller
+    used the legacy inline-scenario format, in which case the backend holds no
+    stored copy to write back to."""
+    if payload.scenario_id:
+        try:
+            record = SCENARIO_STORE.get(payload.scenario_id)
+        except ScenarioNotFoundError:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Unknown scenario_id '{payload.scenario_id}'. It may have "
+                    f"expired - generate the scenario again."
+                ),
+            )
+        return record.scenario, record.scenario_id
+
+    if payload.scenario is not None:
+        return payload.scenario, None
+
+    raise HTTPException(
+        status_code=422,
+        detail="Either 'scenario_id' or 'scenario' must be provided.",
+    )
 
 
 # Read-only surface for backend/experiments/runner.py output. No persistence
@@ -89,11 +123,26 @@ KNOWN_EXPERIMENTS = {
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "app": "Q-DFRO Backend"}
+    # Route-matrix cache counters are reported here as plain diagnostics, so
+    # the "one build, three hits per benchmark" behaviour can be observed
+    # rather than taken on trust.
+    return {
+        "status": "ok",
+        "app": "Q-DFRO Backend",
+        "stored_scenarios": len(SCENARIO_STORE),
+        "route_matrix_cache": ROUTE_MATRIX_CACHE.stats(),
+    }
 
 
-@app.post("/api/problem/generate", response_model=ProblemScenario)
+@app.post("/api/problem/generate")
 def generate_problem(req: GenerateRequest):
+    """Generates a scenario, stores it server-side, and returns it together
+    with the `scenario_id` later calls should refer to.
+
+    The full scenario is still included in the response because the frontend
+    needs the nodes and edges to draw the map. What moves server-side is the
+    scenario on every *subsequent* request body.
+    """
     try:
         scenario = generate_synthetic_scenario(
             num_nodes=req.num_nodes,
@@ -101,13 +150,16 @@ def generate_problem(req: GenerateRequest):
             num_vehicles=req.num_vehicles,
             seed=req.seed
         )
-        return scenario
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+    record = SCENARIO_STORE.create(scenario, data_source="synthetic")
+    return {**record.metadata(), "scenario": record.scenario}
 
 
 @app.post("/api/optimize", response_model=OptimizationResult)
 def optimize_route(payload: OptimizePayload):
+    scenario, _ = _resolve_scenario(payload)
     try:
         algo = payload.config.algorithm.lower()
         if "qpso" in algo:
@@ -122,36 +174,64 @@ def optimize_route(payload: OptimizePayload):
         else:
             optimizer = QPSOOptimizer()
 
-        result = optimizer.optimize(payload.scenario, payload.config)
+        result = optimizer.optimize(scenario, payload.config)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Optimization error: {str(e)}")
 
 
-@app.post("/api/traffic/update", response_model=ProblemScenario)
+@app.post("/api/traffic/update")
 def update_traffic(payload: TrafficPayload):
+    """Applies simulated congestion to selected edges and persists the result.
+
+    The stored scenario is never mutated in place: a copy is edited and handed
+    back to the store. The route-matrix cache needs no explicit invalidation
+    because its key is derived from edge travel times - a changed edge simply
+    produces a different key, so a stale matrix can never be served.
+    """
+    stored_scenario, scenario_id = _resolve_scenario(payload)
+
     try:
-        scenario = payload.scenario
+        scenario = stored_scenario.model_copy(deep=True)
+
         update_map = {(u.source, u.destination): u.traffic_factor for u in payload.updates}
         # Also map symmetric reverse directions
         for u in payload.updates:
             update_map[(u.destination, u.source)] = u.traffic_factor
 
+        updated_edges = 0
         for edge in scenario.edges:
             pair = (edge.source, edge.destination)
             if pair in update_map:
                 edge.traffic_factor = round(update_map[pair], 2)
                 edge.current_travel_time = round(edge.base_travel_time * edge.traffic_factor, 2)
-
-        return scenario
+                updated_edges += 1
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+    if scenario_id is not None:
+        record = SCENARIO_STORE.update(scenario_id, scenario)
+        return {**record.metadata(), "updated_edges": updated_edges, "scenario": record.scenario}
+
+    # Legacy inline-scenario call: nothing stored, so echo the updated scenario.
+    return {
+        "scenario_id": None,
+        "scenario_hash": scenario.scenario_hash,
+        "data_source": "inline",
+        "node_count": len(scenario.nodes),
+        "edge_count": len(scenario.edges),
+        "job_count": len(scenario.jobs),
+        "vehicle_count": len(scenario.vehicles),
+        "updated_edges": updated_edges,
+        "scenario": scenario,
+    }
 
 
 @app.post("/api/benchmark", response_model=BenchmarkResult)
 def benchmark_scenario(payload: OptimizePayload):
+    scenario, _ = _resolve_scenario(payload)
     try:
-        return run_benchmark(payload.scenario, payload.config)
+        return run_benchmark(scenario, payload.config)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -163,8 +243,9 @@ def evaluate_routes(payload: EvaluatePayload):
     this cost under different weights" preview - the score always comes
     from the same evaluator every optimizer uses, never computed client-side.
     """
+    scenario, _ = _resolve_scenario(payload)
     try:
-        return evaluate_solution(payload.routes, payload.scenario, payload.weights, algorithm_name="preview")
+        return evaluate_solution(payload.routes, scenario, payload.weights, algorithm_name="preview")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
