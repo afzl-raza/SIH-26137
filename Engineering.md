@@ -74,7 +74,7 @@ that comes from the backend.
 |---|---|---|
 | Scenario generation (graph, depot, vehicles, jobs) | `backend/problem_generator.py` | ✅ Implemented |
 | Deterministic seeding | `generate_synthetic_scenario(seed=...)` | ✅ Implemented, tested |
-| Shortest-path infrastructure (NetworkX) | `compute_shortest_paths()` — O(V) via `single_source_dijkstra` | ✅ Implemented |
+| Shortest-path infrastructure (NetworkX) | `compute_route_matrix()` — K single-source Dijkstra runs over the full graph, K = depot + jobs | ✅ Implemented |
 | Dynamic traffic update | `POST /api/traffic/update` | ✅ Implemented |
 | Route representation (random-key encoding) | `backend/decoder.py` | ✅ Implemented |
 | Common evaluator (incl. per-vehicle congestion) | `backend/fitness.py` | ✅ Implemented |
@@ -194,7 +194,7 @@ splitting heuristic.
 
 **From job sequence to road-level path:** consecutive jobs (and depot↔first/last
 job) are joined using `paths_dict`, the NetworkX shortest-path lookup computed once
-per scenario/traffic-state by `compute_shortest_paths`. So the optimizer decides
+per scenario/traffic-state by `compute_route_matrix`. So the optimizer decides
 *which jobs, in what order, for which vehicle*; the graph router decides *how a
 vehicle physically gets from one stop to the next*. These two decisions are
 deliberately separate.

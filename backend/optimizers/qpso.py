@@ -2,7 +2,7 @@ import time
 import numpy as np
 from typing import List
 from models import ProblemScenario, OptimizationConfig, OptimizationResult
-from problem_generator import compute_shortest_paths
+from problem_generator import compute_route_matrix
 from decoder import decode_random_keys
 from fitness import evaluate_solution
 from optimizers.base import BaseOptimizer
@@ -20,7 +20,7 @@ class QPSOOptimizer(BaseOptimizer):
         start_time = time.perf_counter()
         np.random.seed(config.seed)
 
-        dist_matrix, time_matrix, paths_dict = compute_shortest_paths(scenario)
+        dist_matrix, time_matrix, paths_dict = compute_route_matrix(scenario).as_tuple()
         num_jobs = len(scenario.jobs)
 
         if num_jobs == 0:

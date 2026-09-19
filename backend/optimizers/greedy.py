@@ -2,7 +2,7 @@ import time
 import numpy as np
 from typing import List, Dict, Tuple
 from models import ProblemScenario, OptimizationConfig, OptimizationResult, VehicleRoute, Job
-from problem_generator import compute_shortest_paths
+from problem_generator import compute_route_matrix
 from fitness import evaluate_solution
 from optimizers.base import BaseOptimizer
 
@@ -18,7 +18,7 @@ class GreedyOptimizer(BaseOptimizer):
     ) -> OptimizationResult:
         start_time = time.perf_counter()
 
-        dist_matrix, time_matrix, paths_dict = compute_shortest_paths(scenario)
+        dist_matrix, time_matrix, paths_dict = compute_route_matrix(scenario).as_tuple()
         depot_id = scenario.depot_node_id
 
         unvisited = list(scenario.jobs)

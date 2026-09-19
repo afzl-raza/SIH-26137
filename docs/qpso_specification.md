@@ -27,7 +27,7 @@ the intra-route ordering decision simultaneously, letting QPSO/PSO/GA search
 both dimensions of the VRP at once without a separate splitting heuristic.
 
 Consecutive jobs (and depot↔first/last job) are joined using precomputed
-shortest paths (`problem_generator.compute_shortest_paths`) under the current
+shortest paths (`problem_generator.compute_route_matrix`) under the current
 traffic state. So the optimizer decides *which jobs, in what order, for which
 vehicle*; the graph router decides *how a vehicle physically gets from one
 stop to the next*.
