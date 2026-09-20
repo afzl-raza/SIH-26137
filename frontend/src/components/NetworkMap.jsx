@@ -380,7 +380,7 @@ export default function NetworkMap({
 
       {/* Top Filter Bar for Vehicles */}
       {vehicles.length > 0 && (
-        <div className="absolute top-3 left-3 z-[1000] clean-panel px-3 py-1.5 rounded-lg text-xs flex items-center space-x-2 border border-[#332E29] shadow-xl pointer-events-auto font-mono max-w-[calc(100%-145px)] sm:max-w-md overflow-x-auto">
+        <div className="absolute top-14 sm:top-3 left-3 z-[1000] clean-panel px-3 py-1.5 rounded-lg text-xs flex items-center space-x-2 border border-[#332E29] shadow-xl pointer-events-auto font-mono max-w-[calc(100%-1.5rem)] sm:max-w-md overflow-x-auto">
           <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider flex-shrink-0">ROUTES:</span>
           <button
             onClick={() => setVehicleFilter('all')}
