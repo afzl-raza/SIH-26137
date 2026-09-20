@@ -111,14 +111,18 @@ def _aggregate_source(sources: Iterable[str]) -> str:
 def node_path_polyline(
     scenario: ProblemScenario,
     node_path: Sequence[int],
+    edges: Optional[Dict[EdgeKey, Edge]] = None,
+    nodes: Optional[Dict[int, Tuple[float, float]]] = None,
 ) -> Dict[str, object]:
     """Turns a node path into the polyline the vehicle actually drives.
 
     Returns the stitched `polyline`, the per-hop `segments` (kept so the map can
     highlight one road without a second request), and `geometry_source`.
     """
-    edges = _edge_index(scenario)
-    nodes = _node_index(scenario)
+    if edges is None:
+        edges = _edge_index(scenario)
+    if nodes is None:
+        nodes = _node_index(scenario)
 
     polyline: List[List[float]] = []
     segments: List[Dict[str, object]] = []
@@ -167,9 +171,11 @@ def route_geometries(
     routes: Sequence[VehicleRoute],
 ) -> List[Dict[str, object]]:
     """Per-vehicle geometry for a whole optimization result."""
+    edges = _edge_index(scenario)
+    nodes = _node_index(scenario)
     resolved: List[Dict[str, object]] = []
     for route in routes:
-        payload = node_path_polyline(scenario, route.node_path)
+        payload = node_path_polyline(scenario, route.node_path, edges=edges, nodes=nodes)
         payload["vehicle_id"] = route.vehicle_id
         resolved.append(payload)
     return resolved
