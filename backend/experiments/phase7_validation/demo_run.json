@@ -1,0 +1,71 @@
+{
+  "generated_at": "2026-09-20T06:21:15Z",
+  "label": "Cached OSM Demo Scenario",
+  "place": "Hazratganj, Lucknow, India",
+  "radius_m": 1200,
+  "seed": 42,
+  "config": {
+    "algorithm": "qpso",
+    "population_size": 30,
+    "max_iterations": 60,
+    "seed": 42
+  },
+  "cache_provenance": {
+    "location": "cache",
+    "osm": "cache"
+  },
+  "node_count": 652,
+  "edge_count": 1446,
+  "weather": {
+    "source": "cache",
+    "condition": "cloudy",
+    "note": "source == 'network' or 'cache' means a real Open-Meteo observation; 'fallback' means the provider failed and no invented value was used."
+  },
+  "external_dependencies": {
+    "nominatim_geocoding": "cache",
+    "overpass_osm": "cache",
+    "open_meteo_weather": "cache"
+  },
+  "before": {
+    "total_cost": 117.53,
+    "total_travel_time": 98.57,
+    "total_distance": 16.31
+  },
+  "after": {
+    "total_cost": 117.0,
+    "total_travel_time": 98.15,
+    "total_distance": 16.24
+  },
+  "route_changed": true,
+  "benchmark_summary": {
+    "greedy": {
+      "algorithm": "Greedy (Nearest Neighbour)",
+      "total_cost": 129.24,
+      "runtime_ms": 2.73
+    },
+    "pso": {
+      "algorithm": "Classical PSO",
+      "total_cost": 114.46,
+      "runtime_ms": 482.67
+    },
+    "ga": {
+      "algorithm": "Genetic Algorithm (GA)",
+      "total_cost": 117.43,
+      "runtime_ms": 501.45
+    },
+    "qpso": {
+      "algorithm": "QPSO (Quantum-behaved PSO)",
+      "total_cost": 117.0,
+      "runtime_ms": 488.17
+    }
+  },
+  "timings_seconds": {
+    "scenario_load_s": 0.148,
+    "weather_fetch_s": 0.069,
+    "initial_optimization_s": 0.546,
+    "incident_update_s": 0.142,
+    "reoptimization_s": 0.558,
+    "benchmark_s": 1.503,
+    "total_demo_workflow_s": 2.966
+  }
+}

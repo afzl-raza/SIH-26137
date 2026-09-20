@@ -1,6 +1,49 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
+import { apiFetch } from '../api';
+import { CONGESTION_ORDER, CONGESTION_STYLES, INCIDENT_STYLE, congestionStyle, congestionLabel } from '../lib/traffic';
+
+// Asks the backend for the road shape of an already-computed set of routes.
+//
+// This does NOT route. The optimizer's `node_path` is already the complete
+// node-by-node road path; the backend simply looks up the OpenStreetMap
+// geometry of each hop (see backend/route_geometry.py) using the same
+// parallel-edge rule the router used. No path-finding of any kind happens in
+// React.
+//
+// Only OpenStreetMap scenarios ask: a synthetic network has no road geometry,
+// so it keeps the straight-line rendering it has always had and skips the
+// round-trip entirely.
+function useBackendRouteGeometry(scenarioId, result, enabled) {
+  const [geometry, setGeometry] = useState(null);
+
+  useEffect(() => {
+    if (!enabled || !scenarioId || !result?.routes?.length) {
+      setGeometry(null);
+      return;
+    }
+    let cancelled = false;
+    apiFetch('/api/routes/geometry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenario_id: scenarioId, routes: result.routes })
+    })
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        if (cancelled || !data?.routes) return;
+        const byVehicle = new Map();
+        data.routes.forEach(r => byVehicle.set(r.vehicle_id, r));
+        setGeometry({ byVehicle, source: data.geometry_source });
+      })
+      // A failed lookup is not fatal: the caller falls back to the
+      // junction-to-junction line, which is real data too, just coarser.
+      .catch(() => { if (!cancelled) setGeometry(null); });
+    return () => { cancelled = true; };
+  }, [scenarioId, result, enabled]);
+
+  return geometry;
+}
 
 // Animates a 0->1 progress value whenever `resultObj` becomes a *new*
 // object (i.e. a fresh optimize/re-optimize result arrived) - used to fade
@@ -65,6 +108,8 @@ const createVehicleMarkerIcon = (vehicleId, color, isSelected) => L.divIcon({
 
 export default function NetworkMap({
   scenario,
+  scenarioId,
+  loading,
   currentResult,
   previousResult,
   selectedIncidentEdge,
@@ -110,6 +155,12 @@ export default function NetworkMap({
     return map;
   }, [jobs]);
 
+  // True when this network's roads carry real OpenStreetMap geometry. Drives
+  // the two things Phase 6 makes conditional: drawing road shapes instead of
+  // straight lines, and asking the backend for route geometry. Synthetic
+  // scenarios answer false and keep their original rendering unchanged.
+  const isOsmNetwork = scenario?.data_source === 'openstreetmap';
+
   const edgeLines = useMemo(() => {
     const drawn = new Set();
     const list = [];
@@ -123,33 +174,46 @@ export default function NetworkMap({
       const n2 = nodeMap.get(e.destination);
       if (!n1 || !n2) return;
 
-      const isIncident = selectedIncidentEdge && (
+      const isSelectedIncident = selectedIncidentEdge && (
         (selectedIncidentEdge.source === e.source && selectedIncidentEdge.destination === e.destination) ||
         (selectedIncidentEdge.source === e.destination && selectedIncidentEdge.destination === e.source)
       );
+      // The backend flags the incident axis itself, so a disruption applied
+      // any other way (a replayed scenario, a second operator) still shows.
+      const isIncident = Boolean(isSelectedIncident || e.has_incident);
 
-      let color = '#4A423A';
-      let weight = 2.5;
-      let opacity = 0.6;
+      // Real OSM way geometry when the edge has it - including the shape
+      // points that were collapsed out of the routing graph - otherwise the
+      // junction-to-junction line a synthetic network has always drawn.
+      const hasRealGeometry = Array.isArray(e.geometry) && e.geometry.length >= 2;
+      const positions = hasRealGeometry
+        ? e.geometry
+        : [[n1.lat, n1.lng], [n2.lat, n2.lng]];
 
-      if (isIncident || e.traffic_factor > 2.5) {
-        color = '#C1443B';
-        weight = 5.5;
-        opacity = 0.95;
-      } else if (e.traffic_factor > 1.5) {
-        color = '#E8A93A';
-        weight = 3.5;
-        opacity = 0.8;
-      }
+      // Colour/width come entirely from the band the backend assigned.
+      const style = isIncident ? INCIDENT_STYLE : congestionStyle(e);
 
       list.push({
         id: key,
         source: e.source,
         destination: e.destination,
-        positions: [[n1.lat, n1.lng], [n2.lat, n2.lng]],
-        color, weight, opacity, isIncident,
+        positions,
+        geometrySource: hasRealGeometry ? 'openstreetmap' : 'straight-line',
+        color: style.color,
+        weight: style.weight,
+        opacity: style.opacity,
+        isIncident,
+        congestionLabel: congestionLabel(e),
+        congestionLevel: e.congestion_level || 'free_flow',
         trafficFactor: e.traffic_factor,
+        trafficMultiplier: e.traffic_multiplier,
+        weatherMultiplier: e.weather_multiplier,
+        incidentMultiplier: e.incident_multiplier,
         roadName: e.road_name,
+        highway: e.highway,
+        osmWayId: e.osm_way_id,
+        speedKph: e.speed_kph,
+        speedSource: e.speed_source,
         baseTime: e.base_travel_time,
         currentTime: e.current_travel_time,
         distance: e.distance
@@ -161,15 +225,33 @@ export default function NetworkMap({
 
   const displayedResult = previewResult || currentResult;
 
+  const activeRouteGeometry = useBackendRouteGeometry(scenarioId, displayedResult, isOsmNetwork);
+  const previousRouteGeometry = useBackendRouteGeometry(scenarioId, previousResult, isOsmNetwork);
+
+  // The node-path fallback: the straight line between each pair of nodes the
+  // optimizer's path visits. Still the optimizer's own route - only its shape
+  // is approximated - and it is what a synthetic network legitimately looks
+  // like, since its roads are straight lines.
+  const nodePathCoords = useMemo(() => (route) =>
+    route.node_path
+      .map(nid => {
+        const node = nodeMap.get(nid);
+        return node ? [node.lat, node.lng] : null;
+      })
+      .filter(Boolean),
+  [nodeMap]);
+
   const activeRouteLines = useMemo(() => {
     if (!displayedResult || !displayedResult.routes) return [];
     const vColorMap = new Map(vehicles.map(v => [v.id, v.color]));
 
     return displayedResult.routes.map(r => {
-      const coords = r.node_path.map(nid => {
-        const node = nodeMap.get(nid);
-        return node ? [node.lat, node.lng] : null;
-      }).filter(Boolean);
+      // Prefer the backend's resolved road geometry; fall back to the node
+      // path while the lookup is in flight, when it fails, or for a synthetic
+      // network that has no geometry to resolve.
+      const resolved = activeRouteGeometry?.byVehicle?.get(r.vehicle_id);
+      const usingRoadGeometry = Boolean(resolved?.polyline?.length);
+      const coords = usingRoadGeometry ? resolved.polyline : nodePathCoords(r);
 
       const isSelected = selectedVehicleId === r.vehicle_id || vehicleFilter === r.vehicle_id;
       const isFilteredOut = vehicleFilter !== 'all' && vehicleFilter !== r.vehicle_id;
@@ -178,6 +260,7 @@ export default function NetworkMap({
         vehicleId: r.vehicle_id,
         color: vColorMap.get(r.vehicle_id) || '#C6602E',
         coords,
+        geometrySource: usingRoadGeometry ? resolved.geometry_source : 'straight-line',
         jobsCount: r.job_ids.length,
         dist: r.route_distance,
         time: r.route_travel_time,
@@ -185,7 +268,7 @@ export default function NetworkMap({
         routeObj: r
       };
     });
-  }, [displayedResult, vehicles, nodeMap, selectedVehicleId, vehicleFilter]);
+  }, [displayedResult, vehicles, nodePathCoords, activeRouteGeometry, selectedVehicleId, vehicleFilter]);
 
   // Per-vehicle-color glow rule, applied via className (not a duplicated
   // Polyline) - avoids the zoom/pan micro-stutter a second SVG path per
@@ -243,20 +326,24 @@ export default function NetworkMap({
     if (!previousResult || !previousResult.routes) return [];
 
     return previousResult.routes.map(r => {
-      const coords = r.node_path.map(nid => {
-        const node = nodeMap.get(nid);
-        return node ? [node.lat, node.lng] : null;
-      }).filter(Boolean);
-
+      const resolved = previousRouteGeometry?.byVehicle?.get(r.vehicle_id);
+      const coords = resolved?.polyline?.length ? resolved.polyline : nodePathCoords(r);
       return { vehicleId: r.vehicle_id, coords };
     });
-  }, [previousResult, nodeMap]);
+  }, [previousResult, nodePathCoords, previousRouteGeometry]);
 
   // NOW the early return, after all hooks
   if (nodes.length === 0) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-[#171513] text-gray-400 font-mono text-xs rounded-xl border border-[#332E29]">
-        Generate a scenario to begin fleet route optimization.
+      <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-[#171513] text-gray-400 font-mono text-xs rounded-xl border border-[#332E29]">
+        {loading ? (
+          <>
+            <div className="w-4 h-4 border-2 border-[#C6602E] border-t-transparent rounded-full animate-spin"></div>
+            <span>Loading network...</span>
+          </>
+        ) : (
+          <span>Generate a scenario to begin fleet route optimization.</span>
+        )}
       </div>
     );
   }
@@ -365,16 +452,25 @@ export default function NetworkMap({
             <Popup>
               <div className="text-xs space-y-1 font-mono">
                 <p className="font-bold text-[#5D7A9E]">{e.roadName}</p>
-                <p>Normal Time: {e.baseTime} min</p>
-                <p>Current Time: <span className={e.trafficFactor > 2.0 ? 'text-[#C1443B] font-bold' : 'text-[#6B9A57]'}>{e.currentTime} min ({e.trafficFactor}x)</span></p>
-                <p>Status: {e.trafficFactor > 2.0 ? '⚠ INCIDENT DISRUPTED' : 'NORMAL'}</p>
-                {weights && (
-                  <div className="border-t border-[#3A342E] mt-1.5 pt-1.5 space-y-0.5">
-                    <p className="text-gray-400 text-[10px] uppercase">Why this road costs what it costs</p>
-                    <p>Travel Time: {weights.alpha} × {e.currentTime} = {(weights.alpha * e.currentTime).toFixed(2)}</p>
-                    <p>Distance: {weights.beta} × {e.distance} = {(weights.beta * e.distance).toFixed(2)}</p>
-                    <p>Congestion: {weights.gamma} × {Math.max(0, (e.trafficFactor - 1) * e.baseTime).toFixed(2)} = {(weights.gamma * Math.max(0, (e.trafficFactor - 1) * e.baseTime)).toFixed(2)}</p>
-                  </div>
+                {e.highway && (
+                  <p className="text-gray-500 text-[10px]">
+                    OSM {e.highway}
+                    {e.osmWayId ? ` · way ${e.osmWayId}` : ''}
+                    {e.speedKph ? ` · ${e.speedKph} km/h (${e.speedSource})` : ''}
+                  </p>
+                )}
+                <p>Free-flow Time: {e.baseTime} min</p>
+                <p>Current Time: <span style={{ color: e.color }} className="font-bold">{e.currentTime} min ({e.trafficFactor}×)</span></p>
+                {/* State, not a client-side threshold: the backend classified
+                    this edge as it wrote the cost. */}
+                <p>
+                  Sim. traffic state: <span style={{ color: e.color }}>{e.congestionLabel}</span>
+                  {e.isIncident ? ' · ⚠ incident on this road' : ''}
+                </p>
+                {(e.trafficMultiplier != null) && (
+                  <p className="text-gray-500 text-[10px]">
+                    traffic ×{e.trafficMultiplier} · weather ×{e.weatherMultiplier} · incident ×{e.incidentMultiplier}
+                  </p>
                 )}
                 {onDisruptEdge && (
                   <div className="border-t border-[#3A342E] mt-1.5 pt-1.5 space-y-1">
@@ -443,6 +539,13 @@ export default function NetworkMap({
                   <p>Stops: {ar.jobsCount} Jobs</p>
                   <p>Distance: {ar.dist} km</p>
                   <p>Travel Time: {ar.time} min</p>
+                  <p className="text-gray-500 text-[10px]">
+                    Drawn from: {ar.geometrySource === 'openstreetmap'
+                      ? 'OSM road geometry'
+                      : ar.geometrySource === 'mixed'
+                      ? 'OSM road geometry (partial)'
+                      : 'node-to-node links'}
+                  </p>
                 </div>
               </Popup>
             </Polyline>
@@ -533,6 +636,13 @@ export default function NetworkMap({
       {/* Map Legend Overlay */}
       <div className="absolute bottom-3 left-3 z-[1000] clean-panel px-3 py-2 rounded-lg text-xs space-y-1.5 border border-[#332E29] shadow-xl pointer-events-auto">
         <div className="font-semibold text-gray-400 text-[10px] uppercase tracking-wider mb-1">MAP LEGEND</div>
+        {/* What the lines on this map actually are. Stated so an OSM run and
+            a synthetic run are never mistaken for each other. */}
+        <div className="text-[10px] font-mono text-gray-400 pb-1 border-b border-[#332E29]/60">
+          {isOsmNetwork
+            ? 'Roads: real OpenStreetMap geometry'
+            : 'Roads: synthetic network (straight-line links)'}
+        </div>
         <div className="flex items-center space-x-2 text-[11px] font-mono">
           <span className="w-2.5 h-2.5 rounded-full bg-[#C1443B] inline-block"></span>
           <span className="text-gray-300">Depot</span>
@@ -541,13 +651,28 @@ export default function NetworkMap({
           <span className="w-2.5 h-2.5 rounded-full bg-[#5D7A9E] inline-block"></span>
           <span className="text-gray-300">Job Target</span>
         </div>
-        <div className="flex items-center space-x-2 text-[11px] font-mono">
-          <span className="w-4 h-1 bg-[#4A423A] rounded inline-block"></span>
-          <span className="text-gray-300">Normal Road</span>
+        {/* Congestion bands, named and coloured exactly as the backend
+            classified them. Simulated, and labelled as such - this is a
+            traffic model, never a live feed. */}
+        <div className="pt-1 border-t border-[#332E29]/60 mt-1">
+          <div className="text-[9px] uppercase tracking-wider text-gray-500 mb-1">
+            Simulated Traffic (model)
+          </div>
+          <div className="flex flex-wrap gap-x-2 gap-y-1">
+            {CONGESTION_ORDER.map(level => (
+              <span key={level} className="flex items-center space-x-1 text-[10px] font-mono">
+                <span
+                  className="w-3 h-1 rounded inline-block"
+                  style={{ backgroundColor: CONGESTION_STYLES[level].color }}
+                />
+                <span className="text-gray-300">{CONGESTION_STYLES[level].label}</span>
+              </span>
+            ))}
+          </div>
         </div>
         <div className="flex items-center space-x-2 text-[11px] font-mono">
           <span className="w-4 h-1 bg-[#C1443B] rounded inline-block animate-pulse"></span>
-          <span className="text-gray-300">⚠ Incident Road</span>
+          <span className="text-gray-300">⚠ Incident Road (operator-injected)</span>
         </div>
         {vehicles.length > 0 && (
           <div className="flex items-center space-x-2 text-[11px] font-mono">

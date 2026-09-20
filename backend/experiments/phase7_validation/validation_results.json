@@ -1,0 +1,410 @@
+{
+  "generated_at": "2026-09-20T06:17:06Z",
+  "seed": 42,
+  "num_jobs": 12,
+  "num_vehicles": 3,
+  "locations": [
+    {
+      "place": "Hazratganj, Lucknow, India",
+      "radius_m": 1200,
+      "steps": {
+        "generate": {
+          "status_code": 200,
+          "duration_s": 3.005
+        },
+        "weather": {
+          "status_code": 200,
+          "duration_s": 1.172
+        },
+        "conditions": {
+          "status_code": 200
+        },
+        "optimize": {
+          "status_code": 200,
+          "duration_s": 1.547
+        },
+        "route_geometry": {
+          "status_code": 200
+        },
+        "incident": {
+          "status_code": 200
+        },
+        "reoptimize": {
+          "status_code": 200,
+          "duration_s": 1.62
+        },
+        "benchmark": {
+          "status_code": 200,
+          "duration_s": 4.627
+        }
+      },
+      "scenario_id": "3d50e5d0fd-d7c10542",
+      "location": {
+        "query": "Hazratganj, Lucknow, India",
+        "latitude": 26.8475285,
+        "longitude": 80.9432003,
+        "display_name": "Hazratganj, Lucknow, Uttar Pradesh, India",
+        "resolver": "nominatim",
+        "provenance": "network"
+      },
+      "node_count": 652,
+      "edge_count": 1446,
+      "geometry_source": "openstreetmap",
+      "osm_provenance": "network",
+      "osm_endpoint": "https://overpass-api.de/api/interpreter",
+      "osm_stats": {
+        "ways_considered": 414,
+        "ways_skipped": 0,
+        "junction_nodes": 692,
+        "directed_edges": 1492,
+        "oneway_forward": 141,
+        "oneway_reverse": 0,
+        "bidirectional": 273,
+        "ways_with_osm_maxspeed": 3,
+        "ways_using_speed_fallback": 411,
+        "components": 32,
+        "kept_nodes": 652,
+        "dropped_nodes": 40,
+        "kept_edges": 1446,
+        "dropped_edges": 46,
+        "total_length_km": 154.944
+      },
+      "weather": {
+        "source": "network",
+        "condition": "cloudy",
+        "temperature_c": 32.3,
+        "fallback": false
+      },
+      "traffic_source": "simulated",
+      "weather_source": "cache",
+      "fallback_used": false,
+      "before": {
+        "total_cost": 117.53,
+        "total_travel_time": 98.57,
+        "total_distance": 16.31
+      },
+      "route_geometry_source": "openstreetmap",
+      "incident_target_edge": {
+        "source": 0,
+        "destination": 206
+      },
+      "after": {
+        "total_cost": 117.0,
+        "total_travel_time": 98.15,
+        "total_distance": 16.24
+      },
+      "changed_vehicle_ids_after_incident": [
+        1,
+        2,
+        3
+      ],
+      "route_changed": true,
+      "benchmark": {
+        "greedy": {
+          "algorithm": "Greedy (Nearest Neighbour)",
+          "total_cost": 129.24,
+          "runtime_ms": 9.04,
+          "is_feasible": true,
+          "constraint_violations": 0
+        },
+        "pso": {
+          "algorithm": "Classical PSO",
+          "total_cost": 114.46,
+          "runtime_ms": 1445.21,
+          "is_feasible": true,
+          "constraint_violations": 0
+        },
+        "ga": {
+          "algorithm": "Genetic Algorithm (GA)",
+          "total_cost": 117.43,
+          "runtime_ms": 1732.08,
+          "is_feasible": true,
+          "constraint_violations": 0
+        },
+        "qpso": {
+          "algorithm": "QPSO (Quantum-behaved PSO)",
+          "total_cost": 117.0,
+          "runtime_ms": 1428.65,
+          "is_feasible": true,
+          "constraint_violations": 0
+        }
+      },
+      "reproducibility": {
+        "costs": [
+          117.0,
+          117.0
+        ],
+        "all_equal_to_original": true
+      },
+      "failed_at": null
+    },
+    {
+      "place": "Sector 18, Noida, India",
+      "radius_m": 1200,
+      "steps": {
+        "generate": {
+          "status_code": 200,
+          "duration_s": 6.494
+        },
+        "weather": {
+          "status_code": 200,
+          "duration_s": 1.127
+        },
+        "conditions": {
+          "status_code": 200
+        },
+        "optimize": {
+          "status_code": 200,
+          "duration_s": 1.892
+        },
+        "route_geometry": {
+          "status_code": 200
+        },
+        "incident": {
+          "status_code": 200
+        },
+        "reoptimize": {
+          "status_code": 200,
+          "duration_s": 1.93
+        },
+        "benchmark": {
+          "status_code": 200,
+          "duration_s": 5.41
+        }
+      },
+      "scenario_id": "95b348878e-28d7561d",
+      "location": {
+        "query": "Sector 18, Noida, India",
+        "latitude": 28.5705399,
+        "longitude": 77.3228931,
+        "display_name": "Sector 18, Noida, Dadri, Gautam Buddha Nagar, Uttar Pradesh, India",
+        "resolver": "nominatim",
+        "provenance": "network"
+      },
+      "node_count": 890,
+      "edge_count": 2098,
+      "geometry_source": "openstreetmap",
+      "osm_provenance": "network",
+      "osm_endpoint": "https://overpass-api.de/api/interpreter",
+      "osm_stats": {
+        "ways_considered": 698,
+        "ways_skipped": 0,
+        "junction_nodes": 1060,
+        "directed_edges": 2386,
+        "oneway_forward": 234,
+        "oneway_reverse": 0,
+        "bidirectional": 464,
+        "ways_with_osm_maxspeed": 8,
+        "ways_using_speed_fallback": 690,
+        "components": 82,
+        "kept_nodes": 890,
+        "dropped_nodes": 170,
+        "kept_edges": 2098,
+        "dropped_edges": 288,
+        "total_length_km": 141.031
+      },
+      "weather": {
+        "source": "network",
+        "condition": "clear",
+        "temperature_c": 32.5,
+        "fallback": false
+      },
+      "traffic_source": "simulated",
+      "weather_source": "cache",
+      "fallback_used": false,
+      "before": {
+        "total_cost": 107.56,
+        "total_travel_time": 92.72,
+        "total_distance": 12.23
+      },
+      "route_geometry_source": "openstreetmap",
+      "incident_target_edge": {
+        "source": 0,
+        "destination": 794
+      },
+      "after": {
+        "total_cost": 111.07,
+        "total_travel_time": 94.81,
+        "total_distance": 13.0
+      },
+      "changed_vehicle_ids_after_incident": [
+        1,
+        2,
+        3
+      ],
+      "route_changed": true,
+      "benchmark": {
+        "greedy": {
+          "algorithm": "Greedy (Nearest Neighbour)",
+          "total_cost": 120.19,
+          "runtime_ms": 13.67,
+          "is_feasible": true,
+          "constraint_violations": 0
+        },
+        "pso": {
+          "algorithm": "Classical PSO",
+          "total_cost": 114.0,
+          "runtime_ms": 1727.07,
+          "is_feasible": true,
+          "constraint_violations": 0
+        },
+        "ga": {
+          "algorithm": "Genetic Algorithm (GA)",
+          "total_cost": 110.69,
+          "runtime_ms": 1878.76,
+          "is_feasible": true,
+          "constraint_violations": 0
+        },
+        "qpso": {
+          "algorithm": "QPSO (Quantum-behaved PSO)",
+          "total_cost": 111.07,
+          "runtime_ms": 1777.92,
+          "is_feasible": true,
+          "constraint_violations": 0
+        }
+      },
+      "reproducibility": {
+        "costs": [
+          111.07,
+          111.07
+        ],
+        "all_equal_to_original": true
+      },
+      "failed_at": null
+    },
+    {
+      "place": "Piccadilly Circus, London, United Kingdom",
+      "radius_m": 1200,
+      "steps": {
+        "generate": {
+          "status_code": 200,
+          "duration_s": 56.802
+        },
+        "weather": {
+          "status_code": 200,
+          "duration_s": 1.577
+        },
+        "conditions": {
+          "status_code": 200
+        },
+        "optimize": {
+          "status_code": 200,
+          "duration_s": 5.969
+        },
+        "route_geometry": {
+          "status_code": 200
+        },
+        "incident": {
+          "status_code": 200
+        },
+        "reoptimize": {
+          "status_code": 200,
+          "duration_s": 4.738
+        },
+        "benchmark": {
+          "status_code": 200,
+          "duration_s": 11.973
+        }
+      },
+      "scenario_id": "c8d08fb294-2c177131",
+      "location": {
+        "query": "Piccadilly Circus, London, United Kingdom",
+        "latitude": 51.5101383,
+        "longitude": -0.133936,
+        "display_name": "Piccadilly Circus, St. James's, East Marylebone, Covent Garden, City of Westminster, Greater London, England, W1J 9HS, United Kingdom",
+        "resolver": "nominatim",
+        "provenance": "network"
+      },
+      "node_count": 2054,
+      "edge_count": 3412,
+      "geometry_source": "openstreetmap",
+      "osm_provenance": "network",
+      "osm_endpoint": "https://overpass.kumi.systems/api/interpreter",
+      "osm_stats": {
+        "ways_considered": 2337,
+        "ways_skipped": 0,
+        "junction_nodes": 2222,
+        "directed_edges": 3635,
+        "oneway_forward": 1530,
+        "oneway_reverse": 1,
+        "bidirectional": 806,
+        "ways_with_osm_maxspeed": 2296,
+        "ways_using_speed_fallback": 41,
+        "components": 112,
+        "kept_nodes": 2054,
+        "dropped_nodes": 168,
+        "kept_edges": 3412,
+        "dropped_edges": 223,
+        "total_length_km": 143.089
+      },
+      "weather": {
+        "source": "network",
+        "condition": "cloudy",
+        "temperature_c": 16.6,
+        "fallback": false
+      },
+      "traffic_source": "simulated",
+      "weather_source": "cache",
+      "fallback_used": false,
+      "before": {
+        "total_cost": 122.22,
+        "total_travel_time": 102.42,
+        "total_distance": 14.37
+      },
+      "route_geometry_source": "openstreetmap",
+      "incident_target_edge": {
+        "source": 0,
+        "destination": 1104
+      },
+      "after": {
+        "total_cost": 125.48,
+        "total_travel_time": 104.39,
+        "total_distance": 14.88
+      },
+      "changed_vehicle_ids_after_incident": [
+        1,
+        2,
+        3
+      ],
+      "route_changed": true,
+      "benchmark": {
+        "greedy": {
+          "algorithm": "Greedy (Nearest Neighbour)",
+          "total_cost": 128.0,
+          "runtime_ms": 24.56,
+          "is_feasible": true,
+          "constraint_violations": 0
+        },
+        "pso": {
+          "algorithm": "Classical PSO",
+          "total_cost": 125.17,
+          "runtime_ms": 4087.3,
+          "is_feasible": true,
+          "constraint_violations": 0
+        },
+        "ga": {
+          "algorithm": "Genetic Algorithm (GA)",
+          "total_cost": 121.24,
+          "runtime_ms": 4254.12,
+          "is_feasible": true,
+          "constraint_violations": 0
+        },
+        "qpso": {
+          "algorithm": "QPSO (Quantum-behaved PSO)",
+          "total_cost": 125.48,
+          "runtime_ms": 3584.48,
+          "is_feasible": true,
+          "constraint_violations": 0
+        }
+      },
+      "reproducibility": {
+        "costs": [
+          125.48,
+          125.48
+        ],
+        "all_equal_to_original": true
+      },
+      "failed_at": null
+    }
+  ]
+}

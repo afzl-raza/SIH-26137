@@ -1,0 +1,6 @@
+num_nodes,num_edges,num_jobs,num_vehicles,seed,matrix_build_time_s,qpso_runtime_s,total_optimization_time_s,peak_memory_mb,total_cost,is_feasible,constraint_violations,status,error
+100,496,30,4,42,0.1504,5.0356,5.1861,0.48,479.42,True,0,ok,
+250,1262,75,9,42,1.1182,14.4839,15.6021,2.15,153096.16,False,3,ok,
+500,2454,150,19,42,4.2779,12.7637,17.0415,8.0,4618462.23,False,8,ok,
+1000,4844,300,38,42,8.9067,37.4113,46.318,35.29,16424518.76,False,12,ok,
+2500,12164,750,94,42,74.607,180.813,255.42,243.61,53832110.01,False,37,ok,
