@@ -604,9 +604,20 @@ export default function App() {
           />
         </div>
 
-        {/* OPERATIONS PANEL */}
+        {/* OPERATIONS PANEL
+            display must stay `flex` in every branch here - `flex` and
+            `block` both set the same CSS property, and Tailwind's utility
+            order (not JSX source order) decides the winner when both are
+            present. `hidden lg:block` used to collapse this panel to
+            display:block on every desktop-width view (verified: `lg:block`
+            is later in Tailwind's generated stylesheet than the base
+            `flex`, so it always won once the `lg:` media query matched),
+            silently dropping the flex-column stacking this panel's
+            children (ControlPanel/VehicleInspector/QPSOExplainability/
+            ArchitectureSnapshot) are laid out to expect. `lg:flex` keeps
+            it a flex container at every width the panel is visible at. */}
         <div className={`space-y-4 flex flex-col ${
-          activeMobileTab === 'controls' ? 'block' : 'hidden lg:block'
+          activeMobileTab === 'controls' ? 'flex' : 'hidden lg:flex'
         }`}>
           <ControlPanel
             scenario={scenario}
