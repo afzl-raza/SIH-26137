@@ -33,8 +33,9 @@ def test_capacity_violation_penalty():
 
     assert result.constraint_violations == 1
     assert result.is_feasible is False
-    # raw_cost = 1*10 + 1*5 + 1*0 = 15; penalty = 100 * 3^2 = 900
-    assert result.total_cost == pytest.approx(915.0)
+    # raw_cost = 1*10 + 1*5 + 1*0 = 15
+    # penalty = 100 * (capacity_exceeded / vehicle.capacity)^2 = 100 * (3/10)^2 = 9
+    assert result.total_cost == pytest.approx(24.0)
 
 
 def test_time_violation_penalty():
@@ -50,8 +51,47 @@ def test_time_violation_penalty():
 
     assert result.constraint_violations == 1
     assert result.is_feasible is False
-    # raw_cost = 1*6 + 1*4 + 1*0 = 10; penalty = 50 * 2^2 = 200
-    assert result.total_cost == pytest.approx(210.0)
+    # raw_cost = 1*6 + 1*4 + 1*0 = 10
+    # penalty = 50 * (time_exceeded / vehicle.max_route_time)^2 = 50 * (2/100)^2 = 0.02
+    assert result.total_cost == pytest.approx(10.02)
+
+
+def test_capacity_penalty_normalized_by_vehicle_capacity():
+    """A fixed absolute overage must cost less penalty on a bigger vehicle -
+    guards against the regression where an unnormalized (violation ** 2)
+    let a handful of trivially-over-capacity vehicles at large problem
+    scales (e.g. 5% over) inflate total_cost 10-100x, because capacity
+    overages (single digits to tens of units) and time overages (tens to
+    hundreds of minutes) were squared on completely different absolute
+    scales."""
+    weights = ObjectiveWeights(alpha=0.0, beta=0.0, gamma=0.0, penalty_weight=100.0)
+
+    def scenario_with_capacity(capacity):
+        return ProblemScenario(
+            nodes=[Node(id=0, name="Depot", lat=0.0, lng=0.0, is_depot=True),
+                   Node(id=1, name="N1", lat=0.0, lng=0.0)],
+            edges=[],
+            vehicles=[Vehicle(id=1, capacity=capacity, start_node=0, end_node=0, max_route_time=100.0)],
+            jobs=[Job(id=1, node_id=1, demand=1.0, service_time=0.0)],
+            depot_node_id=0,
+            seed=1
+        )
+
+    route = VehicleRoute(
+        vehicle_id=1, job_ids=[1], node_path=[0, 1, 0],
+        route_distance=0.0, route_travel_time=0.0, total_demand=0.0,
+        capacity_exceeded=5.0, time_exceeded=0.0
+    )
+
+    small_vehicle_cost = evaluate_solution([route], scenario_with_capacity(10.0), weights).total_cost
+    large_vehicle_cost = evaluate_solution([route], scenario_with_capacity(100.0), weights).total_cost
+
+    # penalty = 100 * (5/10)^2 = 25 vs 100 * (5/100)^2 = 0.25
+    # (total_cost is rounded to 2dp by evaluate_solution, so capacity=100
+    # rather than 1000 keeps the smaller expected value above that floor)
+    assert small_vehicle_cost == pytest.approx(25.0)
+    assert large_vehicle_cost == pytest.approx(0.25)
+    assert small_vehicle_cost > large_vehicle_cost
 
 
 def test_per_vehicle_congestion_sums_to_total():

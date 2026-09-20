@@ -39,17 +39,34 @@ def evaluate_solution(
         r.congestion_delay = round(route_congestion_delay, 2)
         total_congestion_delay += route_congestion_delay
 
-    # Constraint violations & quadratic penalties
+    # Constraint violations & quadratic penalties.
+    #
+    # Violations are normalized to a fraction of their own limit
+    # (capacity_exceeded / vehicle.capacity, time_exceeded / vehicle.max_route_time)
+    # before squaring, so a given percentage overage costs the same penalty
+    # regardless of whether it's measured in demand units or minutes. Squaring
+    # the raw values directly (the original approach) let time violations -
+    # typically tens to hundreds of minutes - dwarf capacity violations -
+    # typically single digits to tens of units - by several orders of
+    # magnitude for a comparable "how infeasible is this" severity, which at
+    # larger problem sizes let a handful of trivially-over-capacity vehicles
+    # (e.g. 5% over) inflate total_cost by 10-100x and swamp the actual
+    # routing cost the objective is supposed to be measuring.
+    vehicles_by_id = {v.id: v for v in scenario.vehicles}
     constraint_violations = 0
     penalty = 0.0
 
     for r in routes:
+        vehicle = vehicles_by_id.get(r.vehicle_id)
+        capacity = vehicle.capacity if vehicle and vehicle.capacity > 0 else 1.0
+        max_route_time = vehicle.max_route_time if vehicle and vehicle.max_route_time > 0 else 1.0
+
         if r.capacity_exceeded > 0:
             constraint_violations += 1
-            penalty += weights.penalty_weight * (r.capacity_exceeded ** 2)
+            penalty += weights.penalty_weight * (r.capacity_exceeded / capacity) ** 2
         if r.time_exceeded > 0:
             constraint_violations += 1
-            penalty += weights.penalty_weight * (r.time_exceeded ** 2)
+            penalty += weights.penalty_weight * (r.time_exceeded / max_route_time) ** 2
 
     raw_cost = (
         weights.alpha * total_travel_time +
