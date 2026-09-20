@@ -138,6 +138,27 @@ class RouteMatrixCache:
 
         return matrix
 
+    def peek(
+        self,
+        scenario: ProblemScenario,
+        terminals: Optional[List[int]] = None,
+    ) -> bool:
+        """Checks if a scenario's matrix is present in cache without modifying LRU state or stats."""
+        if terminals is None:
+            terminals = terminal_nodes(scenario)
+        key = route_matrix_key(scenario, terminals)
+        with self._lock:
+            return key in self._entries
+
+    def set_max_entries(self, max_entries: int) -> None:
+        """Resizes the cache capacity and evicts LRU items if needed."""
+        if max_entries < 1:
+            raise ValueError("max_entries must be at least 1")
+        with self._lock:
+            self._max_entries = max_entries
+            while len(self._entries) > self._max_entries:
+                self._entries.popitem(last=False)
+
     def invalidate(self, scenario: ProblemScenario, terminals: Optional[List[int]] = None) -> None:
         """Drops the entry for one specific routing state, if present.
 
@@ -158,13 +179,17 @@ class RouteMatrixCache:
             self.misses = 0
             self.builds = 0
 
-    def stats(self) -> Dict[str, int]:
+    def stats(self) -> Dict[str, object]:
         with self._lock:
+            total_reqs = self.hits + self.misses
+            hit_ratio = round(self.hits / total_reqs, 4) if total_reqs > 0 else 0.0
             return {
                 "hits": self.hits,
                 "misses": self.misses,
                 "builds": self.builds,
                 "entries": len(self._entries),
+                "max_entries": self._max_entries,
+                "hit_ratio": hit_ratio,
             }
 
 

@@ -55,7 +55,8 @@ def test_same_scenario_same_terminals_is_a_hit(cache):
     second = cache.get(s)
 
     assert second is first, "a repeat lookup must return the very same matrix"
-    assert cache.stats() == {"hits": 1, "misses": 1, "builds": 1, "entries": 1}
+    stats = cache.stats()
+    assert (stats["hits"], stats["misses"], stats["builds"], stats["entries"]) == (1, 1, 1, 1)
 
 
 def test_two_structurally_identical_scenarios_share_a_cache_entry(cache):
