@@ -163,6 +163,34 @@ class ProblemScenario(BaseModel):
     conditions: Optional[ConditionSummary] = None
 
 
+def clone_scenario(scenario: ProblemScenario) -> ProblemScenario:
+    """Independent copy of a scenario: safe to mutate without affecting the
+    original, same as `scenario.model_copy(deep=True)`, but far cheaper on
+    real OpenStreetMap-scale scenarios.
+
+    `model_copy(deep=True)` recursively deep-copies every nested list,
+    including each Edge's `geometry` point list - measured to dominate
+    request time (up to several seconds) once scenarios carry real road
+    shapes instead of the synthetic generator's straight lines.
+
+    This instead makes a new top-level list of shallow-copied Node/Edge/
+    Vehicle/Job instances. That's sufficient independence because every
+    mutation in this codebase (`realdata.conditions.recompute_edge_cost` and
+    friends) only ever reassigns scalar fields on an edge/node - never
+    mutates a nested container in place. `Edge.geometry` is the only nested
+    mutable field on any of these models, and it is read-only after
+    construction everywhere in this codebase, so sharing the same geometry
+    list between the original and the clone is safe and avoids copying it.
+    """
+    return scenario.model_copy(update={
+        "nodes": [n.model_copy() for n in scenario.nodes],
+        "edges": [e.model_copy() for e in scenario.edges],
+        "vehicles": [v.model_copy() for v in scenario.vehicles],
+        "jobs": [j.model_copy() for j in scenario.jobs],
+        "conditions": scenario.conditions.model_copy(deep=True) if scenario.conditions is not None else None,
+    })
+
+
 class ObjectiveWeights(BaseModel):
     alpha: float = 1.0  # weight for travel time
     beta: float = 0.5   # weight for distance

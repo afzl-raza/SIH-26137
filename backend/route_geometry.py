@@ -118,6 +118,12 @@ def node_path_polyline(
 
     Returns the stitched `polyline`, the per-hop `segments` (kept so the map can
     highlight one road without a second request), and `geometry_source`.
+
+    `edges`/`nodes` let a caller resolving several routes against the same
+    scenario (see `route_geometries`) build these indices once and reuse them,
+    instead of paying an O(scenario size) rebuild per route. Left optional, and
+    built here when omitted, so single-path callers (tests, `edge_polylines`)
+    are unaffected.
     """
     if edges is None:
         edges = _edge_index(scenario)

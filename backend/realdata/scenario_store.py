@@ -24,8 +24,9 @@ suffix. No second hashing scheme is introduced; the hash itself is reused as-is.
 
 Mutation
 --------
-`create()` and `update()` each store a deep copy, so a caller can never mutate
-stored state by holding on to the object it passed in. `get()` returns the
+`create()` and `update()` each store an independent copy (`models.clone_scenario`),
+so a caller can never mutate stored state by holding on to the object it
+passed in. `get()` returns the
 stored object directly and callers must treat it as read-only - to change a
 scenario, copy it, mutate the copy, and hand it back via `update()`.
 """
@@ -37,7 +38,7 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-from models import ProblemScenario
+from models import ProblemScenario, clone_scenario
 
 # Six hours comfortably outlives any demo session while keeping a long-running
 # server from accumulating scenarios indefinitely.
@@ -142,7 +143,7 @@ class ScenarioStore:
                 scenario_id = self._new_id(scenario)
             record = ScenarioRecord(
                 scenario_id=scenario_id,
-                scenario=scenario.model_copy(deep=True),
+                scenario=clone_scenario(scenario),
                 data_source=data_source,
                 created_at=now,
                 updated_at=now,
@@ -177,7 +178,7 @@ class ScenarioStore:
             record = self._records.get(scenario_id)
             if record is None:
                 raise ScenarioNotFoundError(scenario_id)
-            record.scenario = scenario.model_copy(deep=True)
+            record.scenario = clone_scenario(scenario)
             record.updated_at = now
             return record
 

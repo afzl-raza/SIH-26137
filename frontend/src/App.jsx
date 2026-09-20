@@ -171,7 +171,14 @@ export default function App() {
       const res = await apiFetch('/api/problem/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        // A cold OpenStreetMap fetch (uncached place/radius) legitimately
+        // takes 20-90s+: Nominatim geocoding plus an Overpass query, with
+        // retries across mirrors on the backend. The default apiFetch
+        // timeout (15s) aborts this before the backend can finish, so this
+        // call needs its own longer allowance. Synthetic generation stays
+        // fast regardless, so the longer timeout costs it nothing.
+        timeoutMs: 120000
       });
       if (!res.ok) {
         // The backend refuses rather than substituting synthetic roads when

@@ -52,7 +52,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from models import ConditionSummary, Edge, ProblemScenario, WeatherState
+from models import ConditionSummary, Edge, ProblemScenario, WeatherState, clone_scenario
 
 from .traffic_model import (
     DEFAULT_TRAFFIC_PROVIDER,
@@ -364,7 +364,7 @@ def apply_conditions(
     stays 1.0, and `conditions.fallback_used` records it.
     """
     request = request or ConditionRequest()
-    conditioned = scenario.model_copy(deep=True)
+    conditioned = clone_scenario(scenario)
 
     # --- traffic -------------------------------------------------------
     if traffic_provider is None:
@@ -413,7 +413,7 @@ def apply_incidents(
     weather untouched - which is exactly why the three axes are stored
     separately rather than collapsed into one number.
     """
-    conditioned = scenario.model_copy(deep=True)
+    conditioned = clone_scenario(scenario)
 
     lookup: Dict[Tuple[int, int], float] = {}
     for (u, v), factor in updates.items():
@@ -444,7 +444,7 @@ def clear_conditions(scenario: ProblemScenario) -> ProblemScenario:
 
     Used by tests and by an explicit reset; nothing calls it implicitly.
     """
-    conditioned = scenario.model_copy(deep=True)
+    conditioned = clone_scenario(scenario)
     for edge in conditioned.edges:
         edge.traffic_multiplier = 1.0
         edge.weather_multiplier = 1.0
