@@ -1,8 +1,12 @@
-// Base URL for the backend API. Empty string keeps requests relative
-// (handled by the Vite dev proxy locally). Set VITE_API_BASE_URL when the
-// frontend and backend are deployed to different hosts (e.g. Vercel + Render).
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-export function apiFetch(path, options) {
-  return fetch(`${API_BASE}${path}`, options);
+export function apiFetch(path, options = {}) {
+  const { timeoutMs = 15000, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+
+  return fetch(`${API_BASE}${path}`, {
+    ...fetchOptions,
+    signal: fetchOptions.signal || controller.signal
+  }).finally(() => clearTimeout(id));
 }

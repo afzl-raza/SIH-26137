@@ -76,6 +76,7 @@ export default function App() {
   const [statusState, setStatusState] = useState('INITIAL');
   const [networkState, setNetworkState] = useState('NORMAL');
   const [timeline, setTimeline] = useState(null);
+  const [activeMobileTab, setActiveMobileTab] = useState('map'); // 'map' | 'controls' for mobile viewports
 
   const [config, setConfig] = useState({
     algorithm: 'qpso',
@@ -490,30 +491,30 @@ export default function App() {
     <div className="min-h-screen bg-[#0D0C0B] text-gray-100 flex flex-col font-sans selection:bg-[#C6602E] selection:text-white">
 
       {/* ═══ HEADER ═══ */}
-      <header className="clean-panel border-b border-[#332E29] px-6 py-2.5 flex items-center justify-between shadow-xl sticky top-0 z-50">
+      <header className="clean-panel border-b border-[#332E29] px-3 sm:px-6 py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xl sticky top-0 z-50">
         <div className="flex items-center space-x-3">
-          <div className="bg-[#1E1B18] border border-[#3A342E] p-2 rounded-lg shadow-md">
-            <Logo size={22} />
+          <div className="bg-[#1E1B18] border border-[#3A342E] p-1.5 sm:p-2 rounded-lg shadow-md">
+            <Logo size={20} />
           </div>
           <div>
-            <div className="flex items-center space-x-2.5">
-              <span className="font-display font-bold text-base tracking-wide text-gray-100">
+            <div className="flex items-center space-x-2">
+              <span className="font-display font-bold text-sm sm:text-base tracking-wide text-gray-100">
                 Q-DFRO <span className="font-medium text-gray-400">Engine</span>
               </span>
-              <span className="text-[10px] bg-[#3A2318] text-[#E8A93A] border border-[#5A3A22] px-2 py-0.5 rounded font-mono font-semibold">
+              <span className="text-[9px] sm:text-[10px] bg-[#3A2318] text-[#E8A93A] border border-[#5A3A22] px-1.5 py-0.5 rounded font-mono font-semibold">
                 QPSO ENGINE
               </span>
             </div>
-            <p className="text-[11px] text-gray-400 tracking-tight font-mono">
+            <p className="text-[10px] sm:text-[11px] text-gray-400 tracking-tight font-mono">
               Quantum-Inspired Fleet Optimization Engine
             </p>
           </div>
         </div>
 
         {/* Network State + Engine Status */}
-        <div className="flex items-center space-x-6">
+        <div className="flex items-center space-x-3 sm:space-x-6 w-full sm:w-auto justify-between sm:justify-end">
           <div className="flex items-center space-x-2 font-mono text-xs">
-            <span className={`px-2.5 py-1 rounded text-xs font-bold uppercase flex items-center gap-1.5 ${
+            <span className={`px-2 sm:px-2.5 py-1 rounded text-[10px] sm:text-xs font-bold uppercase flex items-center gap-1.5 ${
               networkState === 'DISRUPTED' || statusState === 'RE-OPTIMIZING'
                 ? 'bg-[#3A1C18] text-[#E8918A] border border-[#5A2C26] animate-pulse'
                 : networkState === 'RE-OPTIMIZED'
@@ -528,11 +529,11 @@ export default function App() {
             </span>
           </div>
 
-          <div className="flex items-center space-x-2 border-l border-[#332E29] pl-6 text-xs font-mono">
-            <Activity className="w-4 h-4 text-[#6B9A57]" />
+          <div className="flex items-center space-x-2 border-l border-[#332E29] pl-3 sm:pl-6 text-xs font-mono">
+            <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#6B9A57]" />
             <div>
-              <span className="text-gray-500 block text-[10px] uppercase">Engine</span>
-              <span className="text-[#6B9A57] font-semibold text-[11px]">Solver Ready</span>
+              <span className="text-gray-500 block text-[9px] sm:text-[10px] uppercase">Engine</span>
+              <span className="text-[#6B9A57] font-semibold text-[10px] sm:text-[11px]">Solver Ready</span>
             </div>
           </div>
         </div>
@@ -541,28 +542,44 @@ export default function App() {
       {/* ═══ WORKFLOW INDICATOR ═══ */}
       <WorkflowIndicator currentStage={demoStage} narrativeText={narrativeText} />
 
+      {/* ═══ MOBILE VIEWPORT SWITCHER (VISIBLE ON SMALL SCREENS ONLY) ═══ */}
+      <div className="lg:hidden flex border-b border-[#332E29] bg-[#171513] p-1.5 gap-2 px-3 sm:px-6 shadow-md sticky top-[57px] z-40">
+        <button
+          onClick={() => setActiveMobileTab('map')}
+          className={`flex-1 py-2 text-xs font-mono font-bold rounded transition-colors flex items-center justify-center gap-1.5 ${
+            activeMobileTab === 'map'
+              ? 'bg-[#C6602E] text-white shadow-sm'
+              : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          <span>🗺️</span> Network Map
+        </button>
+        <button
+          onClick={() => setActiveMobileTab('controls')}
+          className={`flex-1 py-2 text-xs font-mono font-bold rounded transition-colors flex items-center justify-center gap-1.5 ${
+            activeMobileTab === 'controls'
+              ? 'bg-[#C6602E] text-white shadow-sm'
+              : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          <span>⚡</span> Controls & Operations
+        </button>
+      </div>
+
       {/* ═══ ERROR ALERT ═══ */}
       {error && (
-        <div className="bg-[#3A1C18]/90 border border-[#5A2C26] text-[#E8918A] px-6 py-2 text-xs font-mono flex items-center justify-between">
+        <div className="bg-[#3A1C18]/90 border border-[#5A2C26] text-[#E8918A] px-4 sm:px-6 py-2 text-xs font-mono flex items-center justify-between">
           <span>ERROR: {error}</span>
           <button onClick={() => setError(null)} className="text-[#E8918A] hover:text-white font-bold ml-4">✕</button>
         </div>
       )}
 
       {/* ═══ MAIN WORKSPACE (75% Map / 25% Operations) ═══ */}
-      {/* items-stretch (grid's own default, set explicitly for clarity):
-          the map's wrapper below uses h-full instead of a fixed h-[620px]
-          so it stretches to match the operations column's actual height
-          instead of leaving that column's leftover height as dead space
-          beside a fixed-size map - this showed up as an 800px+ empty gap
-          once the sidebar grew tall (vehicle selected + benchmark run).
-          min-h-[620px] is a floor for the stacked single-column layout on
-          narrow viewports, where each grid item sizes its own row and a
-          plain h-full would otherwise resolve ambiguously against an
-          auto-sized row. */}
-      <main className="flex-1 p-4 grid grid-cols-1 lg:grid-cols-4 gap-4 max-w-[1920px] w-full mx-auto items-stretch">
+      <main className="flex-1 p-2 sm:p-4 grid grid-cols-1 lg:grid-cols-4 gap-4 max-w-[1920px] w-full mx-auto items-stretch">
         {/* HERO MAP */}
-        <div className="lg:col-span-3 min-h-[620px] h-full w-full">
+        <div className={`lg:col-span-3 min-h-[350px] sm:min-h-[480px] lg:min-h-[620px] h-full w-full ${
+          activeMobileTab === 'map' ? 'block' : 'hidden lg:block'
+        }`}>
           <NetworkMap
             scenario={scenario}
             scenarioId={scenarioId}
@@ -581,7 +598,9 @@ export default function App() {
         </div>
 
         {/* OPERATIONS PANEL */}
-        <div className="space-y-4 flex flex-col">
+        <div className={`space-y-4 flex flex-col ${
+          activeMobileTab === 'controls' ? 'block' : 'hidden lg:block'
+        }`}>
           <ControlPanel
             scenario={scenario}
             scenarioId={scenarioId}
