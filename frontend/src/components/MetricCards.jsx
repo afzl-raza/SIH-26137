@@ -55,7 +55,7 @@ export default function MetricCards({ result, previousResult, weights }) {
 
   if (!result) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
         {[1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="clean-card p-4 flex flex-col items-center justify-center text-gray-500">
             <span className="text-2xl font-mono">--</span>
@@ -80,7 +80,7 @@ export default function MetricCards({ result, previousResult, weights }) {
     <div className="flex flex-col gap-6">
       {/* Solver Output — one dense row, cost given slightly more weight
           via a left accent border rather than a separate oversized block */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
         {/* Cost (hero, but sized like its siblings) */}
         {/* borderLeft set inline, not via a Tailwind border-l-* utility -
             .clean-card's own `border` shorthand rule is equal-specificity
