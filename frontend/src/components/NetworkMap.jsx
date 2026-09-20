@@ -123,6 +123,7 @@ export default function NetworkMap({
 }) {
   const [vehicleFilter, setVehicleFilter] = useState('all');
   const [mapView, setMapView] = useState('gis'); // 'gis' | 'graph' - same real nodes/edges, just a render toggle
+  const [isLegendOpen, setIsLegendOpen] = useState(false);
   const routeTransition = useRouteTransition(currentResult);
 
   // ALL hooks must be called unconditionally before any early return
@@ -379,7 +380,7 @@ export default function NetworkMap({
 
       {/* Top Filter Bar for Vehicles */}
       {vehicles.length > 0 && (
-        <div className="absolute top-3 left-3 z-[1000] clean-panel px-3 py-1.5 rounded-lg text-xs flex items-center space-x-2 border border-[#332E29] shadow-xl pointer-events-auto font-mono max-w-[calc(100%-1.5rem)] overflow-x-auto">
+        <div className="absolute top-3 left-3 z-[1000] clean-panel px-3 py-1.5 rounded-lg text-xs flex items-center space-x-2 border border-[#332E29] shadow-xl pointer-events-auto font-mono max-w-[calc(100%-145px)] sm:max-w-md overflow-x-auto">
           <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider flex-shrink-0">ROUTES:</span>
           <button
             onClick={() => setVehicleFilter('all')}
@@ -633,9 +634,31 @@ export default function NetworkMap({
       </MapContainer>
       </div>
 
+      {/* Mobile Floating Legend Toggle Button */}
+      <button
+        onClick={() => setIsLegendOpen(!isLegendOpen)}
+        className="sm:hidden absolute bottom-3 left-3 z-[1000] clean-panel px-2.5 py-1.5 rounded-lg text-[11px] font-mono font-semibold text-gray-200 border border-[#332E29] shadow-xl pointer-events-auto flex items-center gap-1.5 bg-[#1E1B18]/90 hover:bg-[#26221D] active:scale-95 transition-all"
+        aria-label="Toggle Map Legend"
+      >
+        <span className="text-[#C6602E]">ℹ</span>
+        <span>Legend</span>
+        <span className="text-[9px] text-gray-400 font-normal">{isLegendOpen ? '▼' : '▲'}</span>
+      </button>
+
       {/* Map Legend Overlay */}
-      <div className="absolute bottom-3 left-3 z-[1000] clean-panel px-3 py-2 rounded-lg text-xs space-y-1.5 border border-[#332E29] shadow-xl pointer-events-auto">
-        <div className="font-semibold text-gray-400 text-[10px] uppercase tracking-wider mb-1">MAP LEGEND</div>
+      <div className={`absolute bottom-3 left-3 z-[1000] clean-panel px-3 py-2 rounded-lg text-xs space-y-1.5 border border-[#332E29] shadow-xl pointer-events-auto max-h-[45vh] max-w-[calc(100vw-2rem)] sm:max-w-xs overflow-y-auto ${
+        isLegendOpen ? 'block' : 'hidden sm:block'
+      }`}>
+        <div className="flex items-center justify-between font-semibold text-gray-400 text-[10px] uppercase tracking-wider mb-1">
+          <span>MAP LEGEND</span>
+          <button
+            onClick={() => setIsLegendOpen(false)}
+            className="sm:hidden text-gray-400 hover:text-white px-1 font-bold text-xs"
+            aria-label="Close Legend"
+          >
+            ✕
+          </button>
+        </div>
         {/* What the lines on this map actually are. Stated so an OSM run and
             a synthetic run are never mistaken for each other. */}
         <div className="text-[10px] font-mono text-gray-400 pb-1 border-b border-[#332E29]/60">
