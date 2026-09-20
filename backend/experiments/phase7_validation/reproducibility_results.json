@@ -1,0 +1,96 @@
+{
+  "generated_at": "2026-09-20T06:19:08Z",
+  "scenario": {
+    "num_nodes": 30,
+    "num_jobs": 15,
+    "num_vehicles": 3,
+    "seed": 42
+  },
+  "note": "Scenario is regenerated from the same seed for each run rather than reused in-memory, so this also validates that generate_synthetic_scenario itself is deterministic, not just the optimizer given a fixed scenario object.",
+  "results": [
+    {
+      "algorithm": "greedy",
+      "seed": 42,
+      "run_a": {
+        "total_cost": 222.74,
+        "total_travel_time": 183.42,
+        "total_distance": 78.63,
+        "runtime_ms": 2.46
+      },
+      "run_b": {
+        "total_cost": 222.74,
+        "total_travel_time": 183.42,
+        "total_distance": 78.63,
+        "runtime_ms": 0.53
+      },
+      "cost_identical": true,
+      "travel_time_identical": true,
+      "distance_identical": true,
+      "route_assignments_identical": true,
+      "convergence_history_identical": true
+    },
+    {
+      "algorithm": "pso",
+      "seed": 42,
+      "run_a": {
+        "total_cost": 192.98,
+        "total_travel_time": 162.84,
+        "total_distance": 60.28,
+        "runtime_ms": 385.62
+      },
+      "run_b": {
+        "total_cost": 192.98,
+        "total_travel_time": 162.84,
+        "total_distance": 60.28,
+        "runtime_ms": 367.12
+      },
+      "cost_identical": true,
+      "travel_time_identical": true,
+      "distance_identical": true,
+      "route_assignments_identical": true,
+      "convergence_history_identical": true
+    },
+    {
+      "algorithm": "ga",
+      "seed": 42,
+      "run_a": {
+        "total_cost": 198.36,
+        "total_travel_time": 165.38,
+        "total_distance": 65.96,
+        "runtime_ms": 499.89
+      },
+      "run_b": {
+        "total_cost": 198.36,
+        "total_travel_time": 165.38,
+        "total_distance": 65.96,
+        "runtime_ms": 470.55
+      },
+      "cost_identical": true,
+      "travel_time_identical": true,
+      "distance_identical": true,
+      "route_assignments_identical": true,
+      "convergence_history_identical": true
+    },
+    {
+      "algorithm": "qpso",
+      "seed": 42,
+      "run_a": {
+        "total_cost": 196.56,
+        "total_travel_time": 165.15,
+        "total_distance": 62.81,
+        "runtime_ms": 424.24
+      },
+      "run_b": {
+        "total_cost": 196.56,
+        "total_travel_time": 165.15,
+        "total_distance": 62.81,
+        "runtime_ms": 416.53
+      },
+      "cost_identical": true,
+      "travel_time_identical": true,
+      "distance_identical": true,
+      "route_assignments_identical": true,
+      "convergence_history_identical": true
+    }
+  ]
+}

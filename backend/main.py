@@ -18,6 +18,26 @@ from models import (
     ObjectiveWeights
 )
 from problem_generator import generate_synthetic_scenario
+from realdata.scenario_store import SCENARIO_STORE, ScenarioNotFoundError
+from realdata.geocoding import GeocodingError, resolve_location
+from realdata.osm_loader import OsmLoaderError, load_osm_graph
+from realdata.osm_scenario import osm_graph_to_scenario
+from realdata.conditions import (
+    ConditionRequest,
+    apply_conditions,
+    apply_incidents,
+    scenario_center,
+    weather_multiplier_for,
+)
+from realdata.traffic_model import (
+    MODE_NORMAL,
+    TRAFFIC_MODES,
+    TRAFFIC_SOURCE_SIMULATED,
+    TrafficProviderError,
+)
+from realdata.weather import DEFAULT_WEATHER_PROVIDER
+from route_cache import ROUTE_MATRIX_CACHE
+from route_geometry import route_geometries, scenario_geometry_source
 from optimizers.greedy import GreedyOptimizer
 from optimizers.pso import PSOOptimizer
 from optimizers.qpso import QPSOOptimizer
@@ -50,26 +70,76 @@ app.add_middleware(
 
 
 class GenerateRequest(BaseModel):
-    num_nodes: int = 30
+    # "synthetic" keeps the original generated network; "osm" builds the
+    # scenario from real OpenStreetMap road data for the requested location.
+    source: str = "synthetic"
+
     num_jobs: int = 15
     num_vehicles: int = 3
     seed: int = 42
+    num_nodes: int = 30  # synthetic only - OSM node count comes from the map
+
+    # Location inputs, any one of which resolves to a bounded area. No city is
+    # special: a place name goes through the geocoder, coordinates and boxes
+    # are used directly.
+    place: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    bbox: Optional[List[float]] = None  # [min_lat, min_lon, max_lat, max_lon]
+    radius_m: Optional[float] = None
 
 
-class OptimizePayload(BaseModel):
-    scenario: ProblemScenario
+# Scenario-carrying payloads accept either a `scenario_id` (the backend owns
+# the scenario, which is what keeps request bodies small once scenarios carry
+# OpenStreetMap geometry) or a full inline `scenario` (the original format,
+# kept working during the migration). When both are present, scenario_id wins.
+class ScenarioRefMixin(BaseModel):
+    scenario: Optional[ProblemScenario] = None
+    scenario_id: Optional[str] = None
+
+
+class OptimizePayload(ScenarioRefMixin):
     config: OptimizationConfig
 
 
-class TrafficPayload(BaseModel):
-    scenario: ProblemScenario
+class TrafficPayload(ScenarioRefMixin):
     updates: List[TrafficUpdate]
 
 
-class EvaluatePayload(BaseModel):
-    scenario: ProblemScenario
+class EvaluatePayload(ScenarioRefMixin):
     routes: List[VehicleRoute]
     weights: ObjectiveWeights
+
+
+class RouteGeometryPayload(ScenarioRefMixin):
+    """Asks for the road shape of an already-computed set of routes."""
+    routes: List[VehicleRoute]
+
+
+def _resolve_scenario(payload: ScenarioRefMixin):
+    """Returns (scenario, scenario_id). `scenario_id` is None when the caller
+    used the legacy inline-scenario format, in which case the backend holds no
+    stored copy to write back to."""
+    if payload.scenario_id:
+        try:
+            record = SCENARIO_STORE.get(payload.scenario_id)
+        except ScenarioNotFoundError:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Unknown scenario_id '{payload.scenario_id}'. It may have "
+                    f"expired - generate the scenario again."
+                ),
+            )
+        return record.scenario, record.scenario_id
+
+    if payload.scenario is not None:
+        return payload.scenario, None
+
+    raise HTTPException(
+        status_code=422,
+        detail="Either 'scenario_id' or 'scenario' must be provided.",
+    )
 
 
 # Read-only surface for backend/experiments/runner.py output. No persistence
@@ -89,11 +159,29 @@ KNOWN_EXPERIMENTS = {
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "app": "Q-DFRO Backend"}
+    # Route-matrix cache counters are reported here as plain diagnostics, so
+    # the "one build, three hits per benchmark" behaviour can be observed
+    # rather than taken on trust.
+    return {
+        "status": "ok",
+        "app": "Q-DFRO Backend",
+        "stored_scenarios": len(SCENARIO_STORE),
+        "route_matrix_cache": ROUTE_MATRIX_CACHE.stats(),
+    }
 
 
-@app.post("/api/problem/generate", response_model=ProblemScenario)
+@app.post("/api/problem/generate")
 def generate_problem(req: GenerateRequest):
+    """Generates a scenario, stores it server-side, and returns it together
+    with the `scenario_id` later calls should refer to.
+
+    The full scenario is still included in the response because the frontend
+    needs the nodes and edges to draw the map. What moves server-side is the
+    scenario on every *subsequent* request body.
+    """
+    if req.source.strip().lower() in ("osm", "openstreetmap"):
+        return _generate_from_openstreetmap(req)
+
     try:
         scenario = generate_synthetic_scenario(
             num_nodes=req.num_nodes,
@@ -101,13 +189,110 @@ def generate_problem(req: GenerateRequest):
             num_vehicles=req.num_vehicles,
             seed=req.seed
         )
-        return scenario
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+    record = SCENARIO_STORE.create(scenario, data_source="synthetic")
+    return {
+        **record.metadata(),
+        **_condition_envelope(record.scenario),
+        # Stated up front so the map knows whether these roads have real
+        # shapes or are the generator's straight lines, without inspecting
+        # every edge itself.
+        "geometry_source": scenario_geometry_source(record.scenario),
+        "scenario": record.scenario,
+    }
+
+
+# OpenStreetMap supplies the road network only. It carries no traffic
+# information, so congestion is a simulation the operator drives. These labels
+# exist so the UI can never imply a live traffic feed.
+#
+# Weather is different: it IS fetched from a real provider (Open-Meteo), but
+# only once conditions are applied with weather enabled, so a freshly
+# generated scenario reports no weather source yet.
+TRAFFIC_SOURCE_LABEL = TRAFFIC_SOURCE_SIMULATED
+WEATHER_SOURCE_LABEL = None
+
+
+def _condition_envelope(scenario: ProblemScenario) -> dict:
+    """The condition metadata every scenario-carrying response reports.
+
+    Always answers "where did these numbers come from": which traffic source,
+    which weather source, whether a fallback was used. A scenario that has had
+    no conditions applied reports free-flow defaults rather than nothing, so a
+    client never has to distinguish missing from normal.
+    """
+    conditions = scenario.conditions
+    if conditions is None:
+        return {
+            "traffic_source": TRAFFIC_SOURCE_LABEL,
+            "traffic_mode": MODE_NORMAL,
+            "weather_source": WEATHER_SOURCE_LABEL,
+            "weather_condition": None,
+            "fallback_used": False,
+            "conditions": None,
+        }
+    return {
+        "traffic_source": conditions.traffic_source,
+        "traffic_mode": conditions.traffic_mode,
+        "weather_source": conditions.weather_source,
+        "weather_condition": conditions.weather_condition,
+        "fallback_used": conditions.fallback_used,
+        "conditions": conditions,
+    }
+
+
+def _generate_from_openstreetmap(req: GenerateRequest):
+    """location -> bbox -> Overpass -> real road graph -> ProblemScenario."""
+    try:
+        location = resolve_location(
+            place=req.place,
+            latitude=req.latitude,
+            longitude=req.longitude,
+            bbox=tuple(req.bbox) if req.bbox else None,
+            radius_m=req.radius_m,
+        )
+    except GeocodingError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        graph = load_osm_graph(location)
+    except OsmLoaderError as e:
+        # Upstream is unavailable and nothing is cached. This deliberately
+        # fails rather than quietly returning a synthetic network, which would
+        # misrepresent generated roads as real map data.
+        raise HTTPException(status_code=502, detail=str(e))
+
+    try:
+        scenario = osm_graph_to_scenario(
+            graph,
+            num_jobs=req.num_jobs,
+            num_vehicles=req.num_vehicles,
+            seed=req.seed,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    record = SCENARIO_STORE.create(
+        scenario, data_source="openstreetmap", location=location.to_dict()
+    )
+    body = {**record.metadata(), **location.to_dict()}
+    body.update(_condition_envelope(record.scenario))
+    body.update({
+        "geometry_source": scenario_geometry_source(record.scenario),
+        "scenario": record.scenario,
+        "provenance": graph.provenance,
+        "retrieved_at": graph.retrieved_at,
+        "osm": graph.stats,
+        "osm_endpoint": graph.endpoint,
+    })
+    return body
 
 
 @app.post("/api/optimize", response_model=OptimizationResult)
 def optimize_route(payload: OptimizePayload):
+    scenario, _ = _resolve_scenario(payload)
     try:
         algo = payload.config.algorithm.lower()
         if "qpso" in algo:
@@ -122,36 +307,329 @@ def optimize_route(payload: OptimizePayload):
         else:
             optimizer = QPSOOptimizer()
 
-        result = optimizer.optimize(payload.scenario, payload.config)
+        result = optimizer.optimize(scenario, payload.config)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Optimization error: {str(e)}")
 
 
-@app.post("/api/traffic/update", response_model=ProblemScenario)
+@app.post("/api/traffic/update")
 def update_traffic(payload: TrafficPayload):
+    """Injects a simulated road incident on selected edges and persists it.
+
+    The request field is still called `traffic_factor`, unchanged, so existing
+    clients keep working. What it sets is the edge's *incident* multiplier:
+    the operator is disrupting one specific road, which is a different axis
+    from the network-wide traffic level and from weather. When no traffic
+    level or weather is applied - the default - the resulting effective
+    multiplier is exactly the requested number, so behaviour is identical to
+    before Phase 5. When they are applied, the three compose, which is the
+    point of separating them.
+
+    The incident goes through realdata.conditions like every other condition,
+    so there is no second edge-cost calculation anywhere.
+
+    The stored scenario is never mutated in place: a copy is conditioned and
+    handed back to the store. The route-matrix cache needs no explicit
+    invalidation because its key is derived from the edge costs themselves -
+    a changed edge simply produces a different key, so a stale matrix cannot
+    be served.
+    """
+    stored_scenario, scenario_id = _resolve_scenario(payload)
+
     try:
-        scenario = payload.scenario
-        update_map = {(u.source, u.destination): u.traffic_factor for u in payload.updates}
-        # Also map symmetric reverse directions
-        for u in payload.updates:
-            update_map[(u.destination, u.source)] = u.traffic_factor
-
-        for edge in scenario.edges:
-            pair = (edge.source, edge.destination)
-            if pair in update_map:
-                edge.traffic_factor = round(update_map[pair], 2)
-                edge.current_travel_time = round(edge.base_travel_time * edge.traffic_factor, 2)
-
-        return scenario
+        updates = {
+            (u.source, u.destination): u.traffic_factor for u in payload.updates
+        }
+        scenario, updated_edges = apply_incidents(stored_scenario, updates)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+    if scenario_id is not None:
+        record = SCENARIO_STORE.update(scenario_id, scenario)
+        return {
+            **record.metadata(),
+            **_condition_envelope(record.scenario),
+            "updated_edges": updated_edges,
+            "scenario": record.scenario,
+        }
+
+    # Legacy inline-scenario call: nothing stored, so echo the updated scenario.
+    return {
+        "scenario_id": None,
+        "scenario_hash": scenario.scenario_hash,
+        "data_source": "inline",
+        "node_count": len(scenario.nodes),
+        "edge_count": len(scenario.edges),
+        "job_count": len(scenario.jobs),
+        "vehicle_count": len(scenario.vehicles),
+        **_condition_envelope(scenario),
+        "updated_edges": updated_edges,
+        "scenario": scenario,
+    }
+
+
+class ConditionsPayload(ScenarioRefMixin):
+    """Requests a new environmental condition state for a scenario.
+
+    Incidents are not settable here: they are per-road operator actions with
+    their own endpoint (/api/traffic/update), and they deliberately survive a
+    traffic or weather change rather than being reset by one.
+    """
+    traffic_mode: str = MODE_NORMAL          # normal | moderate | heavy | severe
+    traffic_source: str = TRAFFIC_SOURCE_SIMULATED  # simulated | external
+    weather_enabled: bool = False
+    # Opt in to the BPR volume-delay formulation instead of the flat level
+    # table. Both are documented model assumptions; see realdata.traffic_model.
+    use_bpr: bool = False
+
+
+@app.post("/api/scenario/conditions")
+def set_scenario_conditions(payload: ConditionsPayload):
+    """Applies a traffic level and (optionally) real weather to a scenario.
+
+    This only changes edge costs. It does not re-optimize: the client calls
+    /api/optimize afterwards, exactly as it does after an incident, so the
+    "conditions changed -> routes changed" causality stays visible instead of
+    being hidden inside one endpoint.
+
+    A weather-provider failure is not an error here. The provider returns an
+    explicit fallback observation, no weather multiplier is applied, and the
+    response says `weather_source: "fallback"` with `fallback_used: true`.
+    """
+    stored_scenario, scenario_id = _resolve_scenario(payload)
+
+    try:
+        request = ConditionRequest(
+            traffic_mode=payload.traffic_mode,
+            traffic_source=payload.traffic_source,
+            weather_enabled=payload.weather_enabled,
+            use_bpr=payload.use_bpr,
+        )
+        scenario = apply_conditions(stored_scenario, request)
+    except TrafficProviderError as e:
+        # Unknown mode, or the external provider that deliberately refuses to
+        # fabricate data. Both are client-visible configuration problems.
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if scenario_id is not None:
+        record = SCENARIO_STORE.update(scenario_id, scenario)
+        return {
+            **record.metadata(),
+            **_condition_envelope(record.scenario),
+            "scenario": record.scenario,
+        }
+
+    return {
+        "scenario_id": None,
+        "scenario_hash": scenario.scenario_hash,
+        "data_source": "inline",
+        "node_count": len(scenario.nodes),
+        "edge_count": len(scenario.edges),
+        "job_count": len(scenario.jobs),
+        "vehicle_count": len(scenario.vehicles),
+        **_condition_envelope(scenario),
+        "scenario": scenario,
+    }
+
+
+@app.get("/api/weather")
+def get_weather(
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
+    scenario_id: Optional[str] = None,
+):
+    """Current weather at a coordinate, or at a stored scenario's own location.
+
+    Read-only: it does not touch any scenario's edge costs. Useful for showing
+    conditions before deciding to apply them, and for making the fallback
+    behaviour observable on its own.
+    """
+    if scenario_id:
+        try:
+            record = SCENARIO_STORE.get(scenario_id)
+        except ScenarioNotFoundError:
+            raise HTTPException(
+                status_code=404, detail=f"Unknown scenario_id '{scenario_id}'."
+            )
+        latitude, longitude = scenario_center(record.scenario)
+
+    if latitude is None or longitude is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide either 'scenario_id' or both 'latitude' and 'longitude'.",
+        )
+
+    observation = DEFAULT_WEATHER_PROVIDER.get_weather(latitude, longitude)
+    body = observation.to_dict()
+    body["multiplier"] = weather_multiplier_for(observation)
+    return body
+
+
+@app.post("/api/routes/geometry")
+def get_route_geometry(payload: RouteGeometryPayload):
+    """The road shape of an already-computed set of routes.
+
+    This does not route. It takes the node path the optimizer already produced
+    - which is the full node-by-node Dijkstra path, not just the job order -
+    and looks up the OpenStreetMap geometry of each hop, using the same
+    parallel-edge rule the router used. The result is the actual road the
+    vehicle drives, drawn from OSM's own way geometry.
+
+    It lives here rather than in the frontend so that no route calculation of
+    any kind exists in React, and so the stitching is covered by tests.
+
+    For a synthetic network, whose edges carry no geometry, every hop falls
+    back to the straight line between its two nodes and says so in
+    `geometry_source` - the same picture the map has always drawn, now
+    labelled.
+    """
+    scenario, _ = _resolve_scenario(payload)
+    try:
+        routes = route_geometries(scenario, payload.routes)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Route geometry error: {str(e)}")
+
+    return {
+        "data_source": scenario.data_source,
+        "geometry_source": scenario_geometry_source(scenario),
+        "routes": routes,
+    }
+
+
+@app.get("/api/scenario/{scenario_id}/manifest")
+def get_scenario_manifest(
+    scenario_id: str,
+    algorithm: Optional[str] = None,
+    population_size: Optional[int] = None,
+    max_iterations: Optional[int] = None,
+):
+    """Everything needed to reproduce a run, read back from the server.
+
+    The point is that a judge can read the manifest rather than take the
+    demonstrator's word for what was configured. Every field is either stored
+    state or the caller's own solver settings echoed back - nothing is
+    reconstructed or guessed, and a field the backend genuinely does not know
+    (a synthetic network has no real location; a solver setting the caller did
+    not pass) is reported as null instead of being filled in.
+    """
+    try:
+        record = SCENARIO_STORE.get(scenario_id)
+    except ScenarioNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Unknown scenario_id '{scenario_id}'.")
+
+    scenario = record.scenario
+    conditions = scenario.conditions
+
+    return {
+        "scenario_id": record.scenario_id,
+        # The deterministic fingerprint of the generation parameters: same
+        # hash means the same network can be regenerated.
+        "scenario_hash": record.scenario_hash,
+        "seed": scenario.seed,
+        "data_source": record.data_source,
+        "geometry_source": scenario_geometry_source(scenario),
+        # Null for synthetic networks, which have no real-world location.
+        "location": record.location,
+        "network": {
+            "node_count": len(scenario.nodes),
+            "edge_count": len(scenario.edges),
+            "job_count": len(scenario.jobs),
+            "vehicle_count": len(scenario.vehicles),
+            "depot_node_id": scenario.depot_node_id,
+        },
+        # Echoed from the caller: these are the solver settings the client
+        # used, which the backend does not otherwise retain.
+        "solver": {
+            "algorithm": algorithm,
+            "population_size": population_size,
+            "max_iterations": max_iterations,
+        },
+        "conditions": {
+            "applied": conditions is not None,
+            "traffic_mode": conditions.traffic_mode if conditions else MODE_NORMAL,
+            "traffic_source": conditions.traffic_source if conditions else TRAFFIC_SOURCE_LABEL,
+            "traffic_provider": conditions.traffic_provider if conditions else None,
+            "traffic_is_simulated": conditions.traffic_is_simulated if conditions else True,
+            "traffic_formulation": conditions.traffic_formulation if conditions else None,
+            "weather_enabled": conditions.weather_enabled if conditions else False,
+            "weather_source": conditions.weather_source if conditions else None,
+            "weather_condition": conditions.weather_condition if conditions else None,
+            "weather_multiplier": conditions.weather_multiplier if conditions else 1.0,
+            "weather_observed_at": (
+                conditions.weather.observed_at if conditions and conditions.weather else None
+            ),
+            "incident_edge_count": conditions.incident_edge_count if conditions else 0,
+            "fallback_used": conditions.fallback_used if conditions else False,
+            "signature": conditions.signature if conditions else None,
+            "updated_at": conditions.updated_at if conditions else None,
+        },
+        "created_at": record.created_at,
+        "updated_at": record.updated_at,
+    }
+
+
+@app.get("/api/conditions/model")
+def get_condition_model():
+    """The condition model's own parameters, served so the UI and any report
+    can state the assumptions rather than restating them by hand (and drifting).
+
+    Everything under `simulated` is a model assumption. Everything under `real`
+    is genuinely observed or measured data.
+    """
+    from realdata.conditions import (
+        CONGESTION_BANDS,
+        CONGESTION_LEVELS,
+        DEFAULT_INCIDENT_MULTIPLIER,
+        WEATHER_IMPACT,
+    )
+    from realdata.traffic_model import (
+        CLASS_SUSCEPTIBILITY,
+        LEVEL_MULTIPLIERS,
+        MODE_SATURATIONS,
+    )
+
+    return {
+        "formula": (
+            "current_travel_time = base_travel_time * traffic_multiplier "
+            "* weather_multiplier * incident_multiplier"
+        ),
+        "simulated": {
+            "traffic_modes": TRAFFIC_MODES,
+            "traffic_level_multipliers": LEVEL_MULTIPLIERS,
+            "traffic_bpr_saturations": MODE_SATURATIONS,
+            "road_class_susceptibility": CLASS_SUSCEPTIBILITY,
+            "weather_impact_multipliers": WEATHER_IMPACT,
+            "default_incident_multiplier": DEFAULT_INCIDENT_MULTIPLIER,
+            # Display bands only. Published so the map's colours and the
+            # thresholds behind them are the same declared numbers, and so a
+            # reader can check what "heavy" on screen actually means.
+            "congestion_levels": list(CONGESTION_LEVELS),
+            "congestion_bands": [
+                {"level": name, "min_traffic_factor": threshold}
+                for name, threshold in CONGESTION_BANDS
+            ],
+            "disclaimer": (
+                "Model parameters / calibration assumptions for a prototype. "
+                "Not traffic measurements, and not calibrated weather-impact "
+                "research findings."
+            ),
+        },
+        "real": {
+            "road_network": "OpenStreetMap (geometry, topology, speed limits)",
+            "geocoding": "Nominatim",
+            "weather_observations": "Open-Meteo",
+        },
+    }
 
 
 @app.post("/api/benchmark", response_model=BenchmarkResult)
 def benchmark_scenario(payload: OptimizePayload):
+    scenario, _ = _resolve_scenario(payload)
     try:
-        return run_benchmark(payload.scenario, payload.config)
+        return run_benchmark(scenario, payload.config)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -163,8 +641,9 @@ def evaluate_routes(payload: EvaluatePayload):
     this cost under different weights" preview - the score always comes
     from the same evaluator every optimizer uses, never computed client-side.
     """
+    scenario, _ = _resolve_scenario(payload)
     try:
-        return evaluate_solution(payload.routes, payload.scenario, payload.weights, algorithm_name="preview")
+        return evaluate_solution(payload.routes, scenario, payload.weights, algorithm_name="preview")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

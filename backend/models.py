@@ -8,16 +8,67 @@ class Node(BaseModel):
     lat: float
     lng: float
     is_depot: bool = False
+    # Populated only for scenarios built from OpenStreetMap. `id` stays a
+    # small contiguous integer because the optimizers and the route matrix
+    # index by it; the original OSM identity is preserved alongside it.
+    osm_id: Optional[int] = None
 
 
 class Edge(BaseModel):
     source: int
     destination: int
     distance: float  # kilometers
+    # Free-flow time from the road's own length and speed. Never modified
+    # after the scenario is built - every dynamic condition is a multiplier
+    # over this, so the unconditioned baseline is always recoverable.
     base_travel_time: float  # minutes
-    traffic_factor: float = 1.0  # multiplier (1.0 = normal, 3.0 = heavy congestion)
+
+    # --- dynamic condition multipliers -----------------------------------
+    # Three independent axes, each 1.0 when that condition is not active.
+    # `realdata.conditions` is the only module that writes them, and the only
+    # module that writes `traffic_factor` or `current_travel_time` from them.
+    traffic_multiplier: float = 1.0   # simulated (or external) congestion
+    weather_multiplier: float = 1.0   # derived from an observed weather condition
+    incident_multiplier: float = 1.0  # operator-injected disruption on one road
+
+    # The effective multiplier actually applied:
+    #     traffic_multiplier * weather_multiplier * incident_multiplier
+    # Kept under its original name because the route-matrix cache key, the
+    # objective function and the map all read it, and because a pre-Phase-5
+    # client that writes it directly still behaves exactly as it did before.
+    traffic_factor: float = 1.0  # multiplier (1.0 = free flow, 3.0 = heavy congestion)
     current_travel_time: float  # base_travel_time * traffic_factor
     road_name: str = ""
+
+    # Which congestion band this edge currently sits in, derived from
+    # `traffic_factor` against the documented thresholds in
+    # `realdata.conditions.CONGESTION_BANDS`. Written by the same single
+    # function that writes traffic_factor, so it can never disagree with it.
+    #
+    # It exists so the map colours a road from a backend-declared state rather
+    # than from numeric thresholds duplicated in React. Values:
+    #     free_flow | light | moderate | heavy | severe
+    congestion_level: str = "free_flow"
+    # True when this specific road carries an operator-injected incident, as
+    # opposed to merely being congested by the network-wide traffic level.
+    # The map needs to distinguish the two and cannot infer it from
+    # traffic_factor alone.
+    has_incident: bool = False
+
+    # --- OpenStreetMap provenance (None for synthetic scenarios) ----------
+    osm_way_id: Optional[int] = None
+    highway: Optional[str] = None          # OSM highway class, e.g. "residential"
+    # Road shape as [[lat, lng], ...] including intermediate OSM nodes, so the
+    # map can draw the actual curve rather than a straight line between
+    # intersections. Ordered along the direction of travel.
+    geometry: Optional[List[List[float]]] = None
+    speed_kph: Optional[float] = None
+    # "osm_maxspeed" when the value came from an OSM maxspeed tag,
+    # "fallback:<highway class>" when it was derived from the road class.
+    speed_source: Optional[str] = None
+    lanes: Optional[int] = None
+    lanes_source: Optional[str] = None
+    capacity_vph: Optional[float] = None
 
 
 class Vehicle(BaseModel):
@@ -37,6 +88,65 @@ class Job(BaseModel):
     priority: int = 1
 
 
+class WeatherState(BaseModel):
+    """A weather observation as reported over the API, or the explicit absence
+    of one. Mirrors realdata.weather.WeatherObservation.
+
+    `source` is "open-meteo" territory: network / cache / cache-stale for a
+    real reading, "fallback" when none was available. When `fallback_used` is
+    true every measured field is null - a fallback never carries invented
+    values, and `multiplier` is then exactly 1.0.
+    """
+    source: str
+    provider: str = "open-meteo"
+    condition: str = "unknown"
+    description: str = ""
+    multiplier: float = 1.0
+    weather_code: Optional[int] = None
+    temperature_c: Optional[float] = None
+    precipitation_mm: Optional[float] = None
+    wind_speed_kph: Optional[float] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    observed_at: Optional[str] = None
+    retrieved_at: str = ""
+    fallback_used: bool = False
+    is_real_observation: bool = False
+    error: Optional[str] = None
+
+
+class ConditionSummary(BaseModel):
+    """What conditions are currently baked into a scenario's edge costs.
+
+    Carried on the scenario itself so every endpoint that returns a scenario
+    reports its conditions too, and so the frontend never has to infer them.
+    Nothing here is computed client-side.
+    """
+    # --- traffic ---
+    traffic_mode: str = "normal"
+    traffic_source: str = "simulated"   # "simulated" | "external"
+    traffic_provider: str = "simulated-model"
+    traffic_is_simulated: bool = True
+    traffic_formulation: str = "level-table"
+
+    # --- weather ---
+    weather_enabled: bool = False
+    weather_source: Optional[str] = None   # network|cache|cache-stale|fallback
+    weather_condition: Optional[str] = None
+    weather_multiplier: float = 1.0
+    weather: Optional[WeatherState] = None
+
+    # --- incidents ---
+    incident_edge_count: int = 0
+
+    # --- provenance ---
+    updated_at: str = ""
+    fallback_used: bool = False
+    # Short deterministic fingerprint of the applied condition state. Two
+    # scenarios with the same signature had the same conditions applied.
+    signature: str = ""
+
+
 class ProblemScenario(BaseModel):
     nodes: List[Node]
     edges: List[Edge]
@@ -45,6 +155,12 @@ class ProblemScenario(BaseModel):
     depot_node_id: int
     seed: int = 42
     scenario_hash: str = ""  # deterministic id of the generation parameters, for display/replay
+    # "synthetic" or "openstreetmap". Travels with the scenario so the UI can
+    # state what the network actually is without a second lookup.
+    data_source: str = "synthetic"
+    # None means no condition layer has been applied - edges are at free flow,
+    # exactly as they were before Phase 5.
+    conditions: Optional[ConditionSummary] = None
 
 
 class ObjectiveWeights(BaseModel):

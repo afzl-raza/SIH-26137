@@ -8,13 +8,17 @@ import {
   Activity,
   ChevronRight,
   ChevronDown,
-  RotateCcw
+  RotateCcw,
+  CloudRain,
+  MapPin,
+  FileText
 } from 'lucide-react';
 import RecoveryTimeline from './RecoveryTimeline';
 import { apiFetch } from '../api';
 
 export default function ControlPanel({
   scenario,
+  scenarioId,
   config,
   setConfig,
   onGenerate,
@@ -28,13 +32,27 @@ export default function ControlPanel({
   networkState,
   incidentInfo,
   currentResult,
-  timeline
+  timeline,
+  conditionMeta,
+  trafficMode = 'normal',
+  weatherEnabled = false,
+  conditionsDirty = false,
+  onApplyConditions,
+  networkSource = 'synthetic',
+  setNetworkSource,
+  place = '',
+  setPlace,
+  radiusM = 1200,
+  setRadiusM,
+  networkMeta,
+  manifest
 }) {
   // Demo state-machine guards: an incident can't be simulated before there's
   // an optimized route to disrupt, and re-optimization is meaningless before
-  // an incident has actually changed the scenario's traffic state.
+  // something has actually changed the scenario's edge costs - either an
+  // incident or an environmental condition change.
   const canSimulateIncident = Boolean(currentResult) && !loading;
-  const canReOptimize = Boolean(incidentInfo) && !loading;
+  const canReOptimize = Boolean(incidentInfo || conditionsDirty) && !loading;
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const handleConfigChange = (key, value) => {
@@ -63,7 +81,7 @@ export default function ControlPanel({
   const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
-    if (!currentResult?.routes?.length || !scenario) {
+    if (!currentResult?.routes?.length || !scenarioId) {
       setPreviewCost(null);
       return;
     }
@@ -73,7 +91,7 @@ export default function ControlPanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          scenario,
+          scenario_id: scenarioId,
           routes: currentResult.routes,
           weights: config.weights
         })
@@ -85,7 +103,7 @@ export default function ControlPanel({
     }, 400);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.weights, currentResult, scenario]);
+  }, [config.weights, currentResult, scenarioId]);
 
   // Scenario Health Strip - every field reads directly from real
   // scenario/state data already held by App.jsx, nothing invented here.
@@ -107,17 +125,129 @@ export default function ControlPanel({
             <span className="text-gray-600">·</span>
             <span>{scenario.jobs?.length || 0} Delivery Points</span>
             <span className="text-gray-600">·</span>
-            <span className={hasCongestion ? 'text-[#E8A93A]' : 'text-[#6B9A57]'}>
-              Traffic: {hasCongestion ? 'Congested' : 'Normal'}
+            <span
+              className={hasCongestion ? 'text-[#E8A93A]' : 'text-[#6B9A57]'}
+              title="Simulated congestion from the traffic model - not a live traffic feed"
+            >
+              Sim. Traffic: {hasCongestion ? 'Congested' : 'Free flow'}
             </span>
             <span className="text-gray-600">·</span>
             <span className="text-[#C6602E] font-bold">{healthLabel}</span>
           </div>
         )}
 
+        {/* Network source. The OSM path is the backend's existing
+            Nominatim -> Overpass chain; nothing about the network is
+            constructed here. */}
+        <div className="bg-[#141210]/50 border border-[#332E29] rounded-lg p-2.5 space-y-2">
+          <div className="flex items-center gap-1.5 text-gray-300 font-semibold uppercase tracking-wider text-[10px]">
+            <MapPin size={12} className="text-[#5D7A9E]" />
+            Road Network
+          </div>
+
+          <div className="grid grid-cols-2 gap-1">
+            {[
+              { id: 'synthetic', label: 'Synthetic' },
+              { id: 'osm', label: 'OpenStreetMap' }
+            ].map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => setNetworkSource?.(opt.id)}
+                disabled={loading}
+                aria-pressed={networkSource === opt.id}
+                className={`px-2 py-1 rounded border text-[10px] transition-colors disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-[#5D7A9E] ${
+                  networkSource === opt.id
+                    ? 'bg-[#1E2A33] border-[#2E4A56] text-[#8FBAC9]'
+                    : 'bg-[#26221D] border-[#3A342E] text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {networkSource === 'osm' && (
+            <div className="space-y-1.5">
+              <label htmlFor="osm-place" className="text-gray-400 block text-[10px]">
+                Location (any place name, geocoded by Nominatim)
+              </label>
+              <input
+                id="osm-place"
+                type="text"
+                value={place}
+                placeholder="e.g. Hazratganj, Lucknow"
+                onChange={(e) => setPlace?.(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && place.trim()) onGenerate?.('osm'); }}
+                className="w-full bg-[#26221D] border border-[#3A342E] text-gray-200 rounded px-2 py-1 outline-none focus:border-[#5D7A9E] focus-visible:ring-2 focus-visible:ring-[#5D7A9E] text-[10px]"
+              />
+              <div className="flex items-center gap-2">
+                <label htmlFor="osm-radius" className="text-gray-400 text-[10px] flex-shrink-0">Radius (m)</label>
+                <input
+                  id="osm-radius"
+                  type="number"
+                  min="200"
+                  step="100"
+                  value={radiusM}
+                  onChange={(e) => setRadiusM?.(Number(e.target.value))}
+                  className="w-full bg-[#26221D] border border-[#3A342E] text-gray-200 rounded px-2 py-0.5 outline-none focus:border-[#5D7A9E] font-mono text-[10px]"
+                />
+              </div>
+              <button
+                onClick={() => onGenerate?.('osm')}
+                disabled={loading || !place.trim()}
+                className="w-full py-1.5 bg-[#1E2A33]/60 border border-[#2E4A56] text-[#8FBAC9] hover:bg-[#1E2A33] rounded text-[11px] transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-[#5D7A9E]"
+              >
+                Load Real Road Network
+              </button>
+              <p className="text-[9px] text-gray-600 leading-snug">
+                OpenStreetMap supplies roads, geometry, one-way rules and speed limits only.
+                It carries no traffic data. If the area cannot be loaded the request fails —
+                synthetic roads are never substituted for real ones.
+              </p>
+            </div>
+          )}
+
+          {/* Loaded-network provenance, exactly as the backend reported it. */}
+          {networkMeta && (
+            <div className="grid grid-cols-[auto,1fr] gap-x-2 gap-y-0.5 font-mono text-[9px] text-gray-400 border-t border-[#332E29]/60 pt-1.5">
+              <span className="text-gray-500">Network:</span>
+              <span className={networkMeta.dataSource === 'openstreetmap' ? 'text-[#8FBAC9]' : 'text-gray-300'}>
+                {networkMeta.dataSource === 'openstreetmap' ? 'OpenStreetMap' : 'Synthetic'}
+                {networkMeta.geometrySource ? ` · ${networkMeta.geometrySource} geometry` : ''}
+              </span>
+
+              {networkMeta.location?.display_name && (
+                <>
+                  <span className="text-gray-500">Place:</span>
+                  <span className="truncate" title={networkMeta.location.display_name}>
+                    {networkMeta.location.display_name}
+                  </span>
+                </>
+              )}
+
+              {networkMeta.provenance && (
+                <>
+                  <span className="text-gray-500">OSM data:</span>
+                  <span>{networkMeta.provenance}{networkMeta.retrievedAt ? ` · ${networkMeta.retrievedAt}` : ''}</span>
+                </>
+              )}
+
+              {networkMeta.osm?.junction_nodes != null && (
+                <>
+                  <span className="text-gray-500">Extract:</span>
+                  <span>
+                    {networkMeta.osm.junction_nodes} junctions · {networkMeta.osm.directed_edges} directed edges
+                    {networkMeta.osm.oneway_forward != null ? ` · ${networkMeta.osm.oneway_forward + (networkMeta.osm.oneway_reverse || 0)} one-way` : ''}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="grid grid-cols-2 gap-2">
           <button
-            onClick={onGenerate}
+            onClick={() => onGenerate?.()}
             disabled={loading}
             className="w-full py-1 text-gray-400 hover:text-gray-200 hover:bg-[#26221D]/50 rounded transition-colors text-[10px] focus-visible:ring-2 focus-visible:ring-[#C6602E]"
           >
@@ -175,6 +305,135 @@ export default function ControlPanel({
         </button>
       </div>
 
+      {/* 1b. ENVIRONMENTAL CONDITIONS */}
+      {/* Every value displayed here comes from the backend condition engine.
+          Nothing is computed in React - the selects send a request, and the
+          status lines below echo what the backend reported back. */}
+      <div className="bg-[#141210]/50 border border-[#332E29] rounded-lg p-2.5 space-y-2">
+        <div className="flex items-center gap-1.5 text-gray-300 font-semibold uppercase tracking-wider text-[10px]">
+          <CloudRain size={12} className="text-[#5F8A80]" />
+          Conditions
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <label htmlFor="traffic-mode" className="text-gray-400 block text-[10px]">
+              Simulated Traffic
+            </label>
+            <select
+              id="traffic-mode"
+              value={trafficMode}
+              disabled={loading || !scenarioId}
+              onChange={(e) => onApplyConditions?.(e.target.value, weatherEnabled)}
+              className="w-full bg-[#26221D] border border-[#3A342E] text-gray-200 rounded px-2 py-1 outline-none focus:border-[#C6602E] focus-visible:ring-2 focus-visible:ring-[#C6602E] text-[10px] disabled:opacity-40"
+            >
+              <option value="normal">Normal (1.0x)</option>
+              <option value="moderate">Moderate (1.5x)</option>
+              <option value="heavy">Heavy (2.5x)</option>
+              <option value="severe">Severe (4.0x)</option>
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <span className="text-gray-400 block text-[10px]">Weather</span>
+            <button
+              onClick={() => onApplyConditions?.(trafficMode, !weatherEnabled)}
+              disabled={loading || !scenarioId}
+              aria-pressed={weatherEnabled}
+              className={`w-full px-2 py-1 rounded border text-[10px] transition-colors disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-[#5F8A80] ${
+                weatherEnabled
+                  ? 'bg-[#1E2A28] border-[#3A5A52] text-[#8FC9BA]'
+                  : 'bg-[#26221D] border-[#3A342E] text-gray-400'
+              }`}
+            >
+              {weatherEnabled ? 'Enabled' : 'Disabled'}
+            </button>
+          </div>
+        </div>
+
+        {/* Condition status - backend-reported provenance only. */}
+        {conditionMeta && (
+          <div className="grid grid-cols-[auto,1fr] gap-x-2 gap-y-0.5 font-mono text-[9px] text-gray-400 border-t border-[#332E29]/60 pt-1.5">
+            <span className="text-gray-500">Traffic:</span>
+            <span className="text-[#E8C578]">
+              {conditionMeta.trafficSource === 'simulated' ? 'Simulated model' : conditionMeta.trafficSource}
+              {conditionMeta.trafficMode ? ` · ${conditionMeta.trafficMode}` : ''}
+            </span>
+
+            <span className="text-gray-500">Weather:</span>
+            <span className={conditionMeta.fallbackUsed ? 'text-[#E8918A]' : 'text-[#8FC9BA]'}>
+              {conditionMeta.weatherSource
+                ? `${conditionMeta.weatherSource}${conditionMeta.weatherCondition ? ` · ${conditionMeta.weatherCondition}` : ''}`
+                : 'not applied'}
+              {conditionMeta.conditions?.weather?.provider
+                ? ` · ${conditionMeta.conditions.weather.provider}`
+                : ''}
+            </span>
+
+            {/* Weather is the one genuinely observed input, so every field the
+                provider returned is shown, and a field it did not return is
+                simply absent rather than filled in. */}
+            {conditionMeta.conditions?.weather?.description && (
+              <>
+                <span className="text-gray-500">Condition:</span>
+                <span>
+                  {conditionMeta.conditions.weather.description}
+                  {conditionMeta.conditions.weather.temperature_c != null
+                    ? ` · ${conditionMeta.conditions.weather.temperature_c}°C`
+                    : ''}
+                  {conditionMeta.conditions.weather.precipitation_mm != null
+                    ? ` · ${conditionMeta.conditions.weather.precipitation_mm} mm`
+                    : ''}
+                  {conditionMeta.conditions.weather.wind_speed_kph != null
+                    ? ` · ${conditionMeta.conditions.weather.wind_speed_kph} km/h`
+                    : ''}
+                  {` · ×${conditionMeta.conditions.weather.multiplier}`}
+                </span>
+              </>
+            )}
+
+            {conditionMeta.conditions?.weather?.observed_at && (
+              <>
+                <span className="text-gray-500">Observed at:</span>
+                <span>{conditionMeta.conditions.weather.observed_at}</span>
+              </>
+            )}
+
+            {conditionMeta.conditions?.weather?.retrieved_at && (
+              <>
+                <span className="text-gray-500">Retrieved:</span>
+                <span>{conditionMeta.conditions.weather.retrieved_at}</span>
+              </>
+            )}
+
+            {conditionMeta.conditions?.updated_at && (
+              <>
+                <span className="text-gray-500">Applied:</span>
+                <span>{new Date(conditionMeta.conditions.updated_at).toLocaleTimeString()}</span>
+              </>
+            )}
+          </div>
+        )}
+
+        {conditionMeta?.fallbackUsed && (
+          <div className="text-[9px] text-[#E8918A] bg-[#3A1C18]/40 border border-[#5A2C26]/60 rounded px-2 py-1 leading-snug">
+            Weather provider unavailable - fallback in use. No weather effect applied to edge costs.
+          </div>
+        )}
+
+        <p className="text-[9px] text-gray-600 leading-snug">
+          Traffic congestion is a documented simulation, not a live feed. Weather is a real
+          Open-Meteo observation when the source above says network/cache.
+        </p>
+
+        {conditionsDirty && (
+          <div className="text-[9px] text-[#E8C578] bg-[#3A2E14]/40 border border-[#5A4A22]/60 rounded px-2 py-1 leading-snug">
+            Conditions changed - the routes shown were computed against the previous edge costs.
+            Re-Optimize to update them.
+          </div>
+        )}
+      </div>
+
       {/* 2. INCIDENT INFO PANEL */}
       {incidentInfo && (
         <div className="bg-[#3A1C18]/30 border border-[#5A2C26] rounded-lg p-3 space-y-2">
@@ -201,6 +460,18 @@ export default function ControlPanel({
           <div className="border-t border-[#5A2C26]/60 pt-2">
             <RecoveryTimeline timeline={timeline} />
           </div>
+        </div>
+      )}
+
+      {/* 2b. GENERIC WORKING INDICATOR - covers requests that don't have
+          their own dedicated status block (generate, apply conditions,
+          incident, benchmark). Optimize/Re-Optimize get their own richer
+          block below, so this is suppressed for those two statuses to
+          avoid showing two spinners at once. */}
+      {loading && statusState !== 'OPTIMIZING' && statusState !== 'RE-OPTIMIZING' && (
+        <div className="flex items-center gap-2 text-[10px] text-gray-400 font-mono bg-[#141210]/50 border border-[#332E29] rounded-lg px-2.5 py-1.5">
+          <div className="w-3 h-3 border-2 border-[#C6602E] border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+          Working...
         </div>
       )}
 
@@ -340,6 +611,71 @@ export default function ControlPanel({
                 </div>
               </div>
             </div>
+
+            {/* Run manifest - read back from GET /api/scenario/{id}/manifest
+                so it reports what the server actually holds for this run,
+                rather than echoing this component's own state. A field the
+                backend does not know (a synthetic network has no location)
+                is shown as "—", never filled in. */}
+            {manifest && (
+              <div className="pt-2 border-t border-[#332E29]/60 space-y-1">
+                <div className="flex items-center gap-1.5 text-gray-400 text-[10px] uppercase tracking-wider">
+                  <FileText size={11} />
+                  Run Manifest (server-reported)
+                </div>
+                <div className="grid grid-cols-[auto,1fr] gap-x-2 gap-y-0.5 font-mono text-[9px] text-gray-400">
+                  <span className="text-gray-500">Run ID:</span>
+                  <span className="truncate" title={manifest.scenario_hash}>{manifest.scenario_hash || '—'}</span>
+
+                  <span className="text-gray-500">Location:</span>
+                  <span className="truncate" title={manifest.location?.location?.display_name || ''}>
+                    {manifest.location?.location?.display_name
+                      || (manifest.data_source === 'openstreetmap' ? 'OpenStreetMap area' : '— (synthetic network)')}
+                  </span>
+
+                  <span className="text-gray-500">Seed:</span>
+                  <span>{manifest.seed ?? '—'}</span>
+
+                  <span className="text-gray-500">Algorithm:</span>
+                  <span>{manifest.solver?.algorithm || '—'}</span>
+
+                  <span className="text-gray-500">Population:</span>
+                  <span>{manifest.solver?.population_size ?? '—'}</span>
+
+                  <span className="text-gray-500">Iterations:</span>
+                  <span>{manifest.solver?.max_iterations ?? '—'}</span>
+
+                  <span className="text-gray-500">Traffic mode:</span>
+                  <span>
+                    {manifest.conditions?.traffic_mode || '—'}
+                    {manifest.conditions?.traffic_is_simulated ? ' (simulated)' : ''}
+                    {manifest.conditions?.traffic_formulation ? ` · ${manifest.conditions.traffic_formulation}` : ''}
+                  </span>
+
+                  <span className="text-gray-500">Weather src:</span>
+                  <span>
+                    {manifest.conditions?.weather_enabled
+                      ? `${manifest.conditions.weather_source || 'unknown'} · ${manifest.conditions.weather_condition || 'unknown'} · ×${manifest.conditions.weather_multiplier}`
+                      : 'disabled'}
+                  </span>
+
+                  <span className="text-gray-500">Incidents:</span>
+                  <span>{manifest.conditions?.incident_edge_count ?? 0} edge(s)</span>
+
+                  <span className="text-gray-500">Geometry:</span>
+                  <span>{manifest.geometry_source || '—'}</span>
+
+                  <span className="text-gray-500">Condition sig:</span>
+                  <span className="truncate">{manifest.conditions?.signature || '— (none applied)'}</span>
+
+                  <span className="text-gray-500">Network:</span>
+                  <span>
+                    {manifest.network?.node_count} nodes · {manifest.network?.edge_count} edges ·{' '}
+                    {manifest.network?.job_count} jobs · {manifest.network?.vehicle_count} vehicles
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
           </div>
       </div>

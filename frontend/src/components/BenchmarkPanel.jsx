@@ -196,6 +196,7 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
               <th className="px-4 py-3">Travel Time</th>
               <th className="px-4 py-3">Distance</th>
               <th className="px-4 py-3">Runtime</th>
+              <th className="px-4 py-3" title="Iterations the solver actually recorded (convergence_history length), not the configured limit. Greedy is a single-pass construction, so it records one value.">Iterations</th>
               <th className="px-4 py-3">Feasible</th>
               <th className="px-4 py-3">Gap</th>
               {onPreviewAlgorithm && <th className="px-4 py-3">Map</th>}
@@ -222,6 +223,13 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
                   <td className="px-4 py-3 font-mono text-gray-400 tabular-nums">{res.total_travel_time.toFixed(1)}</td>
                   <td className="px-4 py-3 font-mono text-gray-400 tabular-nums">{res.total_distance.toFixed(1)}</td>
                   <td className="px-4 py-3 font-mono text-gray-400 tabular-nums">{res.runtime_ms}ms</td>
+                  {/* Measured, not configured: how many values the solver
+                      actually recorded. Greedy constructs a solution in one
+                      pass and so records one - the configured iteration
+                      count is never substituted here. */}
+                  <td className="px-4 py-3 font-mono text-gray-400 tabular-nums">
+                    {res.convergence_history?.length ? res.convergence_history.length : '—'}
+                  </td>
                   <td className="px-4 py-3">
                     {res.is_feasible ? (
                       <span className="flex items-center text-[#6B9A57] gap-1"><CheckCircle2 className="w-4 h-4"/> ✓</span>
@@ -245,8 +253,17 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
       </div>
 
       {/* 5. CONVERGENCE CHART */}
-      <div className="bg-[#1E1B18] border border-[#3A342E] rounded-lg p-4 h-48">
-        <Line data={chartData} options={chartOptions} />
+      <div className="bg-[#1E1B18] border border-[#3A342E] rounded-lg p-4 space-y-2">
+        <h3 className="text-xs font-semibold text-gray-400 tracking-wider">
+          CONVERGENCE — best objective cost per recorded iteration
+        </h3>
+        <div className="h-44">
+          <Line data={chartData} options={chartOptions} />
+        </div>
+        <p className="text-[10px] text-gray-500 font-mono">
+          Every point is a value the solver recorded during this run. Greedy constructs its
+          solution in a single pass, so it has no curve to plot and is not charted.
+        </p>
       </div>
 
     </div>

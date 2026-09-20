@@ -3,16 +3,30 @@ import math
 import random
 import numpy as np
 import networkx as nx
-from typing import Tuple, Dict, List
+from typing import Tuple, Dict, List, Optional
 from models import Node, Edge, Vehicle, Job, ProblemScenario
 
 
-def compute_scenario_hash(num_nodes: int, num_jobs: int, num_vehicles: int, seed: int) -> str:
+def compute_scenario_hash(
+    num_nodes: int,
+    num_jobs: int,
+    num_vehicles: int,
+    seed: int,
+    extra: str = "",
+) -> str:
     """Deterministic short id of the generation parameters - same inputs
     always produce the same hash, since generation itself is deterministic.
     Used as a reproducible "Run ID" for display/replay, not as a security
-    hash."""
+    hash.
+
+    `extra` carries any additional input that distinguishes one scenario from
+    another; the OSM path passes its bounding box, so two different places
+    with the same job and vehicle counts do not collide. It defaults to empty
+    so synthetic hashes are byte-identical to what they have always been.
+    """
     raw = f"{num_nodes}:{num_jobs}:{num_vehicles}:{seed}"
+    if extra:
+        raw = f"{raw}:{extra}"
     return hashlib.sha256(raw.encode()).hexdigest()[:10]
 
 
@@ -179,52 +193,188 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     return R * c
 
 
-def compute_shortest_paths(scenario: ProblemScenario) -> Tuple[np.ndarray, np.ndarray, Dict[Tuple[int, int], List[int]]]:
-    """
-    Computes shortest path distance matrix, travel time matrix, and node path lookup
-    for all pairs of network nodes using current travel times (accounting for traffic factors).
-    Returns (distance_matrix, travel_time_matrix, paths_dict).
+class _NodeIndexedMatrix:
+    """Wraps a compact K x K array so it can still be indexed by node-ID pairs.
 
-    Uses one single_source_dijkstra call per source node (O(V) Dijkstra runs)
-    rather than one shortest_path call per (source, target) pair (O(V^2) runs) -
-    the latter does not scale past a few hundred nodes.
+    The optimization path only ever queries routing *terminals* (the depot,
+    vehicle start/end nodes and job nodes), so the underlying array is K x K
+    rather than V x V. Indexing stays `matrix[u, v]` with real node IDs, which
+    is why decoder.py and the optimizers need no changes.
     """
-    num_nodes = len(scenario.nodes)
+
+    __slots__ = ("_array", "_index")
+
+    def __init__(self, array: np.ndarray, index: Dict[int, int]):
+        self._array = array
+        self._index = index
+
+    def __getitem__(self, key: Tuple[int, int]) -> float:
+        u, v = key
+        try:
+            return self._array[self._index[u], self._index[v]]
+        except KeyError as exc:
+            raise KeyError(
+                f"node {exc.args[0]} is not a routing terminal; the route "
+                f"matrix only covers the depot, vehicle start/end nodes and "
+                f"job nodes"
+            ) from None
+
+    @property
+    def array(self) -> np.ndarray:
+        return self._array
+
+    @property
+    def shape(self) -> Tuple[int, int]:
+        return self._array.shape
+
+
+class RouteMatrix:
+    """Shortest-path distances, travel times and full node paths between the
+    routing terminals of a scenario.
+
+    Memory is O(K^2) in the number of terminals (K = 1 depot + N jobs), not
+    O(V^2) in the size of the road graph. The full graph is still traversed by
+    Dijkstra, so `paths` contains complete node-by-node routes through
+    intermediate road nodes - only the *matrix* is restricted.
+    """
+
+    __slots__ = ("terminals", "dist", "time", "paths")
+
+    def __init__(
+        self,
+        terminals: List[int],
+        dist_array: np.ndarray,
+        time_array: np.ndarray,
+        paths: Dict[Tuple[int, int], List[int]],
+    ):
+        index = {node_id: i for i, node_id in enumerate(terminals)}
+        self.terminals = terminals
+        self.dist = _NodeIndexedMatrix(dist_array, index)
+        self.time = _NodeIndexedMatrix(time_array, index)
+        self.paths = paths
+
+    def as_tuple(self):
+        """Unpacks into the (dist, time, paths) triple the optimizers use."""
+        return self.dist, self.time, self.paths
+
+
+def terminal_nodes(scenario: ProblemScenario) -> List[int]:
+    """The only nodes the optimizers ever route between: the depot, every
+    vehicle's start/end node, and every job node. Sorted and de-duplicated so
+    the resulting matrix ordering is deterministic."""
+    terminals = {scenario.depot_node_id}
+    for v in scenario.vehicles:
+        terminals.add(v.start_node)
+        terminals.add(v.end_node)
+    for j in scenario.jobs:
+        terminals.add(j.node_id)
+    return sorted(terminals)
+
+
+def build_routing_graph(scenario: ProblemScenario) -> nx.DiGraph:
+    """Builds the directed road graph used for routing. Edge weight is
+    `current_travel_time`, i.e. base travel time already scaled by the edge's
+    traffic factor - this is what makes congestion actually change routes."""
     G = nx.DiGraph()
     for n in scenario.nodes:
         G.add_node(n.id)
-
     for e in scenario.edges:
-        # edge weight for routing is current_travel_time
-        G.add_edge(e.source, e.destination, weight=e.current_travel_time, distance=e.distance)
+        G.add_edge(
+            e.source,
+            e.destination,
+            weight=e.current_travel_time,
+            distance=e.distance,
+        )
+    return G
 
+
+UNREACHABLE = 1e6
+
+
+def compute_route_matrix(
+    scenario: ProblemScenario,
+    terminals: Optional[List[int]] = None,
+) -> RouteMatrix:
+    """Computes shortest paths between routing terminals with K single-source
+    Dijkstra runs over the *full* road graph.
+
+    This replaces the previous all-pairs approach in the optimization path.
+    The old version allocated two V x V float matrices plus a dict of V^2 node
+    paths, which is fine for a 30-node synthetic graph but is not viable for a
+    real OpenStreetMap extract of several thousand nodes. Restricting the
+    matrix to terminals makes cost independent of road-graph size in memory,
+    and linear rather than quadratic in Dijkstra runs.
+
+    `terminals=None` uses the scenario's own terminals. Passing an explicit
+    list is used by `compute_shortest_paths` for the all-pairs diagnostic
+    variant, and by tests.
+    """
+    if terminals is None:
+        terminals = terminal_nodes(scenario)
+
+    G = build_routing_graph(scenario)
+    k = len(terminals)
+
+    dist_array = np.zeros((k, k))
+    time_array = np.zeros((k, k))
+    paths: Dict[Tuple[int, int], List[int]] = {}
+
+    for row, source in enumerate(terminals):
+        if G.has_node(source):
+            _, paths_from_source = nx.single_source_dijkstra(G, source=source, weight="weight")
+        else:
+            paths_from_source = {}
+
+        for col, target in enumerate(terminals):
+            if source == target:
+                dist_array[row, col] = 0.0
+                time_array[row, col] = 0.0
+                paths[(source, target)] = [source]
+                continue
+
+            path = paths_from_source.get(target)
+            if path is None:
+                dist_array[row, col] = UNREACHABLE
+                time_array[row, col] = UNREACHABLE
+                paths[(source, target)] = [source, target]
+                continue
+
+            total_t = 0.0
+            total_d = 0.0
+            for u, v in zip(path[:-1], path[1:]):
+                edge_data = G[u][v]
+                total_t += edge_data["weight"]
+                total_d += edge_data["distance"]
+
+            time_array[row, col] = total_t
+            dist_array[row, col] = total_d
+            paths[(source, target)] = path
+
+    return RouteMatrix(terminals, dist_array, time_array, paths)
+
+
+def compute_shortest_paths(
+    scenario: ProblemScenario
+) -> Tuple[np.ndarray, np.ndarray, Dict[Tuple[int, int], List[int]]]:
+    """All-pairs variant, kept for diagnostics and tests.
+
+    WARNING: this is O(V^2) in memory and is deliberately NOT used by the
+    optimization path - see `compute_route_matrix`, which the optimizers call.
+    It is retained because it exercises the same Dijkstra core over every node
+    pair, which is what the hand-computed correctness tests check.
+
+    Returns plain numpy arrays indexed by node ID (node IDs are contiguous
+    from 0), matching the original signature.
+    """
+    node_ids = sorted(n.id for n in scenario.nodes)
+    matrix = compute_route_matrix(scenario, terminals=node_ids)
+
+    num_nodes = len(node_ids)
     dist_matrix = np.zeros((num_nodes, num_nodes))
     time_matrix = np.zeros((num_nodes, num_nodes))
-    paths_dict = {}
+    for row, u in enumerate(node_ids):
+        for col, v in enumerate(node_ids):
+            dist_matrix[u, v] = matrix.dist[u, v]
+            time_matrix[u, v] = matrix.time[u, v]
 
-    for i in range(num_nodes):
-        _, paths_from_i = nx.single_source_dijkstra(G, source=i, weight='weight')
-
-        for j in range(num_nodes):
-            if i == j:
-                dist_matrix[i, j] = 0.0
-                time_matrix[i, j] = 0.0
-                paths_dict[(i, j)] = [i]
-            elif j in paths_from_i:
-                path = paths_from_i[j]
-                paths_dict[(i, j)] = path
-                # Sum time and distance along path
-                total_t = 0.0
-                total_d = 0.0
-                for u, v in zip(path[:-1], path[1:]):
-                    edge_data = G[u][v]
-                    total_t += edge_data['weight']
-                    total_d += edge_data['distance']
-                time_matrix[i, j] = total_t
-                dist_matrix[i, j] = total_d
-            else:
-                time_matrix[i, j] = 1e6
-                dist_matrix[i, j] = 1e6
-                paths_dict[(i, j)] = [i, j]
-
-    return dist_matrix, time_matrix, paths_dict
+    return dist_matrix, time_matrix, matrix.paths

@@ -7,6 +7,10 @@ __pycache__/
 node_modules/
 frontend/dist/
 
+# Runtime cache for external data (geocoding / OSM / weather).
+# Regenerated on demand; committed offline fixtures live under tests/.
+.cache/
+
 # Editors / OS
 .vscode/
 .DS_Store

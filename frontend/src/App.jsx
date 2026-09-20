@@ -13,9 +13,27 @@ import Logo from './components/Logo';
 import { apiFetch } from './api';
 import { Activity } from 'lucide-react';
 
+// Pulls the condition-provenance envelope out of any scenario-carrying
+// response. Pure field selection - no value is derived or invented here; the
+// backend is the only place edge costs and multipliers are computed.
+function extractConditionMeta(data) {
+  if (!data) return null;
+  return {
+    trafficSource: data.traffic_source ?? null,
+    trafficMode: data.traffic_mode ?? null,
+    weatherSource: data.weather_source ?? null,
+    weatherCondition: data.weather_condition ?? null,
+    fallbackUsed: Boolean(data.fallback_used),
+    conditions: data.conditions ?? null
+  };
+}
+
 export default function App() {
   // ─── Core State ──────────────────────────────────
   const [scenario, setScenario] = useState(null);
+  // The backend owns the scenario after generation; requests refer to it
+  // by id instead of uploading the whole graph on every interaction.
+  const [scenarioId, setScenarioId] = useState(null);
   const [currentResult, setCurrentResult] = useState(null);
   const [previousResult, setPreviousResult] = useState(null);
   const [benchmarkData, setBenchmarkData] = useState(null);
@@ -25,6 +43,33 @@ export default function App() {
 
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [selectedRoute, setSelectedRoute] = useState(null);
+
+  // Environmental conditions currently baked into the scenario's edge costs.
+  // Every field here is produced by the backend condition engine - nothing in
+  // this component computes a multiplier, a travel time or a cost.
+  const [conditionMeta, setConditionMeta] = useState(null);
+  // The requested condition state. Separate from conditionMeta because the
+  // select/toggle change immediately while the backend call is in flight.
+  const [trafficMode, setTrafficMode] = useState('normal');
+  const [weatherEnabled, setWeatherEnabled] = useState(false);
+  // Set when conditions change after an optimization, so the UI can offer
+  // Re-Optimize for the same reason it does after an incident: the routes on
+  // screen were computed against edge costs that no longer apply.
+  const [conditionsDirty, setConditionsDirty] = useState(false);
+
+  // Where the network comes from. 'synthetic' keeps the generated graph the
+  // demo has always started with; 'osm' runs the real chain the backend
+  // already implements - Nominatim resolves the place, Overpass returns the
+  // actual road network for it. The backend exposed this from Phase 3; until
+  // now nothing in the UI could reach it.
+  const [networkSource, setNetworkSource] = useState('synthetic');
+  const [place, setPlace] = useState('');
+  const [radiusM, setRadiusM] = useState(1200);
+  // Provenance of the loaded network, straight from the generate response.
+  const [networkMeta, setNetworkMeta] = useState(null);
+  // Reproducibility manifest for the current run, read back from the server
+  // rather than assembled here, so it states what the backend actually holds.
+  const [manifest, setManifest] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -101,23 +146,42 @@ export default function App() {
   }, []);
 
   // ─── API: Generate Scenario ──────────────────────
-  const handleGenerateScenario = async () => {
+  // Accepts an optional explicit source so a control can switch network kind
+  // and generate in one action without waiting for a state update to land.
+  const handleGenerateScenario = async (sourceOverride) => {
+    const source = (typeof sourceOverride === 'string') ? sourceOverride : networkSource;
     setLoading(true);
     setError(null);
     try {
+      const body = {
+        source,
+        num_nodes: 30,
+        num_jobs: 15,
+        num_vehicles: 3,
+        seed: config.seed
+      };
+      // For an OSM run the location is the input: the backend geocodes it
+      // through Nominatim and pulls the real road network for the result.
+      if (source === 'osm') {
+        body.place = place.trim();
+        body.radius_m = Number(radiusM) || 1200;
+      }
+
       const res = await apiFetch('/api/problem/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          num_nodes: 30,
-          num_jobs: 15,
-          num_vehicles: 3,
-          seed: config.seed
-        })
+        body: JSON.stringify(body)
       });
-      if (!res.ok) throw new Error('Failed to generate network scenario');
+      if (!res.ok) {
+        // The backend refuses rather than substituting synthetic roads when
+        // a place cannot be resolved or Overpass is unreachable, so its
+        // message is worth surfacing verbatim.
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.detail || 'Failed to generate network scenario');
+      }
       const data = await res.json();
-      setScenario(data);
+      setScenario(data.scenario);
+      setScenarioId(data.scenario_id);
       setCurrentResult(null);
       setPreviousResult(null);
       setBenchmarkData(null);
@@ -129,6 +193,23 @@ export default function App() {
       setStatusState('READY');
       setNetworkState('NORMAL');
       setTimeline(null);
+      setConditionMeta(extractConditionMeta(data));
+      setConditionsDirty(false);
+      // Pure field selection from the generate response - the backend states
+      // its own provenance, nothing is inferred here.
+      setNetworkMeta({
+        dataSource: data.data_source ?? null,
+        geometrySource: data.geometry_source ?? null,
+        provenance: data.provenance ?? null,
+        retrievedAt: data.retrieved_at ?? null,
+        location: data.location ?? null,
+        bbox: data.bbox ?? null,
+        osm: data.osm ?? null,
+        osmEndpoint: data.osm_endpoint ?? null,
+        nodeCount: data.node_count ?? null,
+        edgeCount: data.edge_count ?? null
+      });
+      setManifest(null);
       return data;
     } catch (err) {
       setError(err.message);
@@ -138,15 +219,38 @@ export default function App() {
     }
   };
 
+  // ─── API: Reproducibility manifest ──────────────
+  // Reads back what the server holds for this run. The solver settings are
+  // passed so the backend echoes exactly the configuration this client used -
+  // it does not retain them otherwise, and inventing them would defeat the
+  // point of a manifest.
+  const refreshManifest = async (activeScenarioId) => {
+    const id = activeScenarioId || scenarioId;
+    if (!id) return;
+    const params = new URLSearchParams({
+      algorithm: config.algorithm,
+      population_size: String(config.population_size),
+      max_iterations: String(config.max_iterations)
+    });
+    try {
+      const res = await apiFetch(`/api/scenario/${id}/manifest?${params}`);
+      if (res.ok) setManifest(await res.json());
+    } catch {
+      // A missing manifest is a display gap, never a reason to fail a run.
+    }
+  };
+
   // ─── API: Optimize ──────────────────────────────
   // Accepts an optional freshly-generated scenario to optimize immediately
   // (used by Replay Run) - otherwise falls back to the scenario already in
   // state. Guarded with a shape check rather than relying on the argument
   // being undefined, since this function is also used directly as a button
   // onClick handler, which would otherwise pass the DOM click event here.
-  const handleOptimize = async (scenarioOverride) => {
-    const activeScenario = (scenarioOverride && scenarioOverride.nodes) ? scenarioOverride : scenario;
-    if (!activeScenario) return;
+  const handleOptimize = async (scenarioIdOverride) => {
+    const activeScenarioId = (typeof scenarioIdOverride === 'string')
+      ? scenarioIdOverride
+      : scenarioId;
+    if (!activeScenarioId) return;
     setLoading(true);
     setError(null);
     const isReopt = networkState === 'DISRUPTED';
@@ -157,9 +261,12 @@ export default function App() {
       const res = await apiFetch('/api/optimize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario: activeScenario, config })
+        body: JSON.stringify({ scenario_id: activeScenarioId, config })
       });
-      if (!res.ok) throw new Error('Optimization failed');
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.detail || 'Optimization failed');
+      }
       const data = await res.json();
 
       if (currentResult) {
@@ -167,6 +274,11 @@ export default function App() {
       }
       setCurrentResult(data);
       setStatusState('OPTIMIZED');
+      // The routes on screen now match the current edge costs again.
+      setConditionsDirty(false);
+      // The manifest describes the run that just happened, so refresh it here
+      // rather than on a timer.
+      refreshManifest(activeScenarioId);
       if (isReopt) {
         setNetworkState('RE-OPTIMIZED');
         // Recovery Timeline: the "Optimizing" duration is the backend's own
@@ -182,6 +294,52 @@ export default function App() {
     } catch (err) {
       setError(err.message);
       setStatusState('ERROR');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── API: Apply environmental conditions ────────────────────────
+  // Sends the requested traffic level / weather toggle to the backend, which
+  // recomputes every edge cost through the one condition engine and hands the
+  // updated scenario back. This deliberately does NOT re-optimize: the user
+  // clicks Re-Optimize, so "conditions changed -> routes changed" stays
+  // visible as two separate steps.
+  const handleApplyConditions = async (nextMode, nextWeather) => {
+    if (!scenarioId) return;
+    const mode = nextMode ?? trafficMode;
+    const weather = nextWeather ?? weatherEnabled;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiFetch('/api/scenario/conditions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scenario_id: scenarioId,
+          traffic_mode: mode,
+          weather_enabled: weather
+        })
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.detail || 'Failed to apply conditions');
+      }
+      const data = await res.json();
+      setScenario(data.scenario);
+      setConditionMeta(extractConditionMeta(data));
+      setTrafficMode(mode);
+      setWeatherEnabled(weather);
+      refreshManifest(scenarioId);
+
+      // Routes already on screen were computed against the old edge costs.
+      if (currentResult) {
+        setConditionsDirty(true);
+        setNetworkState('DISRUPTED');
+      }
+    } catch (err) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -235,14 +393,19 @@ export default function App() {
       const res = await apiFetch('/api/traffic/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario, updates })
+        body: JSON.stringify({ scenario_id: scenarioId, updates })
       });
 
-      if (!res.ok) throw new Error('Failed to update traffic incident');
-      const updatedScenario = await res.json();
-      setScenario(updatedScenario);
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.detail || 'Failed to update traffic incident');
+      }
+      const data = await res.json();
+      setScenario(data.scenario);
+      setConditionMeta(extractConditionMeta(data));
       setStatusState('INCIDENT');
       setNetworkState('DISRUPTED');
+      refreshManifest(scenarioId);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -285,9 +448,9 @@ export default function App() {
   // server-side in test_e6_reproducibility_determinism_and_stats) - this
   // doesn't simulate anything, it just runs the same real requests again.
   const handleReplay = async () => {
-    const freshScenario = await handleGenerateScenario();
-    if (freshScenario) {
-      await handleOptimize(freshScenario);
+    const fresh = await handleGenerateScenario();
+    if (fresh?.scenario_id) {
+      await handleOptimize(fresh.scenario_id);
     }
   };
 
@@ -300,9 +463,12 @@ export default function App() {
       const res = await apiFetch('/api/benchmark', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario, config })
+        body: JSON.stringify({ scenario_id: scenarioId, config })
       });
-      if (!res.ok) throw new Error('Benchmark failed');
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.detail || 'Benchmark failed');
+      }
       const data = await res.json();
       setBenchmarkData(data);
     } catch (err) {
@@ -399,6 +565,8 @@ export default function App() {
         <div className="lg:col-span-3 min-h-[620px] h-full w-full">
           <NetworkMap
             scenario={scenario}
+            scenarioId={scenarioId}
+            loading={loading}
             currentResult={currentResult}
             previousResult={previousResult}
             selectedIncidentEdge={selectedIncidentEdge}
@@ -416,6 +584,7 @@ export default function App() {
         <div className="space-y-4 flex flex-col">
           <ControlPanel
             scenario={scenario}
+            scenarioId={scenarioId}
             config={config}
             setConfig={setConfig}
             onGenerate={handleGenerateScenario}
@@ -430,6 +599,19 @@ export default function App() {
             incidentInfo={incidentInfo}
             currentResult={currentResult}
             timeline={timeline}
+            conditionMeta={conditionMeta}
+            trafficMode={trafficMode}
+            weatherEnabled={weatherEnabled}
+            conditionsDirty={conditionsDirty}
+            onApplyConditions={handleApplyConditions}
+            networkSource={networkSource}
+            setNetworkSource={setNetworkSource}
+            place={place}
+            setPlace={setPlace}
+            radiusM={radiusM}
+            setRadiusM={setRadiusM}
+            networkMeta={networkMeta}
+            manifest={manifest}
           />
 
           <VehicleInspector

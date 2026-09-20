@@ -22,6 +22,7 @@ import numpy as np
 
 from models import OptimizationConfig
 from problem_generator import generate_synthetic_scenario
+from realdata.conditions import apply_incidents
 from optimizers.benchmark import run_benchmark
 from optimizers.qpso import QPSOOptimizer
 
@@ -229,11 +230,12 @@ def run_e4_traffic_disruption(
     if target_edge is None and scenario.edges:
         target_edge = (scenario.edges[0].source, scenario.edges[0].destination)
 
-    for edge in scenario.edges:
-        if (edge.source, edge.destination) == target_edge or \
-           (edge.destination, edge.source) == target_edge:
-            edge.traffic_factor = congestion_factor
-            edge.current_travel_time = edge.base_travel_time * congestion_factor
+    # Injected through the one condition engine rather than by hand, so this
+    # experiment exercises exactly the pipeline the API and the UI use.
+    # apply_incidents mirrors onto the reverse direction, which is what the
+    # hand-written loop did too.
+    if target_edge is not None:
+        scenario, _ = apply_incidents(scenario, {target_edge: congestion_factor})
 
     start = time.perf_counter()
     after = optimizer.optimize(scenario, solver_config)
@@ -286,11 +288,8 @@ def run_e5_traffic_severity(
     rows = []
     for factor in factors:
         scenario = generate_synthetic_scenario(**scenario_spec.as_dict())
-        for edge in scenario.edges:
-            if (edge.source, edge.destination) == target_edge or \
-               (edge.destination, edge.source) == target_edge:
-                edge.traffic_factor = factor
-                edge.current_travel_time = edge.base_travel_time * factor
+        if target_edge is not None:
+            scenario, _ = apply_incidents(scenario, {target_edge: factor})
         result = optimizer.optimize(scenario, solver_config)
         rows.append({
             "traffic_factor": factor,

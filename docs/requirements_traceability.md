@@ -19,6 +19,12 @@ that don't match this codebase — every path below is verified to exist).
 | QPSO (quantum-inspired algorithm) | `backend/optimizers/qpso.py` |
 | Common evaluator (fair comparison) | `backend/fitness.py`, used by all four optimizers |
 | Dynamic traffic incident | `frontend/src/App.jsx::handleSimulateIncident` + `POST /api/traffic/update` |
+| Unified edge-cost engine (one pipeline) | `backend/realdata/conditions.py::recompute_edge_cost`, documented in `docs/dynamic_conditions.md` |
+| Simulated traffic model + provider seam | `backend/realdata/traffic_model.py` (`SimulatedTrafficProvider`, `ExternalTrafficProvider`) |
+| Real weather ingestion (Open-Meteo) | `backend/realdata/weather.py::OpenMeteoProvider`, exposed via `GET /api/weather` |
+| Weather/traffic condition application | `POST /api/scenario/conditions` in `backend/main.py` |
+| Condition model transparency | `GET /api/conditions/model` in `backend/main.py` |
+| Condition-aware cache invalidation | `backend/route_cache.py::_canonical_scenario_repr` |
 | Re-optimization after disruption | `frontend/src/App.jsx::handleReOptimize` → `POST /api/optimize` |
 | Benchmarking across algorithms | `backend/optimizers/benchmark.py::run_benchmark`, `POST /api/benchmark` |
 | Convergence tracking | `OptimizationResult.convergence_history` (all iterative optimizers) |
@@ -27,7 +33,12 @@ that don't match this codebase — every path below is verified to exist).
 | Reproducibility (seeded, repeatable) | `seed` field throughout `models.py`; `backend/experiments/runner.py::run_e6_reproducibility` |
 | Experiment evidence storage | `experiments/<name>/{config.json,*.csv,*.json}`, served read-only via `GET /api/experiments/{name}` |
 | Executable software platform | `backend/main.py` (FastAPI) + `frontend/src/` (React/Leaflet) |
-| Route/traffic/incident visualization | `frontend/src/components/NetworkMap.jsx` |
+| Real OSM road network ingestion | `backend/realdata/osm_loader.py`, `backend/realdata/osm_scenario.py`, `source="osm"` on `POST /api/problem/generate` |
+| Location resolution (any place) | `backend/realdata/geocoding.py::resolve_location` (Nominatim), driven from `frontend/src/components/ControlPanel.jsx` |
+| Route/traffic/incident visualization | `frontend/src/components/NetworkMap.jsx`, documented in `docs/route_visualization.md` |
+| Real OSM route geometry rendering | `backend/route_geometry.py`, `POST /api/routes/geometry` |
+| Backend-declared traffic states | `backend/realdata/conditions.py::classify_congestion`, `frontend/src/lib/traffic.js` |
+| Per-run reproducibility metadata | `GET /api/scenario/{scenario_id}/manifest` in `backend/main.py` |
 | Per-vehicle inspection | `frontend/src/components/VehicleInspector.jsx` |
 
 Every path above is verified to exist in the repository as of this writing —
