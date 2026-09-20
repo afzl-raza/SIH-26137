@@ -4,7 +4,7 @@ from typing import List
 from models import ProblemScenario, OptimizationConfig, OptimizationResult
 from route_cache import get_route_matrix
 from decoder import decode_random_keys
-from fitness import evaluate_solution
+from fitness import build_edge_map, evaluate_solution
 from optimizers.base import BaseOptimizer
 
 
@@ -29,6 +29,12 @@ class PSOOptimizer(BaseOptimizer):
         pop_size = config.population_size
         max_iter = config.max_iterations
 
+        # Built once and reused for every candidate evaluation below - see
+        # fitness.build_edge_map. Rebuilding it per candidate (pop_size *
+        # max_iter times) was the dominant cost on real OpenStreetMap-scale
+        # scenarios, since it scales with the road network's edge count.
+        edge_map = build_edge_map(scenario)
+
         # Inertia and acceleration coefficients
         w = 0.7
         c1 = 1.49
@@ -51,7 +57,7 @@ class PSOOptimizer(BaseOptimizer):
 
         for i in range(pop_size):
             routes = decode_random_keys(X[i], scenario, dist_matrix, time_matrix, paths_dict)
-            res = evaluate_solution(routes, scenario, config.weights, self.name)
+            res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map)
             pbest_cost[i] = res.total_cost
             pbest_routes[i] = routes
 
@@ -77,7 +83,7 @@ class PSOOptimizer(BaseOptimizer):
             # Evaluate new positions
             for i in range(pop_size):
                 routes = decode_random_keys(X[i], scenario, dist_matrix, time_matrix, paths_dict)
-                res = evaluate_solution(routes, scenario, config.weights, self.name)
+                res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map)
 
                 if res.total_cost < pbest_cost[i]:
                     pbest_cost[i] = res.total_cost
@@ -101,5 +107,6 @@ class PSOOptimizer(BaseOptimizer):
             algorithm_name=self.name,
             runtime_ms=elapsed_ms,
             convergence_history=convergence_history,
-            convergence_elapsed_ms=convergence_elapsed_ms
+            convergence_elapsed_ms=convergence_elapsed_ms,
+            edge_map=edge_map
         )

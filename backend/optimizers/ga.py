@@ -4,7 +4,7 @@ from typing import List
 from models import ProblemScenario, OptimizationConfig, OptimizationResult
 from route_cache import get_route_matrix
 from decoder import decode_random_keys
-from fitness import evaluate_solution
+from fitness import build_edge_map, evaluate_solution
 from optimizers.base import BaseOptimizer
 
 
@@ -31,6 +31,12 @@ class GAOptimizer(BaseOptimizer):
         crossover_rate = 0.85
         mutation_rate = 0.15
 
+        # Built once and reused for every candidate evaluation below - see
+        # fitness.build_edge_map. Rebuilding it per candidate (pop_size *
+        # max_iter times) was the dominant cost on real OpenStreetMap-scale
+        # scenarios, since it scales with the road network's edge count.
+        edge_map = build_edge_map(scenario)
+
         # Initialize population of continuous random key vectors in [0, 1]^num_jobs
         population = np.random.rand(pop_size, num_jobs)
         fitness_costs = np.full(pop_size, float('inf'))
@@ -45,7 +51,7 @@ class GAOptimizer(BaseOptimizer):
         # Evaluate initial population
         for i in range(pop_size):
             routes = decode_random_keys(population[i], scenario, dist_matrix, time_matrix, paths_dict)
-            res = evaluate_solution(routes, scenario, config.weights, self.name)
+            res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map)
             fitness_costs[i] = res.total_cost
 
             if res.total_cost < best_cost:
@@ -89,7 +95,7 @@ class GAOptimizer(BaseOptimizer):
             # Evaluate new generation
             for i in range(pop_size):
                 routes = decode_random_keys(population[i], scenario, dist_matrix, time_matrix, paths_dict)
-                res = evaluate_solution(routes, scenario, config.weights, self.name)
+                res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map)
                 fitness_costs[i] = res.total_cost
 
                 if res.total_cost < best_cost:
@@ -109,7 +115,8 @@ class GAOptimizer(BaseOptimizer):
             algorithm_name=self.name,
             runtime_ms=elapsed_ms,
             convergence_history=convergence_history,
-            convergence_elapsed_ms=convergence_elapsed_ms
+            convergence_elapsed_ms=convergence_elapsed_ms,
+            edge_map=edge_map
         )
 
     def _tournament_select(self, costs: np.ndarray, k: int = 3) -> int:

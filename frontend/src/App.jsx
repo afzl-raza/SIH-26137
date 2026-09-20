@@ -471,7 +471,13 @@ export default function App() {
       const res = await apiFetch('/api/benchmark', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario_id: scenarioId, config })
+        body: JSON.stringify({ scenario_id: scenarioId, config }),
+        // Runs 3 population-based optimizers sequentially (pop_size *
+        // max_iterations candidate evaluations each) against the full
+        // scenario. On a large real OpenStreetMap extract this can take
+        // well over the default 15s timeout even after fixing the
+        // per-candidate edge-map rebuild (see fitness.build_edge_map).
+        timeoutMs: 120000
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => null);
