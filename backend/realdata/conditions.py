@@ -56,7 +56,11 @@ from models import ConditionSummary, Edge, ProblemScenario, WeatherState
 
 from .traffic_model import (
     DEFAULT_TRAFFIC_PROVIDER,
+    LEVEL_MULTIPLIERS,
+    MODE_HEAVY,
+    MODE_MODERATE,
     MODE_NORMAL,
+    MODE_SEVERE,
     TRAFFIC_SOURCE_SIMULATED,
     TrafficConditions,
     TrafficProvider,
@@ -115,6 +119,52 @@ DEFAULT_INCIDENT_MULTIPLIER = 4.0
 # No incident, i.e. the road is back to whatever traffic and weather say.
 NO_INCIDENT = 1.0
 
+# The congestion bands a road is reported in.
+#
+# These are presentation thresholds over the effective multiplier, not a second
+# cost model: nothing here feeds routing, and changing a threshold cannot
+# change a route. They exist so the map colours a road from a state the backend
+# declared, instead of from numeric cutoffs written out again in React where
+# they would silently drift from the traffic model's own levels.
+#
+# The thresholds are NOT free parameters - they are the documented level
+# multipliers themselves (realdata.traffic_model.LEVEL_MULTIPLIERS). A road is
+# reported at level X exactly when its effective multiplier has reached the
+# multiplier that level denotes. That definition is worth stating because it is
+# what makes the picture informative: the traffic model modulates the
+# network-wide level per road by class susceptibility, so at `heavy` a
+# residential street sits around 2.1x while a motorway sits around 2.7x. Bands
+# pinned to the level table put those on opposite sides of the 2.5 boundary and
+# the map shows the variation that is genuinely there. Bands chosen
+# independently of the table straddled it and painted the whole network one
+# colour, hiding a spread that does change routes.
+#
+# `light` is the one threshold with no level of its own: it means "measurably
+# above free flow", and 1.05 is where that is called.
+#
+# Ordered high to low; the first band whose threshold is met wins.
+LIGHT_CONGESTION_THRESHOLD = 1.05
+
+CONGESTION_BANDS: Tuple[Tuple[str, float], ...] = (
+    ("severe", LEVEL_MULTIPLIERS[MODE_SEVERE]),
+    ("heavy", LEVEL_MULTIPLIERS[MODE_HEAVY]),
+    ("moderate", LEVEL_MULTIPLIERS[MODE_MODERATE]),
+    ("light", LIGHT_CONGESTION_THRESHOLD),
+    ("free_flow", 0.0),
+)
+
+CONGESTION_LEVELS: Tuple[str, ...] = tuple(name for name, _ in CONGESTION_BANDS)
+
+
+def classify_congestion(traffic_factor: float) -> str:
+    """The band an effective multiplier falls into. Display only."""
+    value = float(traffic_factor)
+    for name, threshold in CONGESTION_BANDS:
+        if value >= threshold:
+            return name
+    return "free_flow"
+
+
 # Multipliers are stored rounded so that two runs that computed the same value
 # by different float paths still produce byte-identical scenarios, which is
 # what keeps the content-addressed route-matrix cache hitting.
@@ -143,6 +193,10 @@ def recompute_edge_cost(edge: Edge) -> Edge:
     edge.current_travel_time = round(
         float(edge.base_travel_time) * effective, TRAVEL_TIME_PRECISION
     )
+    # Derived alongside the cost, never separately, so the state the UI paints
+    # always describes the multiplier the optimizer actually routed against.
+    edge.congestion_level = classify_congestion(edge.traffic_factor)
+    edge.has_incident = float(edge.incident_multiplier) != NO_INCIDENT
     return edge
 
 
@@ -401,10 +455,13 @@ def clear_conditions(scenario: ProblemScenario) -> ProblemScenario:
 
 
 __all__ = [
+    "CONGESTION_BANDS",
+    "CONGESTION_LEVELS",
     "WEATHER_IMPACT",
     "DEFAULT_INCIDENT_MULTIPLIER",
     "NO_INCIDENT",
     "ConditionRequest",
+    "classify_congestion",
     "apply_conditions",
     "apply_incidents",
     "clear_conditions",

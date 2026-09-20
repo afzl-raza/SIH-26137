@@ -40,6 +40,21 @@ class Edge(BaseModel):
     current_travel_time: float  # base_travel_time * traffic_factor
     road_name: str = ""
 
+    # Which congestion band this edge currently sits in, derived from
+    # `traffic_factor` against the documented thresholds in
+    # `realdata.conditions.CONGESTION_BANDS`. Written by the same single
+    # function that writes traffic_factor, so it can never disagree with it.
+    #
+    # It exists so the map colours a road from a backend-declared state rather
+    # than from numeric thresholds duplicated in React. Values:
+    #     free_flow | light | moderate | heavy | severe
+    congestion_level: str = "free_flow"
+    # True when this specific road carries an operator-injected incident, as
+    # opposed to merely being congested by the network-wide traffic level.
+    # The map needs to distinguish the two and cannot infer it from
+    # traffic_factor alone.
+    has_incident: bool = False
+
     # --- OpenStreetMap provenance (None for synthetic scenarios) ----------
     osm_way_id: Optional[int] = None
     highway: Optional[str] = None          # OSM highway class, e.g. "residential"

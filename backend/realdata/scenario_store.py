@@ -57,6 +57,13 @@ class ScenarioRecord:
     data_source: str
     created_at: float
     updated_at: float
+    # Where this scenario's network came from geographically, as
+    # `realdata.geocoding.ResolvedLocation.to_dict()` returned it. Present only
+    # for OpenStreetMap scenarios - a synthetic network has no real location to
+    # report, and inventing one would misstate the run's provenance. Kept on
+    # the record rather than on the scenario so nothing about the optimizer's
+    # input changes.
+    location: Optional[dict] = None
 
     @property
     def scenario_hash(self) -> str:
@@ -120,7 +127,12 @@ class ScenarioStore:
 
     # ---------------------------------------------------------------- public
 
-    def create(self, scenario: ProblemScenario, data_source: str = "synthetic") -> ScenarioRecord:
+    def create(
+        self,
+        scenario: ProblemScenario,
+        data_source: str = "synthetic",
+        location: Optional[dict] = None,
+    ) -> ScenarioRecord:
         """Stores a deep copy of `scenario` under a fresh id."""
         now = time.time()
         with self._lock:
@@ -134,6 +146,7 @@ class ScenarioStore:
                 data_source=data_source,
                 created_at=now,
                 updated_at=now,
+                location=dict(location) if location else None,
             )
             self._records[scenario_id] = record
             # Evict again *after* inserting: the pre-insert sweep leaves room

@@ -33,7 +33,12 @@ that don't match this codebase — every path below is verified to exist).
 | Reproducibility (seeded, repeatable) | `seed` field throughout `models.py`; `backend/experiments/runner.py::run_e6_reproducibility` |
 | Experiment evidence storage | `experiments/<name>/{config.json,*.csv,*.json}`, served read-only via `GET /api/experiments/{name}` |
 | Executable software platform | `backend/main.py` (FastAPI) + `frontend/src/` (React/Leaflet) |
-| Route/traffic/incident visualization | `frontend/src/components/NetworkMap.jsx` |
+| Real OSM road network ingestion | `backend/realdata/osm_loader.py`, `backend/realdata/osm_scenario.py`, `source="osm"` on `POST /api/problem/generate` |
+| Location resolution (any place) | `backend/realdata/geocoding.py::resolve_location` (Nominatim), driven from `frontend/src/components/ControlPanel.jsx` |
+| Route/traffic/incident visualization | `frontend/src/components/NetworkMap.jsx`, documented in `docs/route_visualization.md` |
+| Real OSM route geometry rendering | `backend/route_geometry.py`, `POST /api/routes/geometry` |
+| Backend-declared traffic states | `backend/realdata/conditions.py::classify_congestion`, `frontend/src/lib/traffic.js` |
+| Per-run reproducibility metadata | `GET /api/scenario/{scenario_id}/manifest` in `backend/main.py` |
 | Per-vehicle inspection | `frontend/src/components/VehicleInspector.jsx` |
 
 Every path above is verified to exist in the repository as of this writing —

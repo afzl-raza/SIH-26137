@@ -37,6 +37,7 @@ from realdata.traffic_model import (
 )
 from realdata.weather import DEFAULT_WEATHER_PROVIDER
 from route_cache import ROUTE_MATRIX_CACHE
+from route_geometry import route_geometries, scenario_geometry_source
 from optimizers.greedy import GreedyOptimizer
 from optimizers.pso import PSOOptimizer
 from optimizers.qpso import QPSOOptimizer
@@ -108,6 +109,11 @@ class TrafficPayload(ScenarioRefMixin):
 class EvaluatePayload(ScenarioRefMixin):
     routes: List[VehicleRoute]
     weights: ObjectiveWeights
+
+
+class RouteGeometryPayload(ScenarioRefMixin):
+    """Asks for the road shape of an already-computed set of routes."""
+    routes: List[VehicleRoute]
 
 
 def _resolve_scenario(payload: ScenarioRefMixin):
@@ -190,6 +196,10 @@ def generate_problem(req: GenerateRequest):
     return {
         **record.metadata(),
         **_condition_envelope(record.scenario),
+        # Stated up front so the map knows whether these roads have real
+        # shapes or are the generator's straight lines, without inspecting
+        # every edge itself.
+        "geometry_source": scenario_geometry_source(record.scenario),
         "scenario": record.scenario,
     }
 
@@ -264,10 +274,13 @@ def _generate_from_openstreetmap(req: GenerateRequest):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    record = SCENARIO_STORE.create(scenario, data_source="openstreetmap")
+    record = SCENARIO_STORE.create(
+        scenario, data_source="openstreetmap", location=location.to_dict()
+    )
     body = {**record.metadata(), **location.to_dict()}
     body.update(_condition_envelope(record.scenario))
     body.update({
+        "geometry_source": scenario_geometry_source(record.scenario),
         "scenario": record.scenario,
         "provenance": graph.provenance,
         "retrieved_at": graph.retrieved_at,
@@ -455,6 +468,109 @@ def get_weather(
     return body
 
 
+@app.post("/api/routes/geometry")
+def get_route_geometry(payload: RouteGeometryPayload):
+    """The road shape of an already-computed set of routes.
+
+    This does not route. It takes the node path the optimizer already produced
+    - which is the full node-by-node Dijkstra path, not just the job order -
+    and looks up the OpenStreetMap geometry of each hop, using the same
+    parallel-edge rule the router used. The result is the actual road the
+    vehicle drives, drawn from OSM's own way geometry.
+
+    It lives here rather than in the frontend so that no route calculation of
+    any kind exists in React, and so the stitching is covered by tests.
+
+    For a synthetic network, whose edges carry no geometry, every hop falls
+    back to the straight line between its two nodes and says so in
+    `geometry_source` - the same picture the map has always drawn, now
+    labelled.
+    """
+    scenario, _ = _resolve_scenario(payload)
+    try:
+        routes = route_geometries(scenario, payload.routes)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Route geometry error: {str(e)}")
+
+    return {
+        "data_source": scenario.data_source,
+        "geometry_source": scenario_geometry_source(scenario),
+        "routes": routes,
+    }
+
+
+@app.get("/api/scenario/{scenario_id}/manifest")
+def get_scenario_manifest(
+    scenario_id: str,
+    algorithm: Optional[str] = None,
+    population_size: Optional[int] = None,
+    max_iterations: Optional[int] = None,
+):
+    """Everything needed to reproduce a run, read back from the server.
+
+    The point is that a judge can read the manifest rather than take the
+    demonstrator's word for what was configured. Every field is either stored
+    state or the caller's own solver settings echoed back - nothing is
+    reconstructed or guessed, and a field the backend genuinely does not know
+    (a synthetic network has no real location; a solver setting the caller did
+    not pass) is reported as null instead of being filled in.
+    """
+    try:
+        record = SCENARIO_STORE.get(scenario_id)
+    except ScenarioNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Unknown scenario_id '{scenario_id}'.")
+
+    scenario = record.scenario
+    conditions = scenario.conditions
+
+    return {
+        "scenario_id": record.scenario_id,
+        # The deterministic fingerprint of the generation parameters: same
+        # hash means the same network can be regenerated.
+        "scenario_hash": record.scenario_hash,
+        "seed": scenario.seed,
+        "data_source": record.data_source,
+        "geometry_source": scenario_geometry_source(scenario),
+        # Null for synthetic networks, which have no real-world location.
+        "location": record.location,
+        "network": {
+            "node_count": len(scenario.nodes),
+            "edge_count": len(scenario.edges),
+            "job_count": len(scenario.jobs),
+            "vehicle_count": len(scenario.vehicles),
+            "depot_node_id": scenario.depot_node_id,
+        },
+        # Echoed from the caller: these are the solver settings the client
+        # used, which the backend does not otherwise retain.
+        "solver": {
+            "algorithm": algorithm,
+            "population_size": population_size,
+            "max_iterations": max_iterations,
+        },
+        "conditions": {
+            "applied": conditions is not None,
+            "traffic_mode": conditions.traffic_mode if conditions else MODE_NORMAL,
+            "traffic_source": conditions.traffic_source if conditions else TRAFFIC_SOURCE_LABEL,
+            "traffic_provider": conditions.traffic_provider if conditions else None,
+            "traffic_is_simulated": conditions.traffic_is_simulated if conditions else True,
+            "traffic_formulation": conditions.traffic_formulation if conditions else None,
+            "weather_enabled": conditions.weather_enabled if conditions else False,
+            "weather_source": conditions.weather_source if conditions else None,
+            "weather_condition": conditions.weather_condition if conditions else None,
+            "weather_multiplier": conditions.weather_multiplier if conditions else 1.0,
+            "weather_observed_at": (
+                conditions.weather.observed_at if conditions and conditions.weather else None
+            ),
+            "incident_edge_count": conditions.incident_edge_count if conditions else 0,
+            "fallback_used": conditions.fallback_used if conditions else False,
+            "signature": conditions.signature if conditions else None,
+            "updated_at": conditions.updated_at if conditions else None,
+        },
+        "created_at": record.created_at,
+        "updated_at": record.updated_at,
+    }
+
+
 @app.get("/api/conditions/model")
 def get_condition_model():
     """The condition model's own parameters, served so the UI and any report
@@ -463,7 +579,12 @@ def get_condition_model():
     Everything under `simulated` is a model assumption. Everything under `real`
     is genuinely observed or measured data.
     """
-    from realdata.conditions import DEFAULT_INCIDENT_MULTIPLIER, WEATHER_IMPACT
+    from realdata.conditions import (
+        CONGESTION_BANDS,
+        CONGESTION_LEVELS,
+        DEFAULT_INCIDENT_MULTIPLIER,
+        WEATHER_IMPACT,
+    )
     from realdata.traffic_model import (
         CLASS_SUSCEPTIBILITY,
         LEVEL_MULTIPLIERS,
@@ -482,6 +603,14 @@ def get_condition_model():
             "road_class_susceptibility": CLASS_SUSCEPTIBILITY,
             "weather_impact_multipliers": WEATHER_IMPACT,
             "default_incident_multiplier": DEFAULT_INCIDENT_MULTIPLIER,
+            # Display bands only. Published so the map's colours and the
+            # thresholds behind them are the same declared numbers, and so a
+            # reader can check what "heavy" on screen actually means.
+            "congestion_levels": list(CONGESTION_LEVELS),
+            "congestion_bands": [
+                {"level": name, "min_traffic_factor": threshold}
+                for name, threshold in CONGESTION_BANDS
+            ],
             "disclaimer": (
                 "Model parameters / calibration assumptions for a prototype. "
                 "Not traffic measurements, and not calibrated weather-impact "
