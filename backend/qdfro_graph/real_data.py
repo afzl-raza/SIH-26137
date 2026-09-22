@@ -5,7 +5,22 @@ from .schema import NodeAttrs, EdgeAttrs
 
 def build_sioux_falls_real() -> TrafficGraph:
     """
-    Constructs the canonical 24-node, 76-directed-link Sioux Falls transportation network benchmark.
+    Constructs the Sioux Falls transportation network benchmark (LeBlanc et al. 1975;
+    the version everyone cites is the TNTP file at
+    bstabler/TransportationNetworks/SiouxFalls/SiouxFalls_net.tntp).
+
+    The 24-node, 76-directed-link TOPOLOGY reproduced here is canonical - every
+    physical road segment appears as two directed links, one per direction
+    (verified exactly in tests/test_qdfro_graph.py::test_sioux_falls_topology_matches_canonical_edge_set).
+
+    The per-link ATTRIBUTES (length_m, capacity_vph, free_flow_speed_m_s) are
+    NOT a byte-for-byte reproduction of the canonical TNTP values (which use
+    different units/precision). They are rounded, simplified values sized to
+    this project's meters/m/s/BPR-vph model, chosen to preserve the relative
+    scale of the real network (arterial vs. distributor capacities) rather
+    than to match the source file's exact decimals. Do not treat them as
+    canonical TNTP attribute values.
+
     Nodes 1..24 with node 1 set as central depot.
     """
     graph = TrafficGraph()
@@ -82,8 +97,12 @@ def build_sioux_falls_real() -> TrafficGraph:
 
 def load_sioux_falls_od_demand() -> Dict[Tuple[str, str], float]:
     """
-    Returns realistic origin-destination (OD) demand matrix for Sioux Falls benchmark.
-    Scaled for equilibrium traffic assignment demonstration.
+    Returns a small, hand-picked origin-destination (OD) demand set for the Sioux
+    Falls benchmark. This is NOT the canonical Sioux Falls OD trip table (the
+    published SiouxFalls_trips.tntp demand covers all 552 ordered node pairs);
+    it is an intentionally reduced set of 13 representative depot<->zone trips,
+    sized so MSA equilibrium assignment and the QPSO demo run fast and produce
+    an interpretable, visibly congested network for the SIH demonstration.
     """
     od = {
         ("1", "10"): 400.0, ("1", "20"): 350.0, ("1", "15"): 300.0,
