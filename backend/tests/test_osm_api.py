@@ -220,7 +220,7 @@ def test_osm_scenario_optimizes_and_benchmarks_by_scenario_id(mock_overpass):
     bench = client.post("/api/benchmark",
                         json={"scenario_id": scenario_id, "config": config})
     assert bench.status_code == 200
-    assert set(bench.json()["results"].keys()) == {"greedy", "pso", "ga", "qpso"}
+    assert set(bench.json()["results"].keys()) == {"greedy", "pso", "ga", "qpso", "qpso_memetic"}
 
 
 def test_incident_and_reoptimize_work_on_an_osm_scenario(mock_overpass):

@@ -623,7 +623,7 @@ def test_all_four_optimizers_run_on_a_real_osm_scenario():
 
     result = run_benchmark(scenario, config)
 
-    assert set(result.results.keys()) == {"greedy", "pso", "ga", "qpso"}
+    assert set(result.results.keys()) == {"greedy", "pso", "ga", "qpso", "qpso_memetic"}
     for name, outcome in result.results.items():
         assert outcome.total_cost > 0, name
         assert outcome.total_distance > 0, name

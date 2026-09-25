@@ -45,12 +45,15 @@ class GreedyOptimizer(BaseOptimizer):
             curr_node = depot_id
 
             while unvisited:
-                # Find nearest unvisited job among the feasible ones. Tie-break
-                # by earliest due_time - a no-op when due_time is None, since
-                # every candidate's tie-break key is then +inf, which leaves
-                # ties resolved exactly as before (first candidate found wins).
+                # Find the unvisited job the vehicle can start serving soonest
+                # among the feasible ones, tie-broken by earliest due_time.
+                # Both are no-ops when every job's ready_time/due_time is
+                # None: wait is then always 0, so rank_key reduces to the
+                # original t_leg-only ranking, and due_key is +inf for every
+                # candidate, so ties resolve exactly as before (first
+                # candidate found wins).
                 best_job = None
-                best_time_leg = float('inf')
+                best_rank_key = float('inf')
                 best_due_key = float('inf')
                 best_idx = -1
                 best_departure = None
@@ -60,7 +63,8 @@ class GreedyOptimizer(BaseOptimizer):
                     t_return = time_matrix[job.node_id, depot_id]
 
                     arrival = v_clock + time_matrix[curr_node, job.node_id]
-                    service_start = arrival if job.ready_time is None else max(arrival, job.ready_time)
+                    wait = 0.0 if job.ready_time is None else max(0.0, job.ready_time - arrival)
+                    service_start = arrival + wait
                     is_late = job.due_time is not None and service_start > job.due_time
                     departure = service_start + job.service_time
                     completion_if_chosen = departure + t_return
@@ -69,9 +73,14 @@ class GreedyOptimizer(BaseOptimizer):
                     time_ok = completion_if_chosen <= v.max_route_time
 
                     if capacity_ok and time_ok and not is_late:
+                        # Rank by time-until-service-start (t_leg + wait), not
+                        # raw travel distance - a job that's geometrically
+                        # nearer but not open yet for a long time should lose
+                        # to one the vehicle can actually start serving sooner.
+                        rank_key = t_leg + wait
                         due_key = job.due_time if job.due_time is not None else float('inf')
-                        if (t_leg, due_key) < (best_time_leg, best_due_key):
-                            best_time_leg = t_leg
+                        if (rank_key, due_key) < (best_rank_key, best_due_key):
+                            best_rank_key = rank_key
                             best_due_key = due_key
                             best_job = job
                             best_idx = idx

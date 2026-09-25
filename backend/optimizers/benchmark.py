@@ -4,6 +4,7 @@ from optimizers.greedy import GreedyOptimizer
 from optimizers.pso import PSOOptimizer
 from optimizers.ga import GAOptimizer
 from optimizers.qpso import QPSOOptimizer
+from optimizers.qpso_memetic import MemeticQPSOOptimizer
 
 
 def run_benchmark(
@@ -11,8 +12,9 @@ def run_benchmark(
     config: OptimizationConfig
 ) -> BenchmarkResult:
     """
-    Executes all available optimizers (Greedy, Classical PSO, GA, QPSO) on the EXACT same
-    problem scenario and parameters, collecting actual experimental results.
+    Executes all available optimizers (Greedy, Classical PSO, GA, QPSO, and
+    the QPSO+local-search memetic variant) on the EXACT same problem scenario
+    and parameters, collecting actual experimental results.
     """
     results: Dict[str, OptimizationResult] = {}
 
@@ -31,6 +33,10 @@ def run_benchmark(
     # 4. Quantum-behaved PSO (QPSO)
     qpso_opt = QPSOOptimizer()
     results["qpso"] = qpso_opt.optimize(scenario, config)
+
+    # 5. QPSO + local search (memetic)
+    memetic_opt = MemeticQPSOOptimizer()
+    results["qpso_memetic"] = memetic_opt.optimize(scenario, config)
 
     return BenchmarkResult(
         scenario_seed=scenario.seed,

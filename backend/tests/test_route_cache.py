@@ -181,8 +181,11 @@ def test_cached_matrix_equals_an_uncached_computation(cache):
 # ======================================================== benchmark reuse
 
 def test_benchmark_builds_the_matrix_once_and_hits_three_times():
-    """Greedy, PSO, GA and QPSO run on one identical scenario, so the matrix
-    must be built once and reused three times."""
+    """Greedy, PSO, GA, QPSO and Memetic QPSO run on one identical scenario,
+    so the matrix must be built once and every other fetch must be a cache
+    hit. Memetic QPSO fetches the matrix twice per run (once for its own
+    search, once more inside the GreedyOptimizer it uses as a warm start),
+    so 5 algorithms make 6 fetches total: 1 build + 5 hits."""
     s = _scenario(num_nodes=25, num_jobs=8, num_vehicles=3, seed=17)
     config = OptimizationConfig(population_size=6, max_iterations=3, seed=17)
 
@@ -192,9 +195,9 @@ def test_benchmark_builds_the_matrix_once_and_hits_three_times():
     result = run_benchmark(s, config)
     stats = ROUTE_MATRIX_CACHE.stats()
 
-    assert set(result.results.keys()) == {"greedy", "pso", "ga", "qpso"}
+    assert set(result.results.keys()) == {"greedy", "pso", "ga", "qpso", "qpso_memetic"}
     assert stats["builds"] == 1, f"expected a single matrix build, got {stats}"
-    assert stats["hits"] == 3, f"expected three cache hits, got {stats}"
+    assert stats["hits"] == 5, f"expected five cache hits, got {stats}"
 
 
 def test_benchmark_after_incident_rebuilds_once_more():
@@ -210,7 +213,8 @@ def test_benchmark_after_incident_rebuilds_once_more():
 
     stats = ROUTE_MATRIX_CACHE.stats()
     assert stats["builds"] == 2, f"incident must force exactly one rebuild, got {stats}"
-    assert stats["hits"] == 6
+    # 5 hits per run_benchmark call (see test above) x 2 calls = 10.
+    assert stats["hits"] == 10
 
 
 # ==================================================== eviction and bounds

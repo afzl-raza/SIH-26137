@@ -28,7 +28,7 @@ def test_benchmark_all_algorithms_present_and_feasible_or_flagged():
 
     benchmark_result = run_benchmark(scenario, config)
 
-    assert set(benchmark_result.results.keys()) == {"greedy", "pso", "ga", "qpso"}
+    assert set(benchmark_result.results.keys()) == {"greedy", "pso", "ga", "qpso", "qpso_memetic"}
     for algorithm, result in benchmark_result.results.items():
         assert result.is_feasible == (result.constraint_violations == 0), (
             f"{algorithm}: is_feasible must match constraint_violations exactly"

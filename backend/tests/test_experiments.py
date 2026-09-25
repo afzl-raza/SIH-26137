@@ -29,7 +29,7 @@ def test_e1_writes_expected_files_and_schema(tmp_path):
     assert (out_dir / "raw_results.json").exists()
     assert (out_dir / "results.csv").exists()
 
-    assert set(raw.keys()) == {"greedy", "pso", "ga", "qpso"}
+    assert set(raw.keys()) == {"greedy", "pso", "ga", "qpso", "qpso_memetic"}
     for result in raw.values():
         assert "total_cost" in result
         assert "runtime_ms" in result

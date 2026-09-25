@@ -271,7 +271,7 @@ def test_benchmark_and_evaluate_accept_scenario_id():
 
     bench = client.post("/api/benchmark", json={"scenario_id": scenario_id, "config": config})
     assert bench.status_code == 200
-    assert set(bench.json()["results"].keys()) == {"greedy", "pso", "ga", "qpso"}
+    assert set(bench.json()["results"].keys()) == {"greedy", "pso", "ga", "qpso", "qpso_memetic"}
 
     routes = bench.json()["results"]["qpso"]["routes"]
     ev = client.post("/api/evaluate", json={

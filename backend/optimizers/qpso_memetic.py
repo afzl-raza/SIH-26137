@@ -5,7 +5,10 @@ Drop-in alongside optimizers/qpso.py. Uses the SAME decoder and the SAME
 fitness.evaluate_solution for the final reported result, so the benchmark
 stays fair. Local search uses a fast cost model that reproduces
 evaluate_solution's formula from the route matrix (legs + service time +
-congestion along each shortest path + normalized quadratic penalty).
+congestion along each shortest path + normalized quadratic penalty,
+including the CVRPTW lateness term), with timing computed by the same
+schedule.simulate_route every other optimizer and fitness.py use - so this
+fast model can never silently diverge from the real evaluator's numbers.
 """
 import time
 import numpy as np
@@ -14,6 +17,7 @@ from models import ProblemScenario, OptimizationConfig, OptimizationResult
 from route_cache import get_route_matrix
 from decoder import decode_random_keys
 from fitness import build_edge_map, evaluate_solution
+from schedule import simulate_route
 from optimizers.base import BaseOptimizer
 from optimizers.greedy import GreedyOptimizer
 
@@ -35,6 +39,10 @@ class MemeticQPSOOptimizer(BaseOptimizer):
         self.job_svc = [j.service_time for j in self.jobs]
         self.veh = scenario.vehicles
         self.dist_m, self.time_m = dist_m, time_m
+        # simulate_route wants a job-id -> Job lookup; `route` lists below are
+        # positions into self.jobs (see _keys_to_routes), so position doubles
+        # as the "job id" key here - simulate_route never reads job.id itself.
+        self.jobs_by_pos = {i: j for i, j in enumerate(self.jobs)}
         nodes = set(self.job_node) | {self.depot}
         self.cong: Dict[Tuple[int, int], float] = {}
         for a in nodes:
@@ -49,19 +57,25 @@ class MemeticQPSOOptimizer(BaseOptimizer):
 
     def _route_cost(self, v_idx: int, route: List[int]) -> float:
         w = self.w
+        v = self.veh[v_idx]
+
+        # Distance, congestion and demand: schedule.simulate_route only owns
+        # timing (mirroring decoder.py/greedy.py), so those stay a direct sum.
         cur = self.depot
-        t = d = c = dem = 0.0
+        d = c = dem = 0.0
         for j in route:
             n = self.job_node[j]
-            t += self.time_m[cur, n] + self.job_svc[j]
             d += self.dist_m[cur, n]
             c += self.cong[(cur, n)]
             dem += self.job_dem[j]
             cur = n
-        t += self.time_m[cur, self.depot]
         d += self.dist_m[cur, self.depot]
         c += self.cong[(cur, self.depot)]
-        v = self.veh[v_idx]
+
+        # Timing, including wait/lateness - the one shared timing function.
+        sched = simulate_route(route, v, self.depot, self.time_m, self.jobs_by_pos)
+        t = sched.travel_time
+
         pen = 0.0
         cap_ex = max(0.0, dem - v.capacity)
         t_ex = max(0.0, t - v.max_route_time)
@@ -70,6 +84,11 @@ class MemeticQPSOOptimizer(BaseOptimizer):
             pen += pw * (cap_ex / max(v.capacity, 1e-9)) ** 2 + pw * 0.05
         if t_ex > 0:
             pen += pw * (t_ex / max(v.max_route_time, 1e-9)) ** 2 + pw * 0.05
+        # Lateness (CVRPTW) - mirrors fitness.py's lateness penalty exactly:
+        # normalized quadratic term plus a fixed penalty per late job.
+        if sched.lateness > 0:
+            pen += pw * (sched.lateness / max(v.max_route_time, 1e-9)) ** 2
+            pen += pw * 0.05 * sched.late_jobs
         return w.alpha * t + w.beta * d + w.gamma * c + pen
 
     # ---------- keys <-> routes ----------
