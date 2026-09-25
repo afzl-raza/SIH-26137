@@ -1,5 +1,5 @@
 from typing import List, Dict, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Node(BaseModel):
@@ -86,6 +86,22 @@ class Job(BaseModel):
     demand: float
     service_time: float = 5.0  # minutes service time at destination
     priority: int = 1
+    # Delivery time window, in minutes from shift start (t=0 at depot
+    # departure). None means no window - existing scenarios/fixtures that
+    # never set these behave exactly as before (see schedule.simulate_route).
+    ready_time: Optional[float] = None
+    due_time: Optional[float] = None
+
+    @model_validator(mode="after")
+    def _validate_time_window(self) -> "Job":
+        if self.ready_time is not None and self.ready_time < 0:
+            raise ValueError("ready_time must be >= 0")
+        if self.due_time is not None and self.due_time < 0:
+            raise ValueError("due_time must be >= 0")
+        if self.ready_time is not None and self.due_time is not None:
+            if self.ready_time > self.due_time:
+                raise ValueError("ready_time must be <= due_time")
+        return self
 
 
 class WeatherState(BaseModel):
@@ -206,6 +222,16 @@ class OptimizationConfig(BaseModel):
     weights: ObjectiveWeights = Field(default_factory=ObjectiveWeights)
 
 
+class StopTiming(BaseModel):
+    """One job's timing on a route, as computed by schedule.simulate_route."""
+    job_id: int
+    arrival: float       # clock reading when the vehicle reaches this stop
+    service_start: float  # max(arrival, job.ready_time) - waiting is counted, not skipped
+    departure: float      # service_start + job.service_time
+    wait: float           # service_start - arrival
+    lateness: float       # max(0, service_start - job.due_time), 0 when no due_time
+
+
 class VehicleRoute(BaseModel):
     vehicle_id: int
     job_ids: List[int]
@@ -216,6 +242,12 @@ class VehicleRoute(BaseModel):
     capacity_exceeded: float = 0.0
     time_exceeded: float = 0.0
     congestion_delay: float = 0.0  # this route's share of total fleet congestion delay
+    # Time-window fields (schedule.simulate_route). All zero/empty when no
+    # job on this route carries a ready_time/due_time.
+    stops: List[StopTiming] = []
+    wait_time: float = 0.0   # total minutes waited across all stops
+    lateness: float = 0.0    # total minutes late across all stops (soft constraint)
+    late_jobs: int = 0       # count of stops served after their due_time
 
 
 class OptimizationResult(BaseModel):

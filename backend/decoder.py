@@ -1,6 +1,7 @@
 import numpy as np
 from typing import List, Tuple, Dict
 from models import ProblemScenario, VehicleRoute, Vehicle, Job
+from schedule import simulate_route
 
 
 def decode_random_keys(
@@ -28,6 +29,8 @@ def decode_random_keys(
     if num_jobs == 0:
         return []
 
+    jobs_by_id: Dict[int, Job] = {j.id: j for j in jobs}
+
     # Group jobs by assigned vehicle
     vehicle_jobs: Dict[int, List[Tuple[float, Job]]] = {v_idx: [] for v_idx in range(num_vehicles)}
 
@@ -44,10 +47,10 @@ def decode_random_keys(
         # Sort jobs within vehicle by sequence key
         assigned.sort(key=lambda item: item[0])
         v_job_objs = [item[1] for item in assigned]
+        job_seq = [j.id for j in v_job_objs]
 
         node_path: List[int] = [depot_id]
         total_dist = 0.0
-        total_time = 0.0
         total_demand = 0.0
         curr_n = depot_id
 
@@ -57,27 +60,31 @@ def decode_random_keys(
             path_segment = paths_dict.get((curr_n, jn), [curr_n, jn])
             node_path.extend(path_segment[1:])
             total_dist += dist_matrix[curr_n, jn]
-            total_time += time_matrix[curr_n, jn] + j.service_time
             curr_n = jn
 
         # Return to depot
         return_segment = paths_dict.get((curr_n, depot_id), [curr_n, depot_id])
         node_path.extend(return_segment[1:])
         total_dist += dist_matrix[curr_n, depot_id]
-        total_time += time_matrix[curr_n, depot_id]
+
+        schedule = simulate_route(job_seq, v, depot_id, time_matrix, jobs_by_id)
 
         cap_exceeded = max(0.0, total_demand - v.capacity)
-        time_exceeded = max(0.0, total_time - v.max_route_time)
+        time_exceeded = max(0.0, schedule.travel_time - v.max_route_time)
 
         routes.append(VehicleRoute(
             vehicle_id=v.id,
-            job_ids=[j.id for j in v_job_objs],
+            job_ids=job_seq,
             node_path=node_path,
             route_distance=round(total_dist, 2),
-            route_travel_time=round(total_time, 2),
+            route_travel_time=round(schedule.travel_time, 2),
             total_demand=round(total_demand, 1),
             capacity_exceeded=round(cap_exceeded, 1),
-            time_exceeded=round(time_exceeded, 2)
+            time_exceeded=round(time_exceeded, 2),
+            stops=schedule.stops,
+            wait_time=round(schedule.wait_time, 2),
+            lateness=round(schedule.lateness, 2),
+            late_jobs=schedule.late_jobs
         ))
 
     return routes
