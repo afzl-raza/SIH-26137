@@ -96,6 +96,29 @@ const createJobMarkerIcon = (jobId) => L.divIcon({
   iconAnchor: [24, 10]
 });
 
+// Manual placement is a draft until confirmed, so its markers are visually
+// distinct (dashed border, different accent) from the committed depot/job
+// markers above - never implying the pick is already applied.
+const createDraftDepotMarkerIcon = () => L.divIcon({
+  html: `<div style="background:#1E1B18; border:2px dashed #C6602E; border-radius:6px; padding:2px 6px; color:#E8A93A; font-family:JetBrains Mono, monospace; font-size:10px; font-weight:bold; box-shadow:0 4px 12px rgba(198,96,46,0.35); display:flex; align-items:center; gap:4px;">
+          <svg width="9" height="9" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="2" fill="none" stroke="#C6602E" stroke-width="1.5"/></svg>
+          <span>DEPOT (draft)</span>
+         </div>`,
+  className: 'custom-leaflet-draft-depot',
+  iconSize: [90, 24],
+  iconAnchor: [45, 12]
+});
+
+const createDraftStopMarkerIcon = (index) => L.divIcon({
+  html: `<div style="background:#1E1B18; border:1.5px dashed #6B9A57; border-radius:12px; padding:1px 6px; color:#9ABF87; font-family:JetBrains Mono, monospace; font-size:10px; font-weight:600; box-shadow:0 2px 8px rgba(0,0,0,0.5); display:flex; align-items:center; gap:3px;">
+          <svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3.2" fill="#6B9A57"/></svg>
+          <span>S${index < 10 ? '0' + index : index}</span>
+         </div>`,
+  className: 'custom-leaflet-draft-stop',
+  iconSize: [48, 20],
+  iconAnchor: [24, 10]
+});
+
 const createVehicleMarkerIcon = (vehicleId, color, isSelected) => L.divIcon({
   html: `<div style="background:#1E1B18; border:${isSelected ? '3px' : '2px'} solid ${color}; border-radius:12px; padding:2px 7px; color:#FFFFFF; font-family:JetBrains Mono, monospace; font-size:10px; font-weight:bold; box-shadow:0 4px 14px ${color}66; display:flex; align-items:center; gap:4px; transform:scale(${isSelected ? '1.15' : '1.0'});">
           <svg width="13" height="9" viewBox="0 0 16 10"><rect x="0.5" y="1.5" width="10" height="6.5" rx="1" fill="${color}"/><rect x="10.5" y="3.5" width="4.5" height="4.5" rx="0.8" fill="${color}"/><circle cx="4" cy="9" r="1.3" fill="#1E1B18" stroke="${color}" stroke-width="1"/><circle cx="12.5" cy="9" r="1.3" fill="#1E1B18" stroke="${color}" stroke-width="1"/></svg>
@@ -119,7 +142,11 @@ export default function NetworkMap({
   onDisruptEdge,
   disruptDisabled,
   previewResult,
-  previewedAlgorithm
+  previewedAlgorithm,
+  placementMode = false,
+  draftDepotId = null,
+  draftStopIds = [],
+  onPlaceNode
 }) {
   const [vehicleFilter, setVehicleFilter] = useState('all');
   const [mapView, setMapView] = useState('gis'); // 'gis' | 'graph' - same real nodes/edges, just a render toggle
@@ -553,8 +580,53 @@ export default function NetworkMap({
           );
         })}
 
-        {/* Nodes (Depot, Jobs, Intersections) */}
+        {/* Nodes (Depot, Jobs, Intersections). In placement mode every node
+            is a click target for the operator's manual depot/stop picks,
+            rendered from the in-progress draft rather than the committed
+            scenario - nothing here is applied until confirmed. */}
         {nodes.map(n => {
+          if (placementMode) {
+            const isDraftDepot = n.id === draftDepotId;
+            const draftStopIndex = draftStopIds.indexOf(n.id);
+            const isDraftStop = draftStopIndex !== -1;
+            const clickHandlers = { eventHandlers: { click: () => onPlaceNode?.(n.id) } };
+
+            if (isDraftDepot) {
+              return (
+                <Marker
+                  key={`node-${n.id}`}
+                  position={[n.lat, n.lng]}
+                  icon={createDraftDepotMarkerIcon()}
+                  {...clickHandlers}
+                />
+              );
+            }
+            if (isDraftStop) {
+              return (
+                <Marker
+                  key={`node-${n.id}`}
+                  position={[n.lat, n.lng]}
+                  icon={createDraftStopMarkerIcon(draftStopIndex + 1)}
+                  {...clickHandlers}
+                />
+              );
+            }
+            return (
+              <CircleMarker
+                key={`node-${n.id}`}
+                center={[n.lat, n.lng]}
+                radius={5}
+                pathOptions={{
+                  color: '#C6602E',
+                  fillColor: '#3A342E',
+                  fillOpacity: 1,
+                  weight: 1.5
+                }}
+                {...clickHandlers}
+              />
+            );
+          }
+
           const isJob = jobNodeIds.has(n.id);
           const jobObj = jobMap.get(n.id);
 

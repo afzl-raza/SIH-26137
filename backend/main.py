@@ -17,7 +17,7 @@ from models import (
     VehicleRoute,
     ObjectiveWeights
 )
-from problem_generator import generate_synthetic_scenario
+from problem_generator import generate_synthetic_scenario, customize_scenario
 from realdata.scenario_store import SCENARIO_STORE, ScenarioNotFoundError
 from realdata.geocoding import GeocodingError, resolve_location
 from realdata.osm_loader import OsmLoaderError, load_osm_graph
@@ -212,6 +212,48 @@ def generate_problem(req: GenerateRequest):
         # Stated up front so the map knows whether these roads have real
         # shapes or are the generator's straight lines, without inspecting
         # every edge itself.
+        "geometry_source": scenario_geometry_source(record.scenario),
+        "scenario": record.scenario,
+    }
+
+
+class CustomizePayload(ScenarioRefMixin):
+    depot_node_id: int
+    job_node_ids: List[int]
+    demand_min: float = 5.0
+    demand_max: float = 15.0
+
+
+@app.post("/api/problem/customize")
+def customize_problem(payload: CustomizePayload):
+    """Rebuilds a stored scenario's depot and delivery stops from
+    operator-picked existing map nodes, instead of the generator's random
+    placement. Requires a stored scenario_id - unlike other scenario-carrying
+    endpoints, the legacy inline-scenario format has nowhere to write the
+    result back to.
+    """
+    if not payload.scenario_id:
+        raise HTTPException(status_code=400, detail="customize requires a stored scenario_id")
+    if payload.demand_min > payload.demand_max:
+        raise HTTPException(status_code=400, detail="demand_min cannot exceed demand_max")
+
+    stored_scenario, scenario_id = _resolve_scenario(payload)
+
+    try:
+        scenario = customize_scenario(
+            stored_scenario,
+            depot_node_id=payload.depot_node_id,
+            job_node_ids=payload.job_node_ids,
+            demand_min=payload.demand_min,
+            demand_max=payload.demand_max,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    record = SCENARIO_STORE.update(scenario_id, scenario)
+    return {
+        **record.metadata(),
+        **_condition_envelope(record.scenario),
         "geometry_source": scenario_geometry_source(record.scenario),
         "scenario": record.scenario,
     }

@@ -31,14 +31,20 @@ plus nine user-selected interactivity/evidence items.
 - [x] `Engineering.md`/`Task.md` stale references corrected (test count
       36→360, files 9→25, "four algorithms"→six, OSM marked done, exact
       solver marked done)
-- [ ] Configurable scenario params in UI (demand range, capacity override)
-- [ ] Manual depot/stop placement
+- [x] Configurable scenario params in UI (`demand_min`/`demand_max`/
+      `vehicle_capacity_override`, folded into the scenario hash only when
+      they diverge from the old defaults; collapsible "Scenario Shape"
+      section in `ControlPanel.jsx`; verified live)
+- [x] Manual depot/stop placement (`POST /api/problem/customize`, click an
+      existing map node to set depot/stops; deterministic demand redraw
+      seeded by the scenario's own seed; works for OSM scenarios too since
+      both share `Node.id`; verified live end-to-end including optimize)
 - [ ] Road-closure toggle with reopen
 - [ ] Synthetic city archetype presets + feasibility matrix
 - [ ] Before/after map slider
 - [ ] Run-reproducibility footer
 
-Backend: **360/360 passing**, verified after every backend-touching change,
+Backend: **373/373 passing**, verified after every backend-touching change,
 not assumed.
 
 ---

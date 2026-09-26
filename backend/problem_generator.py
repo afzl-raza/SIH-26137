@@ -206,6 +206,75 @@ def generate_synthetic_scenario(
     )
 
 
+def customize_scenario(
+    scenario: ProblemScenario,
+    depot_node_id: int,
+    job_node_ids: List[int],
+    demand_min: float = 5.0,
+    demand_max: float = 15.0,
+) -> ProblemScenario:
+    """Rebuilds a scenario's depot and delivery stops from operator-picked
+    existing map nodes, instead of the generator's random placement. Works
+    the same way for a synthetic or an OSM-sourced scenario since both share
+    `Node.id` as the addressing scheme.
+
+    Demand for each picked stop is drawn the same way
+    `generate_synthetic_scenario` draws it (`random.uniform(demand_min,
+    demand_max)`), seeded by the scenario's own seed so repeating the exact
+    same picks reproduces the exact same demands. Vehicle capacity is
+    recomputed from the new total demand with the same 1.35x-slack formula;
+    every vehicle keeps its id/color/max_route_time and moves its
+    start/end node to the new depot.
+    """
+    node_ids = {n.id for n in scenario.nodes}
+    if depot_node_id not in node_ids:
+        raise ValueError(f"depot_node_id {depot_node_id} is not a node in this scenario")
+    if not job_node_ids:
+        raise ValueError("job_node_ids must not be empty")
+    if len(set(job_node_ids)) != len(job_node_ids):
+        raise ValueError("job_node_ids contains duplicates")
+    unknown = [nid for nid in job_node_ids if nid not in node_ids]
+    if unknown:
+        raise ValueError(f"job_node_ids contains unknown node ids: {unknown}")
+    if depot_node_id in job_node_ids:
+        raise ValueError("depot_node_id cannot also be a delivery stop")
+
+    random.seed(scenario.seed)
+    jobs: List[Job] = []
+    total_demand = 0.0
+    for idx, node_id in enumerate(job_node_ids):
+        demand = round(random.uniform(demand_min, demand_max), 1)
+        total_demand += demand
+        jobs.append(Job(
+            id=idx + 1,
+            node_id=node_id,
+            demand=demand,
+            service_time=round(random.uniform(3.0, 8.0), 1),
+            priority=random.randint(1, 3)
+        ))
+
+    vehicle_capacity = round((total_demand / len(scenario.vehicles)) * 1.35, 1)
+    vehicles = [
+        v.model_copy(update={
+            "start_node": depot_node_id,
+            "end_node": depot_node_id,
+            "capacity": vehicle_capacity,
+        })
+        for v in scenario.vehicles
+    ]
+    nodes = [
+        n.model_copy(update={"is_depot": n.id == depot_node_id})
+        for n in scenario.nodes
+    ]
+
+    return scenario.model_copy(update={
+        "nodes": nodes,
+        "vehicles": vehicles,
+        "jobs": jobs,
+        "depot_node_id": depot_node_id,
+    })
+
+
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculates geographical distance between two lat/lng points in kilometers."""
     R = 6371.0  # Earth radius in km

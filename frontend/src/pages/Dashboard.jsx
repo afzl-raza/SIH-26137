@@ -75,6 +75,13 @@ export default function Dashboard({ onExitToLanding }) {
     demand_min: 5.0,
     demand_max: 15.0
   });
+
+  // Manual depot/stop placement - lets the operator click existing map
+  // nodes instead of accepting the generator's random placement. Draft
+  // state only; nothing is sent to the backend until confirmed.
+  const [placementMode, setPlacementMode] = useState(false);
+  const [draftDepotId, setDraftDepotId] = useState(null);
+  const [draftStopIds, setDraftStopIds] = useState([]);
   // Provenance of the loaded network, straight from the generate response.
   const [networkMeta, setNetworkMeta] = useState(null);
   // Reproducibility manifest for the current run, read back from the server
@@ -234,6 +241,86 @@ export default function Dashboard({ onExitToLanding }) {
     } catch (err) {
       setError(err.message);
       return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── Manual depot/stop placement ─────────────────
+  const handleTogglePlacementMode = () => {
+    setPlacementMode(prev => {
+      const next = !prev;
+      if (next) {
+        setDraftDepotId(null);
+        setDraftStopIds([]);
+      }
+      return next;
+    });
+  };
+
+  const handleClearPlacement = () => {
+    setDraftDepotId(null);
+    setDraftStopIds([]);
+  };
+
+  // First click sets the depot; clicking the depot again clears it so it can
+  // be re-picked; every other click toggles that node as a delivery stop.
+  const handlePlaceNode = (nodeId) => {
+    if (draftDepotId === null) {
+      setDraftDepotId(nodeId);
+      return;
+    }
+    if (nodeId === draftDepotId) {
+      setDraftDepotId(null);
+      return;
+    }
+    setDraftStopIds(prev =>
+      prev.includes(nodeId) ? prev.filter(id => id !== nodeId) : [...prev, nodeId]
+    );
+  };
+
+  const handleConfirmPlacement = async () => {
+    if (draftDepotId === null || draftStopIds.length === 0 || !scenarioId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiFetch('/api/problem/customize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scenario_id: scenarioId,
+          depot_node_id: draftDepotId,
+          job_node_ids: draftStopIds,
+          demand_min: scenarioParams.demand_min,
+          demand_max: scenarioParams.demand_max
+        })
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.detail || 'Failed to apply manual placement');
+      }
+      const data = await res.json();
+      setScenario(data.scenario);
+      setScenarioId(data.scenario_id);
+      setCurrentResult(null);
+      setPreviousResult(null);
+      setBenchmarkData(null);
+      setPreviewedAlgorithm(null);
+      setSelectedIncidentEdge(null);
+      setIncidentInfo(null);
+      setSelectedVehicle(null);
+      setSelectedRoute(null);
+      setStatusState('READY');
+      setNetworkState('NORMAL');
+      setTimeline(null);
+      setConditionMeta(extractConditionMeta(data));
+      setConditionsDirty(false);
+      setManifest(null);
+      setPlacementMode(false);
+      setDraftDepotId(null);
+      setDraftStopIds([]);
+    } catch (err) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -629,6 +716,10 @@ export default function Dashboard({ onExitToLanding }) {
             disruptDisabled={loading || !currentResult}
             previewResult={previewResult}
             previewedAlgorithm={previewedAlgorithm}
+            placementMode={placementMode}
+            draftDepotId={draftDepotId}
+            draftStopIds={draftStopIds}
+            onPlaceNode={handlePlaceNode}
           />
         </div>
 
@@ -679,6 +770,12 @@ export default function Dashboard({ onExitToLanding }) {
             manifest={manifest}
             scenarioParams={scenarioParams}
             setScenarioParams={setScenarioParams}
+            placementMode={placementMode}
+            onTogglePlacementMode={handleTogglePlacementMode}
+            draftDepotId={draftDepotId}
+            draftStopIds={draftStopIds}
+            onClearPlacement={handleClearPlacement}
+            onConfirmPlacement={handleConfirmPlacement}
           />
 
           <VehicleInspector

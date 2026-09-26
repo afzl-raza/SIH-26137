@@ -48,7 +48,13 @@ export default function ControlPanel({
   networkMeta,
   manifest,
   scenarioParams,
-  setScenarioParams
+  setScenarioParams,
+  placementMode = false,
+  onTogglePlacementMode,
+  draftDepotId = null,
+  draftStopIds = [],
+  onClearPlacement,
+  onConfirmPlacement
 }) {
   // Demo state-machine guards: an incident can't be simulated before there's
   // an optimized route to disrupt, and re-optimization is meaningless before
@@ -331,6 +337,62 @@ export default function ControlPanel({
                     Demand min cannot exceed demand max.
                   </p>
                 )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Manual depot/stop placement - click existing map nodes instead of
+            accepting the generator's random placement. A draft until
+            confirmed: nothing is sent to the backend until "Confirm". */}
+        {scenario && (
+          <div className="bg-[#141210]/50 border border-[#332E29] rounded-lg p-2.5 space-y-2">
+            <button
+              onClick={onTogglePlacementMode}
+              disabled={loading}
+              aria-pressed={placementMode}
+              className={`w-full py-1.5 rounded border text-[11px] transition-colors disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-[#C6602E] ${
+                placementMode
+                  ? 'bg-[#2A2018] border-[#C6602E] text-[#E8A93A]'
+                  : 'bg-[#26221D] border-[#3A342E] text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              {placementMode ? 'Cancel Manual Placement' : 'Place Manually'}
+            </button>
+
+            {placementMode && (
+              <div className="space-y-1.5">
+                <p className="text-[9px] text-gray-500 leading-snug">
+                  Click a node on the map: first click sets the depot, further
+                  clicks toggle delivery stops. Click the depot again to
+                  re-pick it.
+                </p>
+                <div className="grid grid-cols-[auto,1fr] gap-x-2 font-mono text-[10px] text-gray-400">
+                  <span className="text-gray-500">Depot:</span>
+                  <span className={draftDepotId !== null ? 'text-[#E8A93A]' : ''}>
+                    {draftDepotId !== null ? `Node #${draftDepotId}` : 'not set'}
+                  </span>
+                  <span className="text-gray-500">Stops:</span>
+                  <span className={draftStopIds.length > 0 ? 'text-[#9ABF87]' : ''}>
+                    {draftStopIds.length} selected
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={onClearPlacement}
+                    disabled={loading || (draftDepotId === null && draftStopIds.length === 0)}
+                    className="w-full py-1 bg-[#26221D] border border-[#3A342E] text-gray-400 hover:text-gray-200 rounded text-[10px] transition-colors disabled:opacity-40"
+                  >
+                    Clear Selection
+                  </button>
+                  <button
+                    onClick={onConfirmPlacement}
+                    disabled={loading || draftDepotId === null || draftStopIds.length === 0}
+                    className="w-full py-1 bg-[#1E2A1E]/60 border border-[#3A4E2E] text-[#9ABF87] hover:bg-[#1E2A1E] rounded text-[10px] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Confirm Placement
+                  </button>
+                </div>
               </div>
             )}
           </div>
