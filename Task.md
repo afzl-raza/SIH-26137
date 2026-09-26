@@ -12,6 +12,47 @@ verified against the actual code and a full test run (`pytest backend/tests
 
 ---
 
+## Overview screen + benchmark visual upgrade ✅ Done (2026-09-26)
+
+Source: a Figma file (fetched via its REST API - real design tokens pulled,
+not guessed) plus 8 reference screenshots for a redesigned benchmark view.
+Full plan: `adaptive-squishing-hinton` plan file.
+
+- [x] New `Overview.jsx` home screen (gate in front of the real workflow, not
+      a replacement of it) - sidebar, top bar, greeting/3-step cards,
+      onboarding checklist, "today at a glance" metrics, live-map card,
+      traffic alerts, recent routes, activity feed. SaaS-only chrome
+      (workspace switcher, invites, notifications) is static decoration;
+      metric cards are marked "Example" - approved exceptions to the
+      evidence-integrity rule, scoped to this one screen only.
+      New Space Grotesk/near-black/orange visual system, scoped to this page
+      only (`Inter`/`JetBrains Mono`/`Space Grotesk` were already all loaded
+      as `font-sans`/`font-mono`/`font-display` - no new font loading).
+- [x] `App.jsx` 3-way routing: Landing → Overview → Dashboard, with
+      Dashboard's back button now returning to Overview, not Landing.
+- [x] `BenchmarkPanel.jsx`: existing single-metric bar chart split into a
+      grouped "Execution Speed" / "Solution Cost & Quality" two-panel view,
+      plus a Log/Linear scale toggle and a Bars/Data Table toggle (the table
+      already existed - this is a pure view switch). "Comparison Conditions"
+      content was already word-for-word what the reference design showed.
+- [x] `ArchetypeBenchmarkPanel.jsx`: added a Cost/Travel Time/Distance/Runtime
+      metric-tab selector, best-feasible-value cell highlighting, and a
+      "QPSO+LS wins N of M archetypes on {metric}" callout - computed from
+      real benchmark results, with an explicit ✕ marker on infeasible cells
+      so a good-looking number from a constraint-breaking run can't read as
+      a win. No 5th algorithm or new script added (reference screenshot's
+      "Five algorithms, five cities" concept was treated as inspiration
+      only, per explicit decision).
+
+Verified live end-to-end: Landing → Get Started → Overview → Plan your first
+route → real Dashboard.jsx (Generate/Optimize/Disrupt/Re-Optimize/Benchmark
+all unaffected) → grouped bars + Log scale + Data Table toggle all correct
+on real data → Archetype matrix's win-count and cell highlighting verified
+against actual computed values (not just visually) via direct DOM inspection.
+Zero console errors on a clean session. Backend untouched, 373/373 passing.
+
+---
+
 ## Algorithm Correctness + Interactivity + Evidence Layer ✅ Done (2026-09-26)
 
 Full plan: `adaptive-squishing-hinton` plan file. Fixes a real, measured

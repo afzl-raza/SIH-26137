@@ -1,18 +1,23 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import LandingPage from './pages/LandingPage';
+import Overview from './pages/Overview';
 import Dashboard from './pages/Dashboard';
 
+const OVERVIEW_HASH = '#/overview';
 const DASHBOARD_HASH = '#/app';
 
 function resolveView() {
-  return window.location.hash === DASHBOARD_HASH ? 'dashboard' : 'landing';
+  if (window.location.hash === DASHBOARD_HASH) return 'dashboard';
+  if (window.location.hash === OVERVIEW_HASH) return 'overview';
+  return 'landing';
 }
 
 // Minimal hash-based view switch - no routing library, since the app only
-// ever has these two views. Landing is the entry point; "Get Started" /
-// "Explore Platform" navigate into the dashboard today, and will instead
-// point at an auth route once that flow exists (see LandingPage's
-// onEnterApp hook).
+// ever has these three views. Landing (marketing) -> Overview (home/gate,
+// mostly decorative) -> Dashboard (the real map/optimize/benchmark
+// workflow). "Get Started" on Landing goes to Overview, not straight to
+// Dashboard, now that Overview exists as the landing spot for a logged-in
+// operator.
 export default function App() {
   const [view, setView] = useState(resolveView);
 
@@ -22,7 +27,12 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  const enterApp = useCallback(() => {
+  const enterOverview = useCallback(() => {
+    window.location.hash = OVERVIEW_HASH;
+    setView('overview');
+  }, []);
+
+  const enterDashboard = useCallback(() => {
     window.location.hash = DASHBOARD_HASH;
     setView('dashboard');
   }, []);
@@ -32,8 +42,16 @@ export default function App() {
     setView('landing');
   }, []);
 
+  const exitToOverview = useCallback(() => {
+    window.location.hash = OVERVIEW_HASH;
+    setView('overview');
+  }, []);
+
   if (view === 'dashboard') {
-    return <Dashboard onExitToLanding={exitToLanding} />;
+    return <Dashboard onExitToOverview={exitToOverview} />;
   }
-  return <LandingPage onEnterApp={enterApp} />;
+  if (view === 'overview') {
+    return <Overview onEnterDashboard={enterDashboard} onExitToLanding={exitToLanding} />;
+  }
+  return <LandingPage onEnterApp={enterOverview} />;
 }

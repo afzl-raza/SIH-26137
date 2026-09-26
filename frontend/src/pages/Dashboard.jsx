@@ -29,7 +29,7 @@ function extractConditionMeta(data) {
   };
 }
 
-export default function Dashboard({ onExitToLanding }) {
+export default function Dashboard({ onExitToOverview }) {
   // ─── Core State ──────────────────────────────────
   const [scenario, setScenario] = useState(null);
   // The backend owns the scenario after generation; requests refer to it
@@ -634,14 +634,14 @@ export default function Dashboard({ onExitToLanding }) {
       {/* ═══ HEADER ═══ */}
       <header className="clean-panel border-b border-[#332E29] px-3 sm:px-6 py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xl sticky top-0 z-50">
         <div className="flex items-center space-x-3">
-          {onExitToLanding && (
+          {onExitToOverview && (
             <button
-              onClick={onExitToLanding}
-              aria-label="Back to landing page"
+              onClick={onExitToOverview}
+              aria-label="Back to overview"
               className="hidden sm:flex items-center gap-1 text-[11px] font-mono text-gray-400 hover:text-[#E8A93A] border border-[#332E29] hover:border-[#5A3A22] rounded px-2 py-1.5 transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              Landing
+              Overview
             </button>
           )}
           <div className="bg-[#1E1B18] border border-[#3A342E] p-1.5 sm:p-2 rounded-lg shadow-md">
