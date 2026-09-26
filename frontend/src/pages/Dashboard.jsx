@@ -88,6 +88,10 @@ export default function Dashboard({ onExitToLanding }) {
   // Reproducibility manifest for the current run, read back from the server
   // rather than assembled here, so it states what the backend actually holds.
   const [manifest, setManifest] = useState(null);
+  // When the currently-displayed result actually arrived, captured on this
+  // client at that moment - not a backend timestamp, and not reused across
+  // a later run until that run's own optimize call resolves.
+  const [resultCompletedAt, setResultCompletedAt] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -238,6 +242,7 @@ export default function Dashboard({ onExitToLanding }) {
         edgeCount: data.edge_count ?? null
       });
       setManifest(null);
+      setResultCompletedAt(null);
       return data;
     } catch (err) {
       setError(err.message);
@@ -317,6 +322,7 @@ export default function Dashboard({ onExitToLanding }) {
       setConditionMeta(extractConditionMeta(data));
       setConditionsDirty(false);
       setManifest(null);
+      setResultCompletedAt(null);
       setPlacementMode(false);
       setDraftDepotId(null);
       setDraftStopIds([]);
@@ -381,6 +387,7 @@ export default function Dashboard({ onExitToLanding }) {
         setPreviousResult(currentResult);
       }
       setCurrentResult(data);
+      setResultCompletedAt(Date.now());
       setStatusState('OPTIMIZED');
       // The routes on screen now match the current edge costs again.
       setConditionsDirty(false);
@@ -818,7 +825,13 @@ export default function Dashboard({ onExitToLanding }) {
 
       {/* ═══ METRICS & ANALYTICS ═══ */}
       <footer className="p-4 pt-0 space-y-4 max-w-[1920px] w-full mx-auto">
-        <MetricCards result={currentResult} previousResult={previousResult} weights={config.weights} />
+        <MetricCards
+          result={currentResult}
+          previousResult={previousResult}
+          weights={config.weights}
+          manifest={manifest}
+          completedAt={resultCompletedAt}
+        />
 
         {benchmarkData && (
           <BenchmarkPanel

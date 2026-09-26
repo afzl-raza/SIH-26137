@@ -12,7 +12,7 @@ verified against the actual code and a full test run (`pytest backend/tests
 
 ---
 
-## Algorithm Correctness + Interactivity + Evidence Layer ⚠️ In progress (2026-09-26)
+## Algorithm Correctness + Interactivity + Evidence Layer ✅ Done (2026-09-26)
 
 Full plan: `adaptive-squishing-hinton` plan file. Fixes a real, measured
 regression (plain QPSO losing to Greedy at 30+ jobs, frequently infeasible)
@@ -57,10 +57,23 @@ plus nine user-selected interactivity/evidence items.
       previous/active route opacity rather than adding new coordinates;
       BEFORE/AFTER legend chips so the line-style distinction isn't the only
       cue; verified live by inspecting actual SVG stroke-opacity per mode)
-- [ ] Run-reproducibility footer
+- [x] Run-reproducibility footer (`MetricCards.jsx` - scenario_hash, seed,
+      algorithm, pop/iter and a client-captured completion timestamp shown
+      directly under the results, all from the existing
+      `/api/scenario/{id}/manifest` endpoint or a timestamp taken the moment
+      the result actually arrived - nothing invented; verified live)
 
 Backend: **373/373 passing**, verified after every backend-touching change,
-not assumed.
+not assumed. All 9 user-selected items complete.
+
+Note: while verifying this item, `MetricCards.jsx`'s cost/time/distance
+count-up animation appeared stuck at 0.00 in the automated browser pane used
+for live verification this session. Traced to the pane's
+`requestAnimationFrame` never firing in that specific tool environment (a
+bare `requestAnimationFrame` test call also never fired, despite
+`document.hidden` reporting `false`) - not a code bug. The raw
+(non-animated) figures elsewhere in the same component, and the reported
+runtime, were correct throughout. Left the animation code as-is.
 
 ---
 
