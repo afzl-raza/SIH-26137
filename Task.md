@@ -12,6 +12,77 @@ verified against the actual code and a full test run (`pytest backend/tests
 
 ---
 
+## Overview screen + benchmark visual upgrade ✅ Done (2026-09-26)
+
+Source: a Figma file (fetched via its REST API - real design tokens pulled,
+not guessed) plus 8 reference screenshots for a redesigned benchmark view.
+Full plan: `adaptive-squishing-hinton` plan file.
+
+- [x] New `Overview.jsx` home screen (gate in front of the real workflow, not
+      a replacement of it) - sidebar, top bar, greeting/3-step cards,
+      onboarding checklist, "today at a glance" metrics, live-map card,
+      traffic alerts, recent routes, activity feed. SaaS-only chrome
+      (workspace switcher, invites, notifications, onboarding checklist,
+      alerts/recent-routes/activity feeds) is static decoration - no real
+      multi-user or run-history backend exists.
+- [x] **Revised**: "Today at a glance" and the live-map card were upgraded
+      from illustrative placeholders to a real, independent
+      `/api/problem/generate` + `/api/optimize` run (same endpoints and
+      config shape Dashboard.jsx uses - no new backend code). Metric cards
+      now show real vehicle/stop counts, travel time, distance, cost,
+      runtime and feasibility; the map card embeds the real
+      `NetworkMap.jsx` component showing the real optimized routes, labeled
+      as a snapshot ("not a live vehicle feed"), not a live feed. This was
+      a direct response to comparing against a teammate's parallel
+      `ExecutiveOverview.jsx` (100% real-data, no illustrative exceptions
+      at all) - see the note below.
+      New Space Grotesk/near-black/orange visual system, scoped to this page
+      only (`Inter`/`JetBrains Mono`/`Space Grotesk` were already all loaded
+      as `font-sans`/`font-mono`/`font-display` - no new font loading).
+- [x] `App.jsx` 3-way routing: Landing → Overview → Dashboard, with
+      Dashboard's back button now returning to Overview, not Landing.
+- [x] `BenchmarkPanel.jsx`: existing single-metric bar chart split into a
+      grouped "Execution Speed" / "Solution Cost & Quality" two-panel view,
+      plus a Log/Linear scale toggle and a Bars/Data Table toggle (the table
+      already existed - this is a pure view switch). "Comparison Conditions"
+      content was already word-for-word what the reference design showed.
+- [x] `ArchetypeBenchmarkPanel.jsx`: added a Cost/Travel Time/Distance/Runtime
+      metric-tab selector, best-feasible-value cell highlighting, and a
+      "QPSO+LS wins N of M archetypes on {metric}" callout - computed from
+      real benchmark results, with an explicit ✕ marker on infeasible cells
+      so a good-looking number from a constraint-breaking run can't read as
+      a win. No 5th algorithm or new script added (reference screenshot's
+      "Five algorithms, five cities" concept was treated as inspiration
+      only, per explicit decision).
+
+Verified live end-to-end: Landing → Get Started → Overview → Plan your first
+route → real Dashboard.jsx (Generate/Optimize/Disrupt/Re-Optimize/Benchmark
+all unaffected) → grouped bars + Log scale + Data Table toggle all correct
+on real data → Archetype matrix's win-count and cell highlighting verified
+against actual computed values (not just visually) via direct DOM inspection.
+Zero console errors on a clean session. Backend untouched, 373/373 passing.
+
+**Reconciled with `origin/main`** (three teammate branches:
+`feature/authentication-flow`, `time-window`, and
+`frontend/ui-polish-executive-overview`, plus later commits) - see the
+merge commit for the full file list. Two things worth recording:
+1. The authentication flow directly contradicts `CLAUDE.md`'s "Do not
+   implement: Authentication" - left as-is per the user's explicit
+   decision ("leave it, flag it to the team"), not reverted.
+2. A teammate's `ExecutiveOverview.jsx` (a real-data-only results view,
+   toggled as a mode inside `Dashboard.jsx`) covered similar ground to this
+   round's `Overview.jsx`. Compared live side-by-side (both stacks run
+   simultaneously on different ports); the user preferred this round's
+   design once its metrics/map were made real (see the "Revised" bullet
+   above), so on merge `ExecutiveOverview.jsx`, `components/executive/*`
+   and the now-orphaned `components/ui/ComparisonBars.jsx` were removed,
+   and `Dashboard.jsx`'s Executive-Overview/Engineering-Control-Room view
+   toggle was removed (Dashboard always renders what was the Control Room).
+   Everything else from that branch (the `ui/*` design system used
+   throughout `ControlPanel.jsx`/`NetworkMap.jsx`/`VehicleInspector.jsx`,
+   `Toast`, `OperationOverlay`, etc.) was kept - those auto-merged cleanly
+   and are genuine quality improvements independent of ExecutiveOverview.
+
 ## CVRPTW — Customer Time Windows ✅ Done (2026-09-26)
 
 Turns the problem from CVRP into CVRPTW: jobs may carry a delivery window

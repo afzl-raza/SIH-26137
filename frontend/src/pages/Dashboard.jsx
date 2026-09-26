@@ -10,15 +10,13 @@ import QPSOExplainability from '../components/QPSOExplainability';
 import ArchitectureSnapshot from '../components/ArchitectureSnapshot';
 import ScalabilityPanel from '../components/ScalabilityPanel';
 import ReproducibilityPanel from '../components/ReproducibilityPanel';
-import ExecutiveOverview from '../components/ExecutiveOverview';
 import Logo from '../components/Logo';
 import Badge from '../components/ui/Badge';
-import SegmentedControl from '../components/ui/SegmentedControl';
 import IconButton from '../components/ui/IconButton';
 import { ToastProvider, useToast } from '../components/ui/Toast';
 import OperationOverlay from '../components/ui/OperationOverlay';
 import { apiFetch } from '../api';
-import { Activity, ArrowLeft, LayoutDashboard, SlidersHorizontal, X } from 'lucide-react';
+import { Activity, ArrowLeft, X } from 'lucide-react';
 
 // Pulls the condition-provenance envelope out of any scenario-carrying
 // response. Pure field selection - no value is derived or invented here; the
@@ -35,20 +33,19 @@ function extractConditionMeta(data) {
   };
 }
 
-export default function Dashboard({ onExitToLanding }) {
+export default function Dashboard({ onExitToOverview }) {
   return (
     <ToastProvider>
-      <DashboardShell onExitToLanding={onExitToLanding} />
+      <DashboardShell onExitToOverview={onExitToOverview} />
     </ToastProvider>
   );
 }
 
-// Both Optimize and Run Benchmark are only reachable from inside the
-// Engineering Control Room (its ControlPanel), so by the time a real user
-// click fires this toast, #results-section already exists on the page -
-// it's just below the fold. A no-op if it somehow doesn't (e.g. the one
-// automatic bootstrap optimize, which can complete while Executive
-// Overview is showing instead).
+// Both Optimize and Run Benchmark are reachable from the Engineering
+// Control Room (its ControlPanel), so by the time a real user click fires
+// this toast, #results-section already exists on the page - it's just
+// below the fold. A no-op if it somehow doesn't (e.g. the one automatic
+// bootstrap optimize).
 function scrollToId(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -61,13 +58,8 @@ function scrollToBenchmark() {
   scrollToId('benchmark-section');
 }
 
-function DashboardShell({ onExitToLanding }) {
+function DashboardShell({ onExitToOverview }) {
   const toast = useToast();
-  // 'overview' (Executive Overview) or 'engineering' (Engineering Control
-  // Room, i.e. the original dense workspace). Nothing about the underlying
-  // demo state machine changes between the two - this is purely which
-  // layout renders it.
-  const [view, setView] = useState('overview');
 
   // ─── Core State ──────────────────────────────────
   const [scenario, setScenario] = useState(null);
@@ -794,9 +786,9 @@ function DashboardShell({ onExitToLanding }) {
           also `isolate`d, but this keeps the header safe regardless. */}
       <header className="clean-panel border-b border-[#332E29] px-3 sm:px-6 py-2 sm:py-2.5 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-3 gap-y-2 shadow-xl sticky top-0 z-[1200]">
         <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-          {onExitToLanding && (
+          {onExitToOverview && (
             <button
-              onClick={onExitToLanding}
+              onClick={onExitToOverview}
               aria-label="Back to overview"
               title="Back to overview"
               className="hidden sm:flex items-center gap-1 text-[11px] font-mono text-gray-400 hover:text-[#E8A93A] border border-[#332E29] hover:border-[#5A3A22] rounded px-2 py-1.5 transition-colors"
@@ -820,29 +812,6 @@ function DashboardShell({ onExitToLanding }) {
               Quantum-Inspired Fleet Optimization Engine
             </p>
           </div>
-        </div>
-
-        {/* View nav: Executive Overview <-> Engineering Control Room.
-            Full width on its own row on phones (order-last), inline on
-            desktop - always inside the sticky header, so it stays reachable. */}
-        <div className="w-full lg:w-80 order-last lg:order-none">
-          <SegmentedControl
-            options={[
-              {
-                id: 'overview',
-                icon: LayoutDashboard,
-                label: <><span className="sm:hidden">Overview</span><span className="hidden sm:inline">Executive Overview</span></>
-              },
-              {
-                id: 'engineering',
-                icon: SlidersHorizontal,
-                label: <><span className="sm:hidden">Control Room</span><span className="hidden sm:inline">Engineering Control Room</span></>
-              }
-            ]}
-            value={view}
-            onChange={setView}
-            itemClassName="py-1.5"
-          />
         </div>
 
         {/* Network State + Engine Status */}
@@ -876,16 +845,11 @@ function DashboardShell({ onExitToLanding }) {
         </div>
       </header>
 
-      {/* ═══ WORKFLOW INDICATOR (Engineering Control Room only - PLAN/
-          DISRUPT/RE-OPTIMIZE/PROVE is an engineering demo-stage concept,
-          not something a non-technical executive summary needs) ═══ */}
-      {view === 'engineering' && (
-        <WorkflowIndicator currentStage={demoStage} narrativeText={narrativeText} />
-      )}
+      {/* ═══ WORKFLOW INDICATOR ═══ */}
+      <WorkflowIndicator currentStage={demoStage} narrativeText={narrativeText} />
 
-      {/* ═══ MOBILE VIEWPORT SWITCHER (Engineering Control Room only, small screens) ═══ */}
-      {view === 'engineering' && (
-        <div className="lg:hidden flex border-b border-[#332E29] bg-[#171513] p-1.5 gap-2 px-3 sm:px-6 shadow-md">
+      {/* ═══ MOBILE VIEWPORT SWITCHER (small screens) ═══ */}
+      <div className="lg:hidden flex border-b border-[#332E29] bg-[#171513] p-1.5 gap-2 px-3 sm:px-6 shadow-md">
           <button
             onClick={() => setActiveMobileTab('map')}
             className={`flex-1 py-2 text-xs font-mono font-bold rounded transition-colors flex items-center justify-center gap-1.5 ${
@@ -907,7 +871,6 @@ function DashboardShell({ onExitToLanding }) {
             Controls & Operations
           </button>
         </div>
-      )}
 
       {/* ═══ ERROR ALERT ═══ */}
       {error && (
@@ -917,27 +880,7 @@ function DashboardShell({ onExitToLanding }) {
         </div>
       )}
 
-      {/* ═══ EXECUTIVE OVERVIEW ═══ */}
-      {view === 'overview' && (
-        <main className="flex-1 p-2 sm:p-4 max-w-[1400px] w-full mx-auto">
-          <ExecutiveOverview
-            scenario={scenario}
-            scenarioId={scenarioId}
-            benchmarkStale={benchmarkStale}
-            networkMeta={networkMeta}
-            currentResult={currentResult}
-            previousResult={previousResult}
-            benchmarkData={benchmarkData}
-            networkState={networkState}
-            trafficMode={trafficMode}
-            weatherEnabled={weatherEnabled}
-            onOpenEngineering={() => setView('engineering')}
-          />
-        </main>
-      )}
-
       {/* ═══ ENGINEERING CONTROL ROOM (75% Map / 25% Operations) ═══ */}
-      {view === 'engineering' && (
       <main className="flex-1 p-2 sm:p-4 grid grid-cols-1 lg:grid-cols-4 gap-4 max-w-[1920px] w-full mx-auto items-stretch">
         {/* HERO MAP */}
         <div className={`lg:col-span-3 min-h-[350px] sm:min-h-[480px] lg:min-h-[620px] h-full w-full ${
@@ -1038,10 +981,8 @@ function DashboardShell({ onExitToLanding }) {
           <ArchitectureSnapshot />
         </div>
       </main>
-      )}
 
-      {/* ═══ METRICS & ANALYTICS (Engineering Control Room only) ═══ */}
-      {view === 'engineering' && (
+      {/* ═══ METRICS & ANALYTICS ═══ */}
       <footer id="results-section" className="p-4 pt-0 space-y-4 max-w-[1920px] w-full mx-auto scroll-mt-28">
         <MetricCards
           result={currentResult}
@@ -1074,7 +1015,6 @@ function DashboardShell({ onExitToLanding }) {
 
         <ArchetypeBenchmarkPanel config={config} />
       </footer>
-      )}
     </div>
   );
 }

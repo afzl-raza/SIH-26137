@@ -1,31 +1,34 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import LandingPage from './pages/LandingPage';
 import AuthPage from './pages/AuthPage';
+import Overview from './pages/Overview';
 import Dashboard from './pages/Dashboard';
 import Logo from './components/Logo';
 import { getCurrentUser } from './lib/authService';
 
 const AUTH_HASH = '#/auth';
+const OVERVIEW_HASH = '#/overview';
 const DASHBOARD_HASH = '#/app';
 
 function resolveRequestedView() {
   if (window.location.hash === DASHBOARD_HASH) return 'dashboard';
+  if (window.location.hash === OVERVIEW_HASH) return 'overview';
   if (window.location.hash === AUTH_HASH) return 'auth';
   return 'landing';
 }
 
 // Reconciles what the URL asked for with what the session actually allows.
-// The dashboard is never granted on hash alone: a direct #/app with no
-// verified session resolves to 'auth' instead, and a signed-in user hitting
-// #/auth is sent straight on to the dashboard rather than shown a login
-// form for an account they're already in.
+// Overview and Dashboard are never granted on hash alone: either one with
+// no verified session resolves to 'auth' instead, and a signed-in user
+// hitting #/auth is sent on to Overview rather than shown a login form for
+// an account they're already in.
 function resolveEffectiveView(requestedView, isAuthenticated) {
-  if (requestedView === 'dashboard') return isAuthenticated ? 'dashboard' : 'auth';
-  if (requestedView === 'auth' && isAuthenticated) return 'dashboard';
+  if ((requestedView === 'dashboard' || requestedView === 'overview') && !isAuthenticated) return 'auth';
+  if (requestedView === 'auth' && isAuthenticated) return 'overview';
   return requestedView;
 }
 
-const HASH_FOR_VIEW = { landing: '', auth: AUTH_HASH, dashboard: DASHBOARD_HASH };
+const HASH_FOR_VIEW = { landing: '', auth: AUTH_HASH, overview: OVERVIEW_HASH, dashboard: DASHBOARD_HASH };
 
 function AuthSplash() {
   return (
@@ -40,9 +43,11 @@ function AuthSplash() {
   );
 }
 
-// Root view switch - no routing library, since the app only ever has three
-// views: Landing -> Auth -> Dashboard. This is the one place session state
-// (from lib/authService.js, backed by the real /api/auth/* endpoints) meets
+// Root view switch - no routing library, since the app only ever has four
+// views: Landing -> Auth -> Overview (home/gate, mostly decorative except
+// its real generate+optimize demo) -> Dashboard (the real map/optimize/
+// benchmark workflow). This is the one place session state (from
+// lib/authService.js, backed by the real /api/auth/* endpoints) meets
 // navigation; the forms themselves, in components/auth/, never see routing
 // concerns.
 export default function App() {
@@ -75,9 +80,9 @@ export default function App() {
   );
 
   // Keeps the address bar honest: if the requested view got overridden
-  // above (unauthenticated -> #/app, or authenticated -> #/auth), the hash
-  // is corrected to match what's actually being shown rather than lying
-  // about it after the fact.
+  // above (unauthenticated -> auth, or authenticated-hitting-auth ->
+  // overview), the hash is corrected to match what's actually being shown
+  // rather than lying about it after the fact.
   useEffect(() => {
     if (sessionState === 'checking') return;
     const targetHash = HASH_FOR_VIEW[effectiveView];
@@ -96,18 +101,33 @@ export default function App() {
     setRequestedView('landing');
   }, []);
 
+  const goToOverview = useCallback(() => {
+    window.location.hash = OVERVIEW_HASH;
+    setRequestedView('overview');
+  }, []);
+
+  const goToDashboard = useCallback(() => {
+    window.location.hash = DASHBOARD_HASH;
+    setRequestedView('dashboard');
+  }, []);
+
+  // A successful login/register lands the operator on Overview (the home
+  // screen), not straight into Dashboard's deeper workflow.
   const handleAuthSuccess = useCallback((authenticatedUser) => {
     setUser(authenticatedUser);
     setSessionState('authenticated');
-    window.location.hash = DASHBOARD_HASH;
-    setRequestedView('dashboard');
+    window.location.hash = OVERVIEW_HASH;
+    setRequestedView('overview');
   }, []);
 
   if (sessionState === 'checking') {
     return <AuthSplash />;
   }
   if (effectiveView === 'dashboard') {
-    return <Dashboard onExitToLanding={goToLanding} />;
+    return <Dashboard onExitToOverview={goToOverview} />;
+  }
+  if (effectiveView === 'overview') {
+    return <Overview onEnterDashboard={goToDashboard} onExitToLanding={goToLanding} />;
   }
   if (effectiveView === 'auth') {
     return <AuthPage onAuthSuccess={handleAuthSuccess} onBackToLanding={goToLanding} />;

@@ -1,5 +1,5 @@
-import React from 'react';
-import { X, Trophy, Award, BarChart2, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Trophy, Award, BarChart2, CheckCircle2, XCircle, ShieldCheck, Table2, Gauge, Zap } from 'lucide-react';
 import IconButton from './ui/IconButton';
 import {
   Chart as ChartJS,
@@ -35,6 +35,9 @@ export const ALGORITHM_COLORS = {
   // is the default algorithm and gets the brand accent instead.
   qpso: { hex: '#8C5A6E', text: 'text-[#8C5A6E]', bg: 'bg-[#8C5A6E]' },
   qpso_ls: { hex: '#C6602E', text: 'text-[#C6602E]', bg: 'bg-[#C6602E]' },
+  // Memetic QPSO (time-window-aware local search) - a separate optimizer
+  // registered in optimizers/benchmark.py, not a qpso_ls variant.
+  qpso_memetic: { hex: '#55C7E8', text: 'text-[#55C7E8]', bg: 'bg-[#55C7E8]' },
   exact: { hex: '#E8A93A', text: 'text-[#E8A93A]', bg: 'bg-[#E8A93A]' }
 };
 const DEFAULT_ALGORITHM_COLOR = { hex: '#9CA3AF', text: 'text-gray-500', bg: 'bg-gray-500' };
@@ -43,14 +46,30 @@ function getAlgorithmColor(id) {
   return ALGORITHM_COLORS[id] || DEFAULT_ALGORITHM_COLOR;
 }
 
+// Log scaling makes a bar chart readable when one algorithm's real measured
+// value is orders of magnitude larger than the rest (e.g. an infeasible run
+// at large scenario sizes can measure a cost or runtime 50-100x its peers -
+// see experiments/E3_scalability). `+1` keeps a genuine 0 at 0 width instead
+// of -Infinity, without distorting any non-zero value meaningfully.
+function barWidthPct(value, max, useLog) {
+  if (!(max > 0)) return 0;
+  if (!useLog) return Math.min(100, (value / max) * 100);
+  const logMax = Math.log10(max + 1);
+  if (!(logMax > 0)) return 0;
+  return Math.min(100, (Math.log10(value + 1) / logMax) * 100);
+}
+
 export default function BenchmarkPanel({ benchmarkData, onClose, config, onPreviewAlgorithm, previewedAlgorithm }) {
+  const [barScale, setBarScale] = useState('linear'); // 'linear' | 'log'
+  const [resultsView, setResultsView] = useState('bars'); // 'bars' | 'table'
+
   if (!benchmarkData || !benchmarkData.results) return null;
-  
+
   const { results } = benchmarkData;
   // "exact" is only present when the scenario is small enough to solve
   // exactly (<=10 jobs) - absent otherwise, which resultsArray's filter
   // below handles the same way it already handles any other missing key.
-  const algos = ['greedy', 'pso', 'ga', 'qpso', 'qpso_ls', 'exact'];
+  const algos = ['greedy', 'pso', 'ga', 'qpso', 'qpso_ls', 'qpso_memetic', 'exact'];
 
   const resultsArray = algos.map(k => ({ id: k, ...results[k] })).filter(r => r.total_cost !== undefined);
 
@@ -58,6 +77,7 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
 
   const minCost = Math.min(...resultsArray.map(r => r.total_cost));
   const maxCost = Math.max(...resultsArray.map(r => r.total_cost));
+  const maxRuntime = Math.max(...resultsArray.map(r => r.runtime_ms || 0));
   const bestAlgo = resultsArray.find(r => r.total_cost === minCost);
   // qpso_ls (QPSO + local search) is the default/flagship algorithm now -
   // this is what the summary line compares the winner against.
@@ -87,7 +107,7 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
   // directly rather than iterating, so a convergence curve doesn't apply
   // to it (a single flat point would misrepresent what it does).
   const chartDatasets = [];
-  ['pso', 'ga', 'qpso', 'qpso_ls'].forEach(id => {
+  ['pso', 'ga', 'qpso', 'qpso_ls', 'qpso_memetic'].forEach(id => {
     if (results[id] && results[id].convergence_history) {
       chartDatasets.push({
         label: results[id].algorithm || id.toUpperCase(),
@@ -170,34 +190,109 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
       {/* 3. QPSO PERFORMANCE SUMMARY */}
       {qpsoSummary}
 
-      {/* 3. VISUAL BAR CHART */}
-      <div className="bg-[#1E1B18] border border-[#3A342E] rounded-lg p-4">
-        <h3 className="text-xs font-semibold text-gray-400 mb-4 tracking-wider">OBJECTIVE COST</h3>
-        <div className="space-y-3">
-          {resultsArray.map((res) => {
-            const isBest = res.total_cost === minCost;
-            const widthPct = maxCost > 0 ? (res.total_cost / maxCost * 100) : 0;
-            return (
-              <div key={res.id} className="flex items-center gap-3">
-                <div className={`w-16 text-xs font-medium ${getAlgorithmColor(res.id).text}`}>
-                  {res.algorithm || res.id.toUpperCase()}
-                </div>
-                <div className="flex-1 bg-[#26221D] h-2.5 rounded-full overflow-hidden relative">
-                  <div
-                    className={`h-full ${getAlgorithmColor(res.id).bg} rounded-full ${isBest ? 'shadow-[0_0_8px_rgba(198,96,46,0.6)]' : ''}`}
-                    style={{ width: `${widthPct}%` }}
-                  />
-                </div>
-                <div className="w-20 text-right font-mono text-sm text-gray-300 tabular-nums">
-                  {res.total_cost.toFixed(1)}
-                </div>
-              </div>
-            );
-          })}
+      {/* 3. VIEW / SCALE TOGGLES */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-1.5 bg-[#1E1B18] border border-[#3A342E] rounded-lg p-1">
+          <button
+            onClick={() => setBarScale('linear')}
+            className={`px-2 py-1 rounded text-[10px] font-mono font-semibold transition-colors ${barScale === 'linear' ? 'bg-[#26221D] text-gray-200' : 'text-gray-500 hover:text-gray-300'}`}
+          >
+            Scale: Linear
+          </button>
+          <button
+            onClick={() => setBarScale('log')}
+            className={`px-2 py-1 rounded text-[10px] font-mono font-semibold transition-colors ${barScale === 'log' ? 'bg-[#26221D] text-gray-200' : 'text-gray-500 hover:text-gray-300'}`}
+          >
+            Scale: Log
+          </button>
+        </div>
+        <div className="flex items-center gap-1.5 bg-[#1E1B18] border border-[#3A342E] rounded-lg p-1">
+          <button
+            onClick={() => setResultsView('bars')}
+            className={`px-2.5 py-1 rounded text-[10px] font-mono font-semibold transition-colors flex items-center gap-1.5 ${resultsView === 'bars' ? 'bg-[#C6602E] text-white' : 'text-gray-500 hover:text-gray-300'}`}
+          >
+            <BarChart2 size={12} /> Side-by-Side Bars
+          </button>
+          <button
+            onClick={() => setResultsView('table')}
+            className={`px-2.5 py-1 rounded text-[10px] font-mono font-semibold transition-colors flex items-center gap-1.5 ${resultsView === 'table' ? 'bg-[#C6602E] text-white' : 'text-gray-500 hover:text-gray-300'}`}
+          >
+            <Table2 size={12} /> Data Table
+          </button>
         </div>
       </div>
 
+      {/* 3b. GROUPED BAR VIEW - execution speed and cost/quality side by
+          side, same resultsArray the table below uses, just two bar groups
+          instead of one. Log scale only affects bar width, never the
+          printed numeric value. */}
+      {resultsView === 'bars' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-[#1E1B18] border border-[#3A342E] rounded-lg p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xs font-semibold text-gray-400 tracking-wider flex items-center gap-1.5">
+                <Gauge size={13} /> EXECUTION SPEED (RUNTIME MS)
+              </h3>
+              <span className="text-[9px] font-mono text-[#5D7A9E] bg-[#5D7A9E]/10 rounded px-1.5 py-0.5">Lower is faster</span>
+            </div>
+            <div className="space-y-3">
+              {resultsArray.map((res) => {
+                const widthPct = barWidthPct(res.runtime_ms || 0, maxRuntime, barScale === 'log');
+                return (
+                  <div key={res.id} className="flex items-center gap-3">
+                    <div className={`w-16 text-xs font-medium ${getAlgorithmColor(res.id).text}`}>
+                      {res.algorithm || res.id.toUpperCase()}
+                    </div>
+                    <div className="flex-1 bg-[#26221D] h-2.5 rounded-full overflow-hidden relative">
+                      <div
+                        className={`h-full ${getAlgorithmColor(res.id).bg} rounded-full`}
+                        style={{ width: `${widthPct}%` }}
+                      />
+                    </div>
+                    <div className="w-16 text-right font-mono text-sm text-gray-300 tabular-nums">
+                      {res.runtime_ms.toFixed(0)}ms
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="bg-[#1E1B18] border border-[#3A342E] rounded-lg p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xs font-semibold text-gray-400 tracking-wider flex items-center gap-1.5">
+                <Zap size={13} /> SOLUTION COST &amp; QUALITY
+              </h3>
+              <span className="text-[9px] font-mono text-[#E8A93A] bg-[#E8A93A]/10 rounded px-1.5 py-0.5">Lower cost is better</span>
+            </div>
+            <div className="space-y-3">
+              {resultsArray.map((res) => {
+                const isBest = res.total_cost === minCost;
+                const widthPct = barWidthPct(res.total_cost, maxCost, barScale === 'log');
+                return (
+                  <div key={res.id} className="flex items-center gap-3">
+                    <div className={`w-16 text-xs font-medium ${getAlgorithmColor(res.id).text}`}>
+                      {res.algorithm || res.id.toUpperCase()}
+                    </div>
+                    <div className="flex-1 bg-[#26221D] h-2.5 rounded-full overflow-hidden relative">
+                      <div
+                        className={`h-full ${getAlgorithmColor(res.id).bg} rounded-full ${isBest ? 'shadow-[0_0_8px_rgba(198,96,46,0.6)]' : ''}`}
+                        style={{ width: `${widthPct}%` }}
+                      />
+                    </div>
+                    <div className="w-20 text-right font-mono text-sm text-gray-300 tabular-nums">
+                      {res.total_cost.toFixed(1)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 4. BENCHMARK MATRIX TABLE */}
+      {resultsView === 'table' && (
       <div className="bg-[#1E1B18] border border-[#3A342E] rounded-lg overflow-hidden">
         {results.exact && (
           <div className="px-4 py-2 text-[11px] text-[#E8A93A] bg-[#3A2E14]/30 border-b border-[#3A342E]">
@@ -269,6 +364,7 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
           </tbody>
         </table>
       </div>
+      )}
 
       {/* 5. CONVERGENCE CHART */}
       <div className="bg-[#1E1B18] border border-[#3A342E] rounded-lg p-4 space-y-2">
