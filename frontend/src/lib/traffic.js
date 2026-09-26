@@ -15,11 +15,14 @@
 // live traffic feed and must never be labelled as one.
 
 export const CONGESTION_STYLES = {
-  free_flow: { label: 'Free flow', color: '#4A423A', weight: 2.5, opacity: 0.6 },
-  light: { label: 'Light', color: '#6B9A57', weight: 3.0, opacity: 0.7 },
-  moderate: { label: 'Moderate', color: '#E8C578', weight: 3.5, opacity: 0.8 },
-  heavy: { label: 'Heavy', color: '#E8A93A', weight: 4.5, opacity: 0.9 },
-  severe: { label: 'Severe', color: '#C1443B', weight: 5.5, opacity: 0.95 }
+  // free_flow: nudged from #4A423A to #5A5248 for better contrast on the
+  // dark graph background. Opacity raised from 0.6 to 0.75 so roads are
+  // legible without washing out the congested or route colours above them.
+  free_flow: { label: 'Free flow', color: '#5A5248', weight: 2.5, opacity: 0.75 },
+  light:     { label: 'Light',     color: '#6B9A57', weight: 3.0, opacity: 0.78 },
+  moderate:  { label: 'Moderate',  color: '#E8C578', weight: 3.5, opacity: 0.85 },
+  heavy:     { label: 'Heavy',     color: '#E8A93A', weight: 4.5, opacity: 0.90 },
+  severe:    { label: 'Severe',    color: '#C1443B', weight: 5.5, opacity: 0.95 }
 };
 
 // The order the legend lists them in - matches the backend's own band order.

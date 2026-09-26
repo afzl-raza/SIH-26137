@@ -1,11 +1,23 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
+import { Crosshair, Maximize, Warehouse, RotateCcw } from 'lucide-react';
 import { apiFetch } from '../api';
 import { CONGESTION_ORDER, CONGESTION_STYLES, INCIDENT_STYLE, congestionStyle, congestionLabel } from '../lib/traffic';
 import VehicleLoader from './ui/VehicleLoader';
 import SegmentedControl from './ui/SegmentedControl';
 import Button from './ui/Button';
+import MapViewController from './map/MapViewController';
+import {
+  isValidLatLng,
+  computeBounds,
+  mergeBounds,
+  padBoundsIfTooSmall,
+  estimateInitialZoom,
+  boundsCenter,
+  toLeafletBounds,
+  DEFAULT_FIT_OPTIONS
+} from '../lib/mapBounds';
 
 // Asks the backend for the road shape of an already-computed set of routes.
 //
@@ -122,6 +134,24 @@ const createDraftStopMarkerIcon = (index) => L.divIcon({
   iconAnchor: [24, 10]
 });
 
+// Several delivery jobs can legitimately sit at (or within a few metres of)
+// the same real coordinate - a mall with multiple consignees, a large
+// residential block. Rendered as N separate overlapping markers, that's
+// unreadable and, worse, whichever one is on top silently hides the others
+// from a click. This groups them into one marker carrying a count badge;
+// the popup built for it (see the render below) still lists every job in
+// the group individually, so nothing is actually hidden - only the pin is
+// shared. Coordinates themselves are never nudged apart to fake separation.
+const createJobGroupMarkerIcon = (count, anyLate) => L.divIcon({
+  html: `<div style="background:#1E1B18; border:1.5px solid ${anyLate ? '#C1443B' : '#5D7A9E'}; border-radius:12px; padding:1px 6px; color:${anyLate ? '#E8918A' : '#9AB3CC'}; font-family:JetBrains Mono, monospace; font-size:10px; font-weight:600; box-shadow:0 2px 8px rgba(0,0,0,0.5)${anyLate ? ', 0 0 0 3px rgba(193,68,59,0.45)' : ''}; display:flex; align-items:center; gap:3px;">
+          <svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3.2" fill="${anyLate ? '#C1443B' : '#5D7A9E'}"/></svg>
+          <span>×${count}</span>
+         </div>`,
+  className: 'custom-leaflet-job-group',
+  iconSize: [42, 20],
+  iconAnchor: [21, 10]
+});
+
 const createVehicleMarkerIcon = (vehicleId, color, isSelected) => L.divIcon({
   html: `<div style="background:#1E1B18; border:${isSelected ? '3px' : '2px'} solid ${color}; border-radius:12px; padding:2px 7px; color:#FFFFFF; font-family:JetBrains Mono, monospace; font-size:10px; font-weight:bold; box-shadow:0 4px 14px ${color}66; display:flex; align-items:center; gap:4px; transform:scale(${isSelected ? '1.15' : '1.0'});">
           <svg width="13" height="9" viewBox="0 0 16 10"><rect x="0.5" y="1.5" width="10" height="6.5" rx="1" fill="${color}"/><rect x="10.5" y="3.5" width="4.5" height="4.5" rx="0.8" fill="${color}"/><circle cx="4" cy="9" r="1.3" fill="#1E1B18" stroke="${color}" stroke-width="1"/><circle cx="12.5" cy="9" r="1.3" fill="#1E1B18" stroke="${color}" stroke-width="1"/></svg>
@@ -171,15 +201,38 @@ export default function NetworkMap({
   const jobs = scenario?.jobs || [];
   const vehicles = scenario?.vehicles || [];
 
-  const center = useMemo(() => {
-    if (nodes.length === 0) return [12.9716, 77.5946];
-    const lats = nodes.map(n => n.lat);
-    const lngs = nodes.map(n => n.lng);
-    return [
-      lats.reduce((a, b) => a + b, 0) / lats.length,
-      lngs.reduce((a, b) => a + b, 0) / lngs.length
-    ];
+  // --- Dynamic viewport: the operating area of the ACTIVE scenario -------
+  // No fixed center, no fixed zoom. "The area" means the depot plus every
+  // node a job actually sits on; if a scenario has no jobs yet (a network
+  // was generated but nothing was planned against it), it falls back to
+  // every node so there is still something sensible on screen. Invalid
+  // coordinates (missing, NaN, out of range) are dropped by computeBounds
+  // rather than allowed to blow the box out to an unrelated area.
+  const jobNodeIds = useMemo(() => new Set(jobs.map(j => j.node_id)), [jobs]);
+
+  const scenarioBounds = useMemo(() => {
+    const relevant = nodes.filter(n => n.is_depot || jobNodeIds.has(n.id));
+    const base = relevant.length > 1 ? relevant : nodes;
+    return computeBounds(base.map(n => [n.lat, n.lng]));
+  }, [nodes, jobNodeIds]);
+
+  const depotLatLng = useMemo(() => {
+    const depotNode = nodes.find(n => n.is_depot);
+    return depotNode && isValidLatLng(depotNode.lat, depotNode.lng)
+      ? [depotNode.lat, depotNode.lng]
+      : null;
   }, [nodes]);
+
+  const mapControllerRef = useRef(null);
+  // The Leaflet map only reads MapContainer's `center`/`zoom` props once, at
+  // construction - so this has to be a one-time computation from whatever
+  // data is available on first render, not a value that tracks later
+  // scenario changes (those are handled by fitBounds/flyToBounds through
+  // mapControllerRef instead, see the effect below). Computed from the
+  // scenario's own bounds so the very first paint is already in the right
+  // place at a sensible scale, instead of every scenario starting from the
+  // same fixed zoom regardless of how large an area it actually covers.
+  const initialViewportRef = useRef(null);
 
   const nodeMap = useMemo(() => {
     const map = new Map();
@@ -187,13 +240,41 @@ export default function NetworkMap({
     return map;
   }, [nodes]);
 
-  const jobNodeIds = useMemo(() => new Set(jobs.map(j => j.node_id)), [jobs]);
-
   const jobMap = useMemo(() => {
     const map = new Map();
     jobs.forEach(j => map.set(j.node_id, j));
     return map;
   }, [jobs]);
+
+  // Groups job-carrying nodes that sit at (or within ~11m of) the same real
+  // coordinate, so they render as one marker with a count instead of
+  // silently-stacked, unclickable duplicates. A node's own coordinate is
+  // never altered by this - grouping only changes which marker(s) get drawn
+  // for it, never where it actually is. Groups of size 1 (the overwhelming
+  // common case) render exactly as a single job always has.
+  const JOB_GROUP_EPS_DEG = 0.0001; // ~11m at these latitudes
+  const jobNodeGroups = useMemo(() => {
+    const groups = new Map();
+    nodes.forEach(n => {
+      if (n.is_depot) return;
+      const jobObj = jobMap.get(n.id);
+      if (!jobObj || !isValidLatLng(n.lat, n.lng)) return;
+      const key = `${Math.round(n.lat / JOB_GROUP_EPS_DEG)}:${Math.round(n.lng / JOB_GROUP_EPS_DEG)}`;
+      if (!groups.has(key)) groups.set(key, { lat: n.lat, lng: n.lng, entries: [] });
+      groups.get(key).entries.push({ node: n, job: jobObj });
+    });
+    return Array.from(groups.values());
+  }, [nodes, jobMap]);
+
+  // Node ids handled by a multi-entry group's own marker below, so the main
+  // per-node loop skips rendering them individually instead of drawing both.
+  const groupedAwayNodeIds = useMemo(() => {
+    const ids = new Set();
+    jobNodeGroups.forEach(g => {
+      if (g.entries.length > 1) g.entries.forEach(({ node }) => ids.add(node.id));
+    });
+    return ids;
+  }, [jobNodeGroups]);
 
   // True when this network's roads carry real OpenStreetMap geometry. Drives
   // the two things Phase 6 makes conditional: drawing road shapes instead of
@@ -330,6 +411,58 @@ export default function NetworkMap({
     });
   }, [displayedResult, vehicles, nodePathCoords, activeRouteGeometry, selectedVehicleId, vehicleFilter]);
 
+  // Route geometry (especially real OSM road shape) can bulge outside the
+  // straight depot-to-stop box, so "after optimization, ensure the route is
+  // visible" needs the routes' own extent, not just the stop coordinates.
+  const routeBounds = useMemo(
+    () => computeBounds(activeRouteLines.flatMap(ar => ar.coords || [])),
+    [activeRouteLines]
+  );
+
+  // Bounds for the single selected vehicle's own route (+ depot), used by
+  // the "Focus on Selected Vehicle" control - independent of the
+  // all-stops box so focusing one vehicle doesn't require first clearing
+  // the route filter.
+  const selectedVehicleRouteBounds = useMemo(() => {
+    if (selectedVehicleId == null) return null;
+    const ar = activeRouteLines.find(r => r.vehicleId === selectedVehicleId);
+    if (!ar) return null;
+    const pts = [...(ar.coords || [])];
+    if (depotLatLng) pts.push(depotLatLng);
+    return computeBounds(pts);
+  }, [selectedVehicleId, activeRouteLines, depotLatLng]);
+
+  // --- Drives the map's viewport from the ABOVE bounds ------------------
+  // Fires only when something that should actually move the camera has
+  // changed: a different scenario (instant cut, since the old view has
+  // nothing to do with the new area) or a new optimize/re-optimize result
+  // on the SAME scenario (smooth flight, since the operator is watching the
+  // same area gain or lose a route). Explicitly NOT in the dependency list:
+  // vehicleFilter, mapView (GIS/Graph), the legend, beforeAfterMode,
+  // previewResult - none of those describe a new geographic area, so none
+  // of them should ever move the camera the operator is looking at.
+  const lastFitRef = useRef({ scenarioId: undefined, result: undefined });
+
+  useEffect(() => {
+    const controller = mapControllerRef.current;
+    if (!controller) return;
+
+    const isNewScenario = lastFitRef.current.scenarioId !== scenarioId;
+    const isNewResult = lastFitRef.current.result !== currentResult;
+    if (!isNewScenario && !isNewResult) return;
+    lastFitRef.current = { scenarioId, result: currentResult };
+
+    const target = mergeBounds(scenarioBounds, currentResult ? routeBounds : null);
+    const leafletBounds = toLeafletBounds(padBoundsIfTooSmall(target));
+    if (!leafletBounds) return; // no valid coordinates yet - nothing to fit to
+
+    if (isNewScenario) {
+      controller.fitToBounds(leafletBounds, { ...DEFAULT_FIT_OPTIONS, animate: false });
+    } else {
+      controller.flyToBounds(leafletBounds, { ...DEFAULT_FIT_OPTIONS, duration: 0.9 });
+    }
+  }, [scenarioId, currentResult, scenarioBounds, routeBounds]);
+
   // Per-vehicle-color glow rule, applied via className (not a duplicated
   // Polyline) - avoids the zoom/pan micro-stutter a second SVG path per
   // route would add.
@@ -404,6 +537,45 @@ export default function NetworkMap({
       </div>
     );
   }
+
+  // Computed once, from whatever bounds the scenario has on this first real
+  // render (nodes.length > 0 is guaranteed past the early return above) -
+  // see the ref's declaration earlier for why this can't just be a useMemo
+  // that tracks later changes.
+  if (initialViewportRef.current === null) {
+    const fallbackBounds = scenarioBounds || computeBounds(nodes.map(n => [n.lat, n.lng]));
+    const padded = padBoundsIfTooSmall(fallbackBounds);
+    initialViewportRef.current = {
+      center: boundsCenter(padded) || [nodes[0].lat, nodes[0].lng],
+      zoom: estimateInitialZoom(padded)
+    };
+  }
+  const { center: initialCenter, zoom: initialZoom } = initialViewportRef.current;
+
+  const handleFitAllStops = () => {
+    const controller = mapControllerRef.current;
+    if (!controller) return;
+    const leafletBounds = toLeafletBounds(padBoundsIfTooSmall(mergeBounds(scenarioBounds, routeBounds)));
+    if (leafletBounds) controller.flyToBounds(leafletBounds, { ...DEFAULT_FIT_OPTIONS, duration: 0.8 });
+  };
+
+  const handleFocusDepot = () => {
+    const controller = mapControllerRef.current;
+    if (!controller || !depotLatLng) return;
+    controller.setView(depotLatLng, Math.max(initialZoom, 16), { animate: true, duration: 0.8 });
+  };
+
+  const handleFocusVehicle = () => {
+    const controller = mapControllerRef.current;
+    if (!controller || !selectedVehicleRouteBounds) return;
+    const leafletBounds = toLeafletBounds(padBoundsIfTooSmall(selectedVehicleRouteBounds));
+    if (leafletBounds) controller.flyToBounds(leafletBounds, { ...DEFAULT_FIT_OPTIONS, duration: 0.8 });
+  };
+
+  // "Reset" means "back to the scenario's own default view" - there is no
+  // separate fixed home position to return to, since a fixed position is
+  // exactly what a data-driven viewport must not have.
+  const handleResetView = handleFitAllStops;
 
   return (
     // `isolate` gives the map its own stacking context, so Leaflet's
@@ -507,6 +679,63 @@ export default function NetworkMap({
         </div>
       )}
 
+      {/* Map View Controls - Fit All Stops / Focus Depot / Focus Selected
+          Vehicle / Reset View. Every one of these drives the SAME imperative
+          controller the automatic scenario/result-change fit uses (via
+          mapControllerRef) - there is no separate, second way the viewport
+          gets moved. Stacked under whichever of the GIS/Graph toggle and the
+          Before/After toggle are currently showing, so it never overlaps
+          them regardless of which are present. */}
+      {!compact && (
+        <div className={`absolute right-3 z-[1000] clean-panel p-1 rounded-lg border border-[#332E29] shadow-xl pointer-events-auto flex flex-col gap-1 ${
+          previousResult && currentResult ? 'top-32' : 'top-14'
+        }`}>
+          <Button
+            variant="tertiary"
+            size="sm"
+            fullWidth={false}
+            icon={Maximize}
+            title="Zoom to show every stop in this scenario"
+            onClick={handleFitAllStops}
+          >
+            Fit All Stops
+          </Button>
+          <Button
+            variant="tertiary"
+            size="sm"
+            fullWidth={false}
+            icon={Warehouse}
+            disabled={!depotLatLng}
+            title="Zoom to the depot"
+            onClick={handleFocusDepot}
+          >
+            Focus Depot
+          </Button>
+          <Button
+            variant="tertiary"
+            size="sm"
+            fullWidth={false}
+            icon={Crosshair}
+            disabled={!selectedVehicleRouteBounds}
+            disabledHint="Select a vehicle first"
+            title="Zoom to the selected vehicle's route"
+            onClick={handleFocusVehicle}
+          >
+            Focus Vehicle
+          </Button>
+          <Button
+            variant="tertiary"
+            size="sm"
+            fullWidth={false}
+            icon={RotateCcw}
+            title="Back to the scenario's default view"
+            onClick={handleResetView}
+          >
+            Reset View
+          </Button>
+        </div>
+      )}
+
       {/*
         react-leaflet's MapContainer does not reactively re-apply its own
         className after the Leaflet instance mounts (Leaflet's own JS owns
@@ -516,11 +745,16 @@ export default function NetworkMap({
       */}
       <div className={`w-full h-full ${mapView === 'graph' ? 'graph-view-grid' : ''}`}>
       <MapContainer
-        center={center}
-        zoom={12}
+        center={initialCenter}
+        zoom={initialZoom}
         scrollWheelZoom={!compact}
         className="w-full h-full"
       >
+        {/* Renders nothing - owns the invalidateSize lifecycle and exposes
+            fitToBounds/flyToBounds/setView to the plain-React buttons above
+            via mapControllerRef (see MapViewController.jsx). */}
+        <MapViewController ref={mapControllerRef} />
+
         {mapView === 'gis' && (
           // Standard OSM raster tiles at full brightness - a dark CSS
           // filter and CartoDB's dark basemap were both tried; the filter
@@ -744,6 +978,10 @@ export default function NetworkMap({
           }
 
           if (isJob) {
+            // Rendered instead by the dedicated group marker block below,
+            // which lists every job at this coordinate in one popup.
+            if (groupedAwayNodeIds.has(n.id)) return null;
+
             const isLate = lateJobIds.has(jobObj.id);
             const hasWindow = jobObj.ready_time != null && jobObj.due_time != null;
             return (
@@ -784,6 +1022,44 @@ export default function NetworkMap({
                 weight: 1
               }}
             />
+          );
+        })}
+
+        {/* Grouped Job Markers - multiple delivery jobs whose nodes sit at
+            (or within ~11m of) the same coordinate. One pin, one popup
+            listing every job individually - nothing here hides a job, it
+            only avoids stacking indistinguishable markers on top of it. */}
+        {!placementMode && jobNodeGroups.filter(g => g.entries.length > 1).map(group => {
+          const anyLate = group.entries.some(({ job }) => lateJobIds.has(job.id));
+          const key = group.entries.map(({ node }) => node.id).join('-');
+          return (
+            <Marker
+              key={`job-group-${key}`}
+              position={[group.lat, group.lng]}
+              icon={createJobGroupMarkerIcon(group.entries.length, anyLate)}
+            >
+              <Popup>
+                <div className="text-xs font-mono space-y-2 max-h-48 overflow-y-auto">
+                  <p className="font-bold text-[#5D7A9E]">{group.entries.length} delivery jobs at this stop</p>
+                  {group.entries.map(({ node, job }) => {
+                    const isLate = lateJobIds.has(job.id);
+                    const hasWindow = job.ready_time != null && job.due_time != null;
+                    return (
+                      <div key={job.id} className="border-t border-[#3A342E] pt-1.5 space-y-0.5">
+                        <p className={`font-bold ${isLate ? 'text-[#C1443B]' : 'text-[#5D7A9E]'}`}>Delivery Job #{job.id}</p>
+                        <p>Node: #{node.id}</p>
+                        <p>Demand: {job.demand} units</p>
+                        <p>Service Time: {job.service_time} min</p>
+                        {hasWindow && (
+                          <p>Window: <span className="text-[#E8C578]">[{job.ready_time}, {job.due_time}] min</span></p>
+                        )}
+                        {isLate && <p className="text-[#C1443B] font-bold">⚠ served late on the current route</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </Popup>
+            </Marker>
           );
         })}
 
@@ -883,6 +1159,12 @@ export default function NetworkMap({
           <span className="w-2.5 h-2.5 rounded-full bg-[#5D7A9E] inline-block"></span>
           <span className="text-gray-300">Job Target</span>
         </div>
+        {jobNodeGroups.some(g => g.entries.length > 1) && (
+          <div className="flex items-center space-x-2 text-[11px] font-mono">
+            <span className="text-[9px] text-gray-400 font-bold">×N</span>
+            <span className="text-gray-300">Multiple jobs at one stop - click for the list</span>
+          </div>
+        )}
         {/* Congestion bands, named and coloured exactly as the backend
             classified them. Simulated, and labelled as such - this is a
             traffic model, never a live feed. */}
