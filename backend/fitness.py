@@ -29,6 +29,9 @@ def evaluate_solution(
     Evaluates a candidate route set using the single centralized objective function:
     Cost = alpha * TravelTime + beta * Distance + gamma * Congestion + Penalty
 
+    Penalty includes capacity, route-time and (CVRPTW) lateness violations,
+    all normalized and quadratic - see the per-term comments below.
+
     `edge_map` lets a caller pass a pre-built build_edge_map(scenario) result
     when evaluating many candidates against the same scenario; built here
     when omitted, so single-shot callers (Greedy, /api/evaluate, tests) are
@@ -87,6 +90,18 @@ def evaluate_solution(
         if r.time_exceeded > 0:
             constraint_violations += 1
             penalty += weights.penalty_weight * (r.time_exceeded / max_route_time) ** 2
+        # Lateness (soft, CVRPTW): normalized the same way as time_exceeded,
+        # PLUS a fixed per-late-job penalty so a handful of small violations
+        # (each individually tiny once squared and normalized) can't win out
+        # over a feasible plan just because the quadratic term alone barely
+        # registers - see the E1-style regression this fix mirrors for
+        # capacity/time above.
+        if r.lateness > 0:
+            constraint_violations += r.late_jobs
+            penalty += weights.penalty_weight * (r.lateness / max_route_time) ** 2
+            penalty += weights.penalty_weight * 0.05 * r.late_jobs
+
+    total_lateness = sum(r.lateness for r in routes)
 
     raw_cost = (
         weights.alpha * total_travel_time +
@@ -95,7 +110,10 @@ def evaluate_solution(
     )
     total_cost = raw_cost + penalty
 
-    is_feasible = (constraint_violations == 0)
+    # Lateness is checked independently of constraint_violations (rather than
+    # relying solely on the late_jobs count folded into it above) so a route
+    # is never reported feasible while any job on it is still late.
+    is_feasible = (constraint_violations == 0) and (total_lateness == 0)
 
     return OptimizationResult(
         algorithm=algorithm_name,

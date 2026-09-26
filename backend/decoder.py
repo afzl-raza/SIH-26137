@@ -1,6 +1,7 @@
 import numpy as np
 from typing import List, Tuple, Dict
 from models import ProblemScenario, VehicleRoute, Vehicle, Job
+from schedule import simulate_route
 
 
 def build_route_from_job_sequence(
@@ -18,9 +19,11 @@ def build_route_from_job_sequence(
     at some other way (a 2-opt/or-opt move, a DP reconstruction) without
     duplicating this math - the "one shared evaluator" principle applies to
     route construction too, not just scoring."""
+    job_seq = [j.id for j in job_objs]
+    jobs_by_id: Dict[int, Job] = {j.id: j for j in job_objs}
+
     node_path: List[int] = [depot_id]
     total_dist = 0.0
-    total_time = 0.0
     total_demand = 0.0
     curr_n = depot_id
 
@@ -30,26 +33,30 @@ def build_route_from_job_sequence(
         path_segment = paths_dict.get((curr_n, jn), [curr_n, jn])
         node_path.extend(path_segment[1:])
         total_dist += dist_matrix[curr_n, jn]
-        total_time += time_matrix[curr_n, jn] + j.service_time
         curr_n = jn
 
     return_segment = paths_dict.get((curr_n, depot_id), [curr_n, depot_id])
     node_path.extend(return_segment[1:])
     total_dist += dist_matrix[curr_n, depot_id]
-    total_time += time_matrix[curr_n, depot_id]
+
+    schedule = simulate_route(job_seq, vehicle, depot_id, time_matrix, jobs_by_id)
 
     cap_exceeded = max(0.0, total_demand - vehicle.capacity)
-    time_exceeded = max(0.0, total_time - vehicle.max_route_time)
+    time_exceeded = max(0.0, schedule.travel_time - vehicle.max_route_time)
 
     return VehicleRoute(
         vehicle_id=vehicle.id,
-        job_ids=[j.id for j in job_objs],
+        job_ids=job_seq,
         node_path=node_path,
         route_distance=round(total_dist, 2),
-        route_travel_time=round(total_time, 2),
+        route_travel_time=round(schedule.travel_time, 2),
         total_demand=round(total_demand, 1),
         capacity_exceeded=round(cap_exceeded, 1),
-        time_exceeded=round(time_exceeded, 2)
+        time_exceeded=round(time_exceeded, 2),
+        stops=schedule.stops,
+        wait_time=round(schedule.wait_time, 2),
+        lateness=round(schedule.lateness, 2),
+        late_jobs=schedule.late_jobs
     )
 
 

@@ -17,7 +17,8 @@ that don't match this codebase — every path below is verified to exist).
 | Classical PSO baseline | `backend/optimizers/pso.py` |
 | GA baseline | `backend/optimizers/ga.py` |
 | QPSO (quantum-inspired algorithm) | `backend/optimizers/qpso.py` |
-| Common evaluator (fair comparison) | `backend/fitness.py`, used by all four optimizers |
+| Common evaluator (fair comparison) | `backend/fitness.py`, used by all five optimizers (Greedy, PSO, GA, QPSO, Memetic QPSO) |
+| CVRPTW delivery time windows | `backend/schedule.py::simulate_route` (single timing function), `backend/models.py::Job` (`ready_time`/`due_time`) and `StopTiming`, `backend/problem_generator.py::generate_time_windows`, lateness penalty in `backend/fitness.py::evaluate_solution`, documented in `docs/mathematical_model.md` |
 | Dynamic traffic incident | `frontend/src/App.jsx::handleSimulateIncident` + `POST /api/traffic/update` |
 | Unified edge-cost engine (one pipeline) | `backend/realdata/conditions.py::recompute_edge_cost`, documented in `docs/dynamic_conditions.md` |
 | Simulated traffic model + provider seam | `backend/realdata/traffic_model.py` (`SimulatedTrafficProvider`, `ExternalTrafficProvider`) |

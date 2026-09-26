@@ -89,9 +89,9 @@ const createDepotMarkerIcon = () => L.divIcon({
   iconAnchor: [30, 12]
 });
 
-const createJobMarkerIcon = (jobId) => L.divIcon({
-  html: `<div style="background:#1E1B18; border:1.5px solid #5D7A9E; border-radius:12px; padding:1px 6px; color:#9AB3CC; font-family:JetBrains Mono, monospace; font-size:10px; font-weight:600; box-shadow:0 2px 8px rgba(0,0,0,0.5); display:flex; align-items:center; gap:3px;">
-          <svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3.2" fill="#5D7A9E"/></svg>
+const createJobMarkerIcon = (jobId, isLate) => L.divIcon({
+  html: `<div style="background:#1E1B18; border:1.5px solid ${isLate ? '#C1443B' : '#5D7A9E'}; border-radius:12px; padding:1px 6px; color:${isLate ? '#E8918A' : '#9AB3CC'}; font-family:JetBrains Mono, monospace; font-size:10px; font-weight:600; box-shadow:0 2px 8px rgba(0,0,0,0.5)${isLate ? ', 0 0 0 3px rgba(193,68,59,0.45)' : ''}; display:flex; align-items:center; gap:3px;">
+          <svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3.2" fill="${isLate ? '#C1443B' : '#5D7A9E'}"/></svg>
           <span>D${jobId < 10 ? '0' + jobId : jobId}</span>
          </div>`,
   className: 'custom-leaflet-job',
@@ -272,6 +272,18 @@ export default function NetworkMap({
   );
 
   const displayedResult = previewResult || currentResult;
+
+  // Job ids whose stop was served late (VehicleRoute.stops, schedule.
+  // simulate_route) in the currently displayed result - drives the red
+  // marker ring below. Empty whenever no route has any lateness, which is
+  // always true when time windows are off.
+  const lateJobIds = useMemo(() => {
+    const ids = new Set();
+    (displayedResult?.routes || []).forEach(r => {
+      (r.stops || []).forEach(s => { if (s.lateness > 0) ids.add(s.job_id); });
+    });
+    return ids;
+  }, [displayedResult]);
 
   const activeRouteGeometry = useBackendRouteGeometry(scenarioId, displayedResult, isOsmNetwork);
   const previousRouteGeometry = useBackendRouteGeometry(scenarioId, previousResult, isOsmNetwork);
@@ -732,18 +744,28 @@ export default function NetworkMap({
           }
 
           if (isJob) {
+            const isLate = lateJobIds.has(jobObj.id);
+            const hasWindow = jobObj.ready_time != null && jobObj.due_time != null;
             return (
               <Marker
                 key={`node-${n.id}`}
                 position={[n.lat, n.lng]}
-                icon={createJobMarkerIcon(jobObj.id)}
+                icon={createJobMarkerIcon(jobObj.id, isLate)}
               >
                 <Popup>
                   <div className="text-xs font-mono space-y-1">
-                    <p className="font-bold text-[#5D7A9E]">Delivery Job #{jobObj.id}</p>
+                    <p className={`font-bold ${isLate ? 'text-[#C1443B]' : 'text-[#5D7A9E]'}`}>Delivery Job #{jobObj.id}</p>
                     <p>Node: #{n.id}</p>
                     <p>Demand: {jobObj.demand} units</p>
                     <p>Service Time: {jobObj.service_time} min</p>
+                    {hasWindow && (
+                      <p>
+                        Window: <span className="text-[#E8C578]">[{jobObj.ready_time}, {jobObj.due_time}] min</span>
+                      </p>
+                    )}
+                    {isLate && (
+                      <p className="text-[#C1443B] font-bold">⚠ served late on the current route</p>
+                    )}
                   </div>
                 </Popup>
               </Marker>
