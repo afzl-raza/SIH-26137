@@ -1,11 +1,31 @@
 import React from 'react';
-import { Check, Circle } from 'lucide-react';
+import { Network, AlertTriangle, Atom, Scale, Check } from 'lucide-react';
 
 const STAGES = [
-  { id: 'PLAN', label: 'PLAN' },
-  { id: 'DISRUPT', label: 'DISRUPT' },
-  { id: 'RE_OPTIMIZE', label: 'RE-OPTIMIZE' },
-  { id: 'PROVE', label: 'PROVE' }
+  {
+    id: 'PLAN',
+    label: 'PLAN',
+    description: 'QPSO routes the whole fleet',
+    Icon: Network
+  },
+  {
+    id: 'DISRUPT',
+    label: 'DISRUPT',
+    description: 'An incident congests a road',
+    Icon: AlertTriangle
+  },
+  {
+    id: 'RE_OPTIMIZE',
+    label: 'RE-OPTIMIZE',
+    description: 'Fresh fleet routes in seconds',
+    Icon: Atom
+  },
+  {
+    id: 'PROVE',
+    label: 'PROVE',
+    description: 'Benchmark vs Greedy, PSO, GA',
+    Icon: Scale
+  }
 ];
 
 export default function WorkflowIndicator({ currentStage = 'INITIAL', narrativeText = '' }) {
@@ -17,49 +37,62 @@ export default function WorkflowIndicator({ currentStage = 'INITIAL', narrativeT
   const currentIndex = getStageIndex(currentStage);
 
   return (
-    <div className="clean-panel bg-[#171513] border-b border-[#332E29] px-3 sm:px-6 py-2 w-full flex flex-col items-center">
-      {/* Phones: four equal columns, icon stacked over a small label, no
-          connector lines - so "RE-OPTIMIZE" never wraps and "PROVE" is never
-          clipped off the edge. sm and up: the original single row. */}
-      <div className="grid grid-cols-4 w-full sm:flex sm:w-auto sm:items-center sm:justify-center sm:space-x-2 max-w-full">
+    <div className="clean-panel bg-[#171513] border-b border-[#332E29] px-4 sm:px-6 py-4 w-full">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-start justify-center gap-2 sm:gap-0 max-w-5xl mx-auto">
         {STAGES.map((stage, index) => {
           const isCompleted = index < currentIndex;
           const isActive = index === currentIndex;
-          const isUpcoming = index > currentIndex;
-
           const stepState = isCompleted ? 'completed' : isActive ? 'active' : 'upcoming';
-          // The connector after this step reflects the state of the step it
-          // leads INTO, not this step itself, matching the original logic.
-          const connectorState = index < currentIndex - 1 ? 'completed' : index === currentIndex - 1 ? 'active' : 'upcoming';
+          // The arrow after this stage reflects the state of the stage it
+          // leads INTO, not this stage itself: the arrow immediately before
+          // the active stage is highlighted, arrows between completed
+          // stages are green, and the rest stay muted.
+          const arrowState = index < currentIndex - 1 ? 'completed' : index === currentIndex - 1 ? 'active' : 'upcoming';
+          const { Icon } = stage;
 
           return (
             <React.Fragment key={stage.id}>
-              {/* Step */}
-              <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-0 sm:space-x-2 min-w-0">
-                <div className="flex items-center justify-center w-5 h-5 flex-shrink-0">
-                  {isCompleted && (
-                    <Check className="w-4 h-4 text-[#6B9A57] font-bold" strokeWidth={3} />
-                  )}
-                  {isActive && (
-                    <div className="relative flex items-center justify-center w-3 h-3">
-                      <span className="absolute inline-flex w-full h-full rounded-full bg-[#C6602E] opacity-75 animate-ping"></span>
-                      <span className="relative inline-flex w-2.5 h-2.5 rounded-full bg-[#C6602E]"></span>
-                    </div>
-                  )}
-                  {isUpcoming && (
-                    <Circle className="w-4 h-4 text-gray-600" strokeWidth={2} />
+              {/* Stage card */}
+              <div
+                className={`workflow-stage workflow-stage--${stepState} flex-1 sm:flex-none sm:w-[180px] flex flex-row sm:flex-col items-center gap-3 sm:gap-2 px-3 sm:px-2 py-2.5 sm:py-3 rounded-lg`}
+              >
+                <div
+                  className={`workflow-stage-icon workflow-stage-icon--${stepState} flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full shrink-0`}
+                >
+                  {isCompleted ? (
+                    <Check className="w-5 h-5" strokeWidth={2.5} />
+                  ) : (
+                    <Icon className="w-5 h-5" strokeWidth={1.75} />
                   )}
                 </div>
 
-                <span className={`text-[9px] sm:text-xs font-semibold tracking-wide sm:tracking-wider uppercase whitespace-nowrap workflow-step--${stepState}`}>
-                  <span className="hidden sm:inline">{index + 1} </span>{stage.label}
-                </span>
+                <div className="flex flex-col items-start sm:items-center sm:text-center min-w-0">
+                  <span
+                    className={`workflow-stage-title workflow-stage-title--${stepState} text-xs font-semibold tracking-wider uppercase font-mono whitespace-nowrap`}
+                  >
+                    {index + 1} · {stage.label}
+                  </span>
+                  <span className="workflow-stage-desc text-[11px] leading-snug mt-0.5">
+                    {stage.description}
+                  </span>
+                </div>
               </div>
 
-              {/* Connecting Line - desktop only; the mobile grid columns read
-                  as a sequence on their own. */}
+              {/* Connector arrow (desktop row layout only) */}
               {index < STAGES.length - 1 && (
-                <div className={`hidden sm:block workflow-connector workflow-connector--${connectorState}`} />
+                <div
+                  className={`workflow-arrow workflow-arrow--${arrowState} hidden sm:flex items-center justify-center shrink-0 sm:mt-4`}
+                >
+                  <svg width="26" height="12" viewBox="0 0 26 12" fill="none">
+                    <path
+                      d="M1 6H23M23 6L18 1M23 6L18 11"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
               )}
             </React.Fragment>
           );
@@ -68,7 +101,7 @@ export default function WorkflowIndicator({ currentStage = 'INITIAL', narrativeT
 
       {/* Narrative Text */}
       {narrativeText && (
-        <div className="mt-2 text-center text-[11px] sm:text-xs text-gray-400 font-mono leading-snug">
+        <div className="mt-3 text-center text-xs text-gray-400 font-mono">
           {narrativeText}
         </div>
       )}
