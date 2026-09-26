@@ -37,8 +37,8 @@ export default function WorkflowIndicator({ currentStage = 'INITIAL', narrativeT
   const currentIndex = getStageIndex(currentStage);
 
   return (
-    <div className="clean-panel bg-[#171513] border-b border-[#332E29] px-4 sm:px-6 py-4 w-full">
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-start justify-center gap-2 sm:gap-0 max-w-5xl mx-auto">
+    <div className="clean-panel bg-[#171513] border-b border-[#332E29] px-4 sm:px-6 py-2.5 w-full">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-start justify-center gap-1.5 sm:gap-0 max-w-4xl mx-auto">
         {STAGES.map((stage, index) => {
           const isCompleted = index < currentIndex;
           const isActive = index === currentIndex;
@@ -54,25 +54,25 @@ export default function WorkflowIndicator({ currentStage = 'INITIAL', narrativeT
             <React.Fragment key={stage.id}>
               {/* Stage card */}
               <div
-                className={`workflow-stage workflow-stage--${stepState} flex-1 sm:flex-none sm:w-[180px] flex flex-row sm:flex-col items-center gap-3 sm:gap-2 px-3 sm:px-2 py-2.5 sm:py-3 rounded-lg`}
+                className={`workflow-stage workflow-stage--${stepState} relative flex-1 sm:flex-none sm:w-[152px] flex flex-row sm:flex-col items-center gap-2 sm:gap-1.5 px-2.5 sm:px-2 py-1.5 sm:py-2 rounded-md`}
               >
                 <div
-                  className={`workflow-stage-icon workflow-stage-icon--${stepState} flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full shrink-0`}
+                  className={`workflow-stage-icon workflow-stage-icon--${stepState} flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full shrink-0`}
                 >
                   {isCompleted ? (
-                    <Check className="w-5 h-5" strokeWidth={2.5} />
+                    <Check className="w-4 h-4" strokeWidth={2.5} />
                   ) : (
-                    <Icon className="w-5 h-5" strokeWidth={1.75} />
+                    <Icon className="w-4 h-4" strokeWidth={1.75} />
                   )}
                 </div>
 
-                <div className="flex flex-col items-start sm:items-center sm:text-center min-w-0">
+                <div className="flex flex-col items-start sm:items-center sm:text-center min-w-0 leading-tight">
                   <span
-                    className={`workflow-stage-title workflow-stage-title--${stepState} text-xs font-semibold tracking-wider uppercase font-mono whitespace-nowrap`}
+                    className={`workflow-stage-title workflow-stage-title--${stepState} text-[11px] font-bold tracking-wide uppercase font-mono whitespace-nowrap`}
                   >
                     {index + 1} · {stage.label}
                   </span>
-                  <span className="workflow-stage-desc text-[11px] leading-snug mt-0.5">
+                  <span className="workflow-stage-desc text-[10px] leading-tight">
                     {stage.description}
                   </span>
                 </div>
@@ -81,13 +81,13 @@ export default function WorkflowIndicator({ currentStage = 'INITIAL', narrativeT
               {/* Connector arrow (desktop row layout only) */}
               {index < STAGES.length - 1 && (
                 <div
-                  className={`workflow-arrow workflow-arrow--${arrowState} hidden sm:flex items-center justify-center shrink-0 sm:mt-4`}
+                  className={`workflow-arrow workflow-arrow--${arrowState} hidden sm:flex items-center justify-center shrink-0 sm:mt-[24px]`}
                 >
-                  <svg width="26" height="12" viewBox="0 0 26 12" fill="none">
+                  <svg width="18" height="8" viewBox="0 0 18 8" fill="none">
                     <path
-                      d="M1 6H23M23 6L18 1M23 6L18 11"
+                      d="M1 4H15M15 4L11.5 1M15 4L11.5 7"
                       stroke="currentColor"
-                      strokeWidth="1.5"
+                      strokeWidth="1.25"
                       strokeLinecap="round"
                       strokeLinejoin="round"
                     />
@@ -101,7 +101,7 @@ export default function WorkflowIndicator({ currentStage = 'INITIAL', narrativeT
 
       {/* Narrative Text */}
       {narrativeText && (
-        <div className="mt-3 text-center text-xs text-gray-400 font-mono">
+        <div className="mt-1.5 text-center text-xs text-gray-400 font-mono">
           {narrativeText}
         </div>
       )}
