@@ -3,7 +3,7 @@ import { ArrowRight, GitBranch } from 'lucide-react';
 
 export default function CTABanner({ onEnterApp }) {
   return (
-    <section id="platform" className="max-w-6xl mx-auto px-4 sm:px-6 pb-16 sm:pb-24">
+    <section id="platform" className="scroll-mt-20 max-w-6xl mx-auto px-4 sm:px-6 pb-16 sm:pb-24">
       <div className="relative overflow-hidden rounded-3xl border border-[#332E29] bg-[#171513] px-6 sm:px-12 py-12 sm:py-16 text-center">
         <div className="absolute inset-0 landing-grid-bg opacity-60 pointer-events-none" aria-hidden="true" />
         <div className="relative">

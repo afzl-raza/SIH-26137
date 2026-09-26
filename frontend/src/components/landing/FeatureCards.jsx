@@ -26,7 +26,7 @@ const FEATURES = [
 
 export default function FeatureCards() {
   return (
-    <section id="technology" className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-20 border-t border-[#332E29]">
+    <section id="technology" className="scroll-mt-20 max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-20 border-t border-[#332E29]">
       <div className="max-w-2xl mb-10 sm:mb-12">
         <h2 className="font-display font-bold text-2xl sm:text-3xl text-gray-50">
           Built on a real optimization engine

@@ -10,6 +10,15 @@ const NAV_LINKS = [
 export default function LandingNavbar({ onEnterApp }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // Scrolls to the target section directly instead of setting
+  // window.location.hash - the app uses the URL hash for view routing
+  // (see App.jsx), so an in-page anchor is kept out of that mechanism.
+  const handleNavClick = (event, href) => {
+    event.preventDefault();
+    setMenuOpen(false);
+    document.querySelector(href)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
     <header className="sticky top-0 z-50 border-b border-[#332E29] bg-[#0D0C0B]/85 backdrop-blur-md">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
@@ -32,7 +41,8 @@ export default function LandingNavbar({ onEnterApp }) {
             <a
               key={link.href}
               href={link.href}
-              className="text-sm text-gray-400 hover:text-gray-100 transition-colors"
+              onClick={(e) => handleNavClick(e, link.href)}
+              className="text-sm text-gray-400 hover:text-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#E8A93A] focus-visible:outline-offset-2 rounded-sm"
             >
               {link.label}
             </a>
@@ -64,8 +74,8 @@ export default function LandingNavbar({ onEnterApp }) {
             <a
               key={link.href}
               href={link.href}
-              onClick={() => setMenuOpen(false)}
-              className="block text-sm text-gray-300 hover:text-white py-1"
+              onClick={(e) => handleNavClick(e, link.href)}
+              className="block text-sm text-gray-300 hover:text-white py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#E8A93A] focus-visible:outline-offset-2 rounded-sm"
             >
               {link.label}
             </a>
