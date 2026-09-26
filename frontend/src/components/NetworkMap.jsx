@@ -152,6 +152,11 @@ export default function NetworkMap({
   const [mapView, setMapView] = useState('gis'); // 'gis' | 'graph' - same real nodes/edges, just a render toggle
   const [isLegendOpen, setIsLegendOpen] = useState(false);
   const routeTransition = useRouteTransition(currentResult);
+  // 'both' (default) keeps today's automatic fade; the other three let the
+  // operator pin the comparison instead of relying on catching the 800ms
+  // transition. Same real previous/active route coordinates either way -
+  // this only changes which are visible and at what opacity.
+  const [beforeAfterMode, setBeforeAfterMode] = useState('both'); // 'both' | 'before' | 'after' | 'overlay'
 
   // ALL hooks must be called unconditionally before any early return
   const nodes = scenario?.nodes || [];
@@ -413,6 +418,47 @@ export default function NetworkMap({
         </button>
       </div>
 
+      {/* Before/After comparison toggle - only meaningful once there is a
+          previous route to compare the active one against. Same underlying
+          coordinates as the automatic post-re-optimize fade; this just lets
+          the operator pin the comparison instead of relying on catching an
+          800ms transition. */}
+      {previousResult && currentResult && (
+        <div className="absolute top-14 right-3 z-[1000] clean-panel px-2 py-1.5 rounded-lg text-xs border border-[#332E29] shadow-xl pointer-events-auto font-mono space-y-1.5">
+          <div className="flex items-center gap-1">
+            {[
+              { id: 'both', label: 'Show Both' },
+              { id: 'before', label: 'Before Only' },
+              { id: 'after', label: 'After Only' },
+              { id: 'overlay', label: 'Overlay' }
+            ].map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => setBeforeAfterMode(opt.id)}
+                aria-pressed={beforeAfterMode === opt.id}
+                className={`px-1.5 py-0.5 rounded text-[9px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-[#C6602E] ${
+                  beforeAfterMode === opt.id ? 'bg-[#C6602E] text-white' : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {/* Which visual style means which - not just the existing
+              dashed-vs-solid line difference. */}
+          <div className="flex items-center gap-3 text-[9px]">
+            <span className="flex items-center gap-1 text-gray-400">
+              <span className="inline-block w-3 h-0 border-t-2 border-dashed" style={{ borderColor: '#6B6259' }} />
+              BEFORE
+            </span>
+            <span className="flex items-center gap-1 text-[#C6602E] font-semibold">
+              <span className="inline-block w-3 h-0.5 bg-[#C6602E]" />
+              AFTER
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Top Filter Bar for Vehicles */}
       {vehicles.length > 0 && (
         <div className="absolute top-14 sm:top-3 left-3 z-[1000] clean-panel px-3 py-1.5 rounded-lg text-xs flex items-center space-x-2 border border-[#332E29] shadow-xl pointer-events-auto font-mono max-w-[calc(100%-1.5rem)] sm:max-w-md overflow-x-auto">
@@ -544,8 +590,9 @@ export default function NetworkMap({
           </Polyline>
         ))}
 
-        {/* Previous Route Overlay - fades out as the new route fades in
-            (Before->After transition, both endpoints real data) */}
+        {/* Previous Route Overlay - fades out as the new route fades in by
+            default ('both'); the operator's explicit before/after pick
+            overrides that automatic transition. Same coordinates always. */}
         {previousRouteLines.map((pr, idx) => (
           <Polyline
             key={`prev-route-${idx}`}
@@ -554,7 +601,11 @@ export default function NetworkMap({
               color: '#6B6259',
               weight: 2.5,
               dashArray: '6, 8',
-              opacity: 0.4 * (1 - routeTransition)
+              opacity:
+                beforeAfterMode === 'after' ? 0 :
+                beforeAfterMode === 'before' ? 0.9 :
+                beforeAfterMode === 'overlay' ? 0.4 :
+                0.4 * (1 - routeTransition)
             }}
           />
         ))}
@@ -562,6 +613,13 @@ export default function NetworkMap({
         {/* Active Optimized Vehicle Routes */}
         {activeRouteLines.map(ar => {
           if (ar.isFilteredOut) return null;
+
+          const baseOpacity = ar.isSelected ? 1.0 : 0.85;
+          const activeOpacity =
+            beforeAfterMode === 'before' ? 0 :
+            beforeAfterMode === 'after' ? baseOpacity :
+            beforeAfterMode === 'overlay' ? baseOpacity * 0.6 :
+            baseOpacity * Math.max(0.15, routeTransition);
 
           return (
             <Polyline
@@ -576,7 +634,7 @@ export default function NetworkMap({
               pathOptions={{
                 color: ar.color,
                 weight: ar.isSelected ? 7 : 5,
-                opacity: (ar.isSelected ? 1.0 : 0.85) * Math.max(0.15, routeTransition),
+                opacity: activeOpacity,
                 className: `route-glow-v${ar.vehicleId}`
               }}
             >

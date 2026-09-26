@@ -52,7 +52,11 @@ plus nine user-selected interactivity/evidence items.
       archetype, no client-side objective math; verified live - correctly
       showed an honest 1/5 feasible result for "Sprawling Network" and
       omitted the Exact column where >10 jobs, nothing smoothed over)
-- [ ] Before/after map slider
+- [x] Before/after map slider (4-state toggle - Show Both/Before Only/After
+      Only/Overlay - in `NetworkMap.jsx`, controlling the existing
+      previous/active route opacity rather than adding new coordinates;
+      BEFORE/AFTER legend chips so the line-style distinction isn't the only
+      cue; verified live by inspecting actual SVG stroke-opacity per mode)
 - [ ] Run-reproducibility footer
 
 Backend: **373/373 passing**, verified after every backend-touching change,
