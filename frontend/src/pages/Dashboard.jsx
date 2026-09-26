@@ -10,6 +10,7 @@ import QPSOExplainability from '../components/QPSOExplainability';
 import ArchitectureSnapshot from '../components/ArchitectureSnapshot';
 import ScalabilityPanel from '../components/ScalabilityPanel';
 import ReproducibilityPanel from '../components/ReproducibilityPanel';
+import SiouxFallsPanel from '../components/SiouxFallsPanel';
 import Logo from '../components/Logo';
 import Badge from '../components/ui/Badge';
 import IconButton from '../components/ui/IconButton';
@@ -1014,6 +1015,8 @@ function DashboardShell({ onExitToOverview }) {
         )}
 
         <ArchetypeBenchmarkPanel config={config} />
+
+        <SiouxFallsPanel />
       </footer>
     </div>
   );
