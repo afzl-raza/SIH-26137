@@ -437,8 +437,8 @@ export default function NetworkMap({
           the operator pin the comparison instead of relying on catching an
           800ms transition. */}
       {previousResult && currentResult && (
-        <div className="absolute top-14 right-3 z-[1000] clean-panel px-2 py-1.5 rounded-lg text-xs border border-[#332E29] shadow-xl pointer-events-auto font-mono space-y-1.5">
-          <div className="flex items-center gap-1">
+        <div className="absolute top-14 right-3 z-[1000] clean-panel px-2 py-1.5 rounded-lg text-xs border border-[#332E29] shadow-xl pointer-events-auto font-mono space-y-1.5 max-w-[calc(100%-4rem)]">
+          <div className="flex flex-wrap items-center justify-end gap-1">
             {[
               { id: 'both', label: 'Show Both' },
               { id: 'before', label: 'Before Only' },
@@ -473,9 +473,14 @@ export default function NetworkMap({
       )}
 
       {/* Top Filter Bar for Vehicles */}
+      {/* Top-left on every width. On phones it's capped so it can never run
+          into the GIS/Graph toggle (w-32 at right-3), scrolls sideways if a
+          fleet has more vehicles than fit, and drops its "ROUTES:" label to
+          save room. Leaflet's zoom buttons are pushed below it on phones
+          (see .has-map-toolbar in index.css) instead of sitting underneath. */}
       {!compact && vehicles.length > 0 && (
-        <div className="absolute top-14 sm:top-3 left-3 z-[1000] clean-panel px-3 py-1.5 rounded-lg text-xs flex items-center space-x-2 border border-[#332E29] shadow-xl pointer-events-auto font-mono max-w-[calc(100%-1.5rem)] sm:max-w-md overflow-x-auto">
-          <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider flex-shrink-0">ROUTES:</span>
+        <div className="absolute top-3 left-3 z-[1000] clean-panel px-2 sm:px-3 py-1.5 rounded-lg text-xs flex items-center space-x-1.5 sm:space-x-2 border border-[#332E29] shadow-xl pointer-events-auto font-mono max-w-[calc(100%-10rem)] sm:max-w-md overflow-x-auto">
+          <span className="hidden sm:inline text-gray-400 text-[10px] uppercase font-bold tracking-wider flex-shrink-0">ROUTES:</span>
           <button
             onClick={() => setVehicleFilter('all')}
             className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors flex-shrink-0 focus-visible:ring-2 focus-visible:ring-[#C6602E] ${
@@ -514,7 +519,7 @@ export default function NetworkMap({
         class has to live on this wrapper div instead, targeted via a
         descendant selector in index.css.
       */}
-      <div className={`w-full h-full ${mapView === 'graph' ? 'graph-view-grid' : ''}`}>
+      <div className={`w-full h-full ${mapView === 'graph' ? 'graph-view-grid' : ''} ${!compact && vehicles.length > 0 ? 'has-map-toolbar' : ''}`}>
       <MapContainer
         center={center}
         zoom={12}

@@ -116,37 +116,69 @@
 .workflow-stage {
   border: 1px solid transparent;
   background: transparent;
-  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+  transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, opacity 0.25s ease;
 }
 
 .workflow-stage--active {
-  background: rgba(198, 96, 46, 0.08);
-  border-color: rgba(198, 96, 46, 0.35);
-  box-shadow: 0 0 0 1px rgba(198, 96, 46, 0.12), 0 8px 24px -12px rgba(198, 96, 46, 0.45);
+  background: linear-gradient(180deg, rgba(198, 96, 46, 0.11), rgba(198, 96, 46, 0.03));
+  border-color: rgba(198, 96, 46, 0.4);
+  box-shadow: 0 0 0 1px rgba(198, 96, 46, 0.1), 0 6px 16px -10px rgba(198, 96, 46, 0.55);
+}
+
+/* Thin accent highlight along the top edge of the active card */
+.workflow-stage--active::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 18%;
+  right: 18%;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: linear-gradient(90deg, transparent, #C6602E, transparent);
 }
 
 .workflow-stage--completed {
-  background: rgba(107, 154, 87, 0.04);
-  border-color: rgba(107, 154, 87, 0.18);
+  background: linear-gradient(180deg, rgba(107, 154, 87, 0.07), rgba(107, 154, 87, 0.02));
+  border-color: rgba(107, 154, 87, 0.22);
+}
+
+.workflow-stage--upcoming {
+  opacity: 0.8;
+}
+
+.workflow-stage--upcoming:hover {
+  opacity: 1;
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.workflow-stage--completed:hover {
+  border-color: rgba(107, 154, 87, 0.35);
+}
+
+.workflow-stage--active:hover {
+  box-shadow: 0 0 0 1px rgba(198, 96, 46, 0.16), 0 8px 18px -9px rgba(198, 96, 46, 0.65);
 }
 
 .workflow-stage-icon {
   background: #1E1B18;
   border: 1px solid #3A342E;
   color: #6B6259;
-  transition: all 0.3s ease;
+  transition: all 0.25s ease;
 }
 
 .workflow-stage-icon--active {
-  background: rgba(198, 96, 46, 0.15);
+  background: rgba(198, 96, 46, 0.16);
   border-color: #C6602E;
   color: #C6602E;
+  box-shadow: 0 0 0 3px rgba(198, 96, 46, 0.1), 0 0 10px -2px rgba(198, 96, 46, 0.6);
 }
 
 .workflow-stage-icon--completed {
   background: rgba(107, 154, 87, 0.12);
   border-color: #6B9A57;
   color: #6B9A57;
+  box-shadow: 0 0 0 2px rgba(107, 154, 87, 0.08);
 }
 
 .workflow-stage-title--active {
@@ -175,7 +207,7 @@
 
 .workflow-arrow {
   color: #332E29;
-  transition: color 0.3s ease;
+  transition: color 0.25s ease;
 }
 
 .workflow-arrow--completed {
@@ -266,6 +298,15 @@
 .leaflet-control-zoom a:hover {
   background-color: #26221D !important;
   color: #fff !important;
+}
+
+/* Phones: the vehicle "routes" bar occupies the map's top-left corner, so
+   Leaflet's zoom buttons (also top-left) move down below it instead of
+   being covered. Desktop keeps Leaflet's default position. */
+@media (max-width: 639px) {
+  .has-map-toolbar .leaflet-top.leaflet-left {
+    top: 3rem;
+  }
 }
 
 /* ═══════════════════════════════════════════
