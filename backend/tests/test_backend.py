@@ -34,6 +34,31 @@ def test_scenario_hash_deterministic_and_distinguishing():
     assert same_a.scenario_hash != different_seed.scenario_hash
 
 
+def test_scenario_hash_stable_for_default_demand_range():
+    """Old callers that never pass demand_min/demand_max must keep getting
+    the exact same hash they always have - the new params only enter the
+    hash when they actually diverge from the old hardcoded 5.0-15.0."""
+    old_style = generate_synthetic_scenario(num_nodes=20, num_jobs=10, num_vehicles=3, seed=42)
+    explicit_default = generate_synthetic_scenario(
+        num_nodes=20, num_jobs=10, num_vehicles=3, seed=42, demand_min=5.0, demand_max=15.0
+    )
+    assert old_style.scenario_hash == explicit_default.scenario_hash
+
+
+def test_scenario_hash_distinguishes_demand_range_and_capacity_override():
+    base = generate_synthetic_scenario(num_nodes=20, num_jobs=10, num_vehicles=3, seed=42)
+    wider_demand = generate_synthetic_scenario(
+        num_nodes=20, num_jobs=10, num_vehicles=3, seed=42, demand_min=1.0, demand_max=50.0
+    )
+    capped = generate_synthetic_scenario(
+        num_nodes=20, num_jobs=10, num_vehicles=3, seed=42, vehicle_capacity_override=100.0
+    )
+
+    assert base.scenario_hash != wider_demand.scenario_hash
+    assert base.scenario_hash != capped.scenario_hash
+    assert wider_demand.scenario_hash != capped.scenario_hash
+
+
 def test_shortest_paths():
     s = generate_synthetic_scenario(num_nodes=15, num_jobs=8, num_vehicles=2, seed=123)
     dist_matrix, time_matrix, paths_dict = compute_shortest_paths(s)
@@ -120,9 +145,20 @@ def test_qpso_optimizer():
     config = OptimizationConfig(algorithm="qpso", population_size=10, max_iterations=15)
     opt = QPSOOptimizer()
     res = opt.optimize(s, config)
-    assert res.algorithm == "QPSO (Quantum-behaved PSO)"
+    # use_local_search defaults True, and the label says so - plain QPSO and
+    # QPSO+local-search share this one class, so the two must be
+    # distinguishable in a benchmark table.
+    assert res.algorithm == "QPSO (Quantum-behaved PSO) + Local Search"
     assert len(res.routes) > 0
     assert len(res.convergence_history) == 15
+
+
+def test_qpso_optimizer_ablation_label_when_local_search_disabled():
+    s = generate_synthetic_scenario(num_nodes=20, num_jobs=10, num_vehicles=3, seed=42)
+    config = OptimizationConfig(algorithm="qpso", population_size=10, max_iterations=15, use_local_search=False)
+    opt = QPSOOptimizer()
+    res = opt.optimize(s, config)
+    assert res.algorithm == "QPSO (Quantum-behaved PSO) (ablation, no local search)"
 
 
 def test_qpso_convergence_elapsed_ms_is_real_and_monotonic():

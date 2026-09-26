@@ -1,12 +1,12 @@
 {
   "target_edge": {
     "source": 0,
-    "destination": 5
+    "destination": 14
   },
   "congestion_factor": 3.5,
-  "before_cost": 196.55,
-  "after_cost": 200.92,
-  "reoptimization_runtime_ms": 508.78,
+  "before_cost": 192.98,
+  "after_cost": 201.97,
+  "reoptimization_runtime_ms": 311.92,
   "changed_vehicle_ids": [
     1,
     2,

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Boxes, ArrowRight } from 'lucide-react';
+import SegmentedControl from './ui/SegmentedControl';
 
 // Static, clearly-labeled documentation diagrams (not live telemetry) -
 // content mirrors Engineering.md Sec.2 (current architecture) and Sec.13
@@ -26,19 +27,15 @@ export default function ArchitectureSnapshot() {
           <Boxes size={16} className="text-[#8A8C4E]" />
           <h3 className="font-display font-bold text-white text-sm">ARCHITECTURE SNAPSHOT</h3>
         </div>
-        <div className="flex gap-1 text-[10px] font-mono">
-          <button
-            onClick={() => setView('prototype')}
-            className={`px-2 py-0.5 rounded transition-colors focus-visible:ring-2 focus-visible:ring-[#C6602E] ${view === 'prototype' ? 'bg-[#C6602E] text-white' : 'bg-[#26221D] text-gray-400 hover:text-gray-200'}`}
-          >
-            Prototype
-          </button>
-          <button
-            onClick={() => setView('deployment')}
-            className={`px-2 py-0.5 rounded transition-colors focus-visible:ring-2 focus-visible:ring-[#C6602E] ${view === 'deployment' ? 'bg-[#8A8C4E] text-white' : 'bg-[#26221D] text-gray-400 hover:text-gray-200'}`}
-          >
-            Deployment
-          </button>
+        <div className="w-40">
+          <SegmentedControl
+            options={[
+              { id: 'prototype', label: 'Prototype' },
+              { id: 'deployment', label: 'Deployment', activeColor: '#8A8C4E' }
+            ]}
+            value={view}
+            onChange={setView}
+          />
         </div>
       </div>
 

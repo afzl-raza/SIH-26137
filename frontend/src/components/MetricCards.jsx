@@ -1,42 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { Clock, Navigation, Cpu, CheckCircle2, AlertTriangle, TrendingDown, TrendingUp, ArrowRight, GitBranch, Info, Hourglass } from 'lucide-react';
+import { useCountUp } from '../lib/useCountUp';
 
-// Animates the *display* of a real, already-known value - both the start
-// and end points are real backend numbers, and the tween never presents an
-// intermediate frame as a measured reading (it's purely a rendering
-// transition, same principle as the route-morph animation in NetworkMap).
-function useCountUp(target, duration = 600) {
-  const [value, setValue] = useState(target ?? 0);
-  const fromRef = useRef(target ?? 0);
-
-  useEffect(() => {
-    if (target == null) return;
-    const from = fromRef.current;
-    const to = target;
-    if (from === to) {
-      setValue(to);
-      return;
-    }
-    const start = performance.now();
-    let raf;
-    const tick = (now) => {
-      const t = Math.min(1, (now - start) / duration);
-      const eased = 1 - Math.pow(1 - t, 3);
-      setValue(from + (to - from) * eased);
-      if (t < 1) {
-        raf = requestAnimationFrame(tick);
-      } else {
-        fromRef.current = to;
-      }
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [target, duration]);
-
-  return value;
-}
-
-export default function MetricCards({ result, previousResult, weights }) {
+export default function MetricCards({ result, previousResult, weights, manifest, completedAt }) {
   // Hooks must run unconditionally on every render, before the early return
   // below - useCountUp itself tolerates a null target.
   const animatedCost = useCountUp(result?.total_cost);
@@ -241,6 +207,43 @@ export default function MetricCards({ result, previousResult, weights }) {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Reproducibility footer - directly under the results, not buried in
+          Advanced Settings. Every field is either the manifest the backend
+          already reads back from stored state, or a timestamp captured on
+          this client the moment the result actually arrived - nothing here
+          is invented. */}
+      {manifest && (
+        <div className="clean-card px-4 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-1 text-[10px] font-mono text-gray-500">
+          <span className="text-gray-600 uppercase tracking-wider font-bold">Run:</span>
+          <span>
+            <span className="text-gray-600">hash</span>{' '}
+            <span className="text-gray-300">{manifest.scenario_hash}</span>
+          </span>
+          <span>
+            <span className="text-gray-600">seed</span>{' '}
+            <span className="text-gray-300">{manifest.seed}</span>
+          </span>
+          {manifest.solver?.algorithm && (
+            <span>
+              <span className="text-gray-600">algorithm</span>{' '}
+              <span className="text-gray-300">{manifest.solver.algorithm}</span>
+            </span>
+          )}
+          {manifest.solver?.population_size != null && (
+            <span>
+              <span className="text-gray-600">pop/iter</span>{' '}
+              <span className="text-gray-300">{manifest.solver.population_size}/{manifest.solver.max_iterations}</span>
+            </span>
+          )}
+          {completedAt && (
+            <span>
+              <span className="text-gray-600">completed</span>{' '}
+              <span className="text-gray-300">{new Date(completedAt).toLocaleTimeString()}</span>
+            </span>
+          )}
         </div>
       )}
     </div>

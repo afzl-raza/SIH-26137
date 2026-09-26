@@ -1,5 +1,6 @@
 import React from 'react';
 import { Truck, MapPin, Clock, Navigation, CheckCircle2, AlertTriangle, X, Waves } from 'lucide-react';
+import IconButton from './ui/IconButton';
 
 export default function VehicleInspector({ vehicle, route, scenario, onDeselect }) {
   if (!vehicle || !route) {
@@ -49,13 +50,7 @@ export default function VehicleInspector({ vehicle, route, scenario, onDeselect 
             VEHICLE {vehicle.id.toString().padStart(2, '0')}
           </h3>
         </div>
-        <button
-          onClick={onDeselect}
-          aria-label="Close vehicle inspector"
-          className="text-gray-500 hover:text-white transition-colors focus-visible:ring-2 focus-visible:ring-[#C6602E] rounded"
-        >
-          <X size={18} />
-        </button>
+        <IconButton icon={X} iconSize={18} onClick={onDeselect} aria-label="Close vehicle inspector" />
       </div>
 
       {/* 2-4. SCROLLABLE BODY - min-h-0 is required for a flex child to

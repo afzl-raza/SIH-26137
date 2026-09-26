@@ -1,7 +1,7 @@
 {
   "seeds_tested": 5,
-  "mean_cost": 196.958,
-  "std_cost": 2.9009956911377905,
+  "mean_cost": 195.948,
+  "std_cost": 1.9493937519136597,
   "min_cost": 192.98,
-  "max_cost": 200.65
+  "max_cost": 198.75
 }

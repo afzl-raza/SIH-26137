@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, Trophy, Award, BarChart2, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
+import IconButton from './ui/IconButton';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -25,11 +26,16 @@ ChartJS.register(
 // Single source of truth for per-algorithm color across the chart, bar
 // visualization, and table - previously three separate switch statements
 // that had to be kept in sync by hand.
-const ALGORITHM_COLORS = {
+export const ALGORITHM_COLORS = {
   greedy: { hex: '#6B9A57', text: 'text-[#6B9A57]', bg: 'bg-[#6B9A57]' },
   pso: { hex: '#5D7A9E', text: 'text-[#5D7A9E]', bg: 'bg-[#5D7A9E]' },
   ga: { hex: '#8A8C4E', text: 'text-[#8A8C4E]', bg: 'bg-[#8A8C4E]' },
-  qpso: { hex: '#C6602E', text: 'text-[#C6602E]', bg: 'bg-[#C6602E]' }
+  // Plain QPSO (no local search) - kept as an explicit ablation/comparison
+  // entry, not the flagship result. qpso_ls (with the 2-opt/or-opt hybrid)
+  // is the default algorithm and gets the brand accent instead.
+  qpso: { hex: '#8C5A6E', text: 'text-[#8C5A6E]', bg: 'bg-[#8C5A6E]' },
+  qpso_ls: { hex: '#C6602E', text: 'text-[#C6602E]', bg: 'bg-[#C6602E]' },
+  exact: { hex: '#E8A93A', text: 'text-[#E8A93A]', bg: 'bg-[#E8A93A]' }
 };
 const DEFAULT_ALGORITHM_COLOR = { hex: '#9CA3AF', text: 'text-gray-500', bg: 'bg-gray-500' };
 
@@ -41,16 +47,21 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
   if (!benchmarkData || !benchmarkData.results) return null;
   
   const { results } = benchmarkData;
-  const algos = ['greedy', 'pso', 'ga', 'qpso'];
-  
+  // "exact" is only present when the scenario is small enough to solve
+  // exactly (<=10 jobs) - absent otherwise, which resultsArray's filter
+  // below handles the same way it already handles any other missing key.
+  const algos = ['greedy', 'pso', 'ga', 'qpso', 'qpso_ls', 'exact'];
+
   const resultsArray = algos.map(k => ({ id: k, ...results[k] })).filter(r => r.total_cost !== undefined);
-  
+
   if (resultsArray.length === 0) return null;
 
   const minCost = Math.min(...resultsArray.map(r => r.total_cost));
   const maxCost = Math.max(...resultsArray.map(r => r.total_cost));
   const bestAlgo = resultsArray.find(r => r.total_cost === minCost);
-  const qpsoResult = results.qpso;
+  // qpso_ls (QPSO + local search) is the default/flagship algorithm now -
+  // this is what the summary line compares the winner against.
+  const qpsoResult = results.qpso_ls;
 
   // Neutral, symmetric summary: whichever algorithm is empirically cheapest
   // gets the same treatment regardless of which one it is - QPSO is a
@@ -58,23 +69,25 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
   let qpsoSummary = null;
   if (bestAlgo) {
     const bestLabel = bestAlgo.algorithm || bestAlgo.id.toUpperCase();
-    const isQpsoBest = bestAlgo.id === 'qpso';
+    const isQpsoBest = bestAlgo.id === 'qpso_ls';
     qpsoSummary = (
       <div className="bg-[#1E1B18] border border-[#3A342E] rounded-lg p-3 flex items-center gap-3">
         <Award className="text-gray-400 w-5 h-5 flex-shrink-0" />
         <span className="text-gray-300 text-sm">
           Lowest measured cost on this scenario: <span className="font-semibold text-white">{bestLabel}</span> at {minCost.toFixed(2)}
           {!isQpsoBest && qpsoResult?.total_cost !== undefined && (
-            <span className="text-gray-500"> · QPSO: {qpsoResult.total_cost.toFixed(2)} (+{((qpsoResult.total_cost - minCost) / minCost * 100).toFixed(1)}%)</span>
+            <span className="text-gray-500"> · QPSO+LS: {qpsoResult.total_cost.toFixed(2)} (+{((qpsoResult.total_cost - minCost) / minCost * 100).toFixed(1)}%)</span>
           )}
         </span>
       </div>
     );
   }
 
-  // Convergence Chart data
+  // Convergence Chart data - "exact" is excluded on purpose: it solves
+  // directly rather than iterating, so a convergence curve doesn't apply
+  // to it (a single flat point would misrepresent what it does).
   const chartDatasets = [];
-  ['pso', 'ga', 'qpso'].forEach(id => {
+  ['pso', 'ga', 'qpso', 'qpso_ls'].forEach(id => {
     if (results[id] && results[id].convergence_history) {
       chartDatasets.push({
         label: results[id].algorithm || id.toUpperCase(),
@@ -132,9 +145,7 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
             Same scenario · Same constraints · Same objective · Measured execution
           </p>
         </div>
-        <button onClick={onClose} aria-label="Close benchmark panel" className="p-1 hover:bg-[#26221D] rounded transition-colors text-gray-400 hover:text-white focus-visible:ring-2 focus-visible:ring-[#C6602E]">
-          <X className="w-5 h-5" />
-        </button>
+        <IconButton icon={X} iconSize={18} onClick={onClose} aria-label="Close benchmark panel" />
       </div>
 
       {/* 2. COMPARISON CONDITIONS (fairness) */}
@@ -188,6 +199,13 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
 
       {/* 4. BENCHMARK MATRIX TABLE */}
       <div className="bg-[#1E1B18] border border-[#3A342E] rounded-lg overflow-hidden">
+        {results.exact && (
+          <div className="px-4 py-2 text-[11px] text-[#E8A93A] bg-[#3A2E14]/30 border-b border-[#3A342E]">
+            This scenario is small enough (≤10 jobs) for the exact solver to prove the true optimum - the Gap
+            column below is a real optimality gap for every other algorithm, not just a comparison against
+            whichever heuristic happened to do best.
+          </div>
+        )}
         <table className="w-full text-sm text-left">
           <thead className="text-xs text-gray-400 bg-[#26221D]/70 uppercase border-b border-[#3A342E]">
             <tr>
@@ -198,7 +216,7 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
               <th className="px-4 py-3">Runtime</th>
               <th className="px-4 py-3" title="Iterations the solver actually recorded (convergence_history length), not the configured limit. Greedy is a single-pass construction, so it records one value.">Iterations</th>
               <th className="px-4 py-3">Feasible</th>
-              <th className="px-4 py-3">Gap</th>
+              <th className="px-4 py-3">{results.exact ? 'Gap vs Optimum' : 'Gap'}</th>
               {onPreviewAlgorithm && <th className="px-4 py-3">Map</th>}
             </tr>
           </thead>

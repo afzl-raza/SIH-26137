@@ -171,6 +171,73 @@
 }
 
 /* ═══════════════════════════════════════════
+   Vehicle Loader (branded loading indicator)
+   ═══════════════════════════════════════════ */
+
+@keyframes vehicle-loader-move {
+  0%, 100% { left: 2%; transform: translateY(-50%); }
+  50% { left: 82%; transform: translateY(-50%); }
+}
+
+.vehicle-loader-van {
+  animation: vehicle-loader-move 2.2s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════
+   Operation Overlay (branded, non-technical
+   loading screen shown for any in-flight action)
+   ═══════════════════════════════════════════ */
+
+@keyframes operation-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.operation-overlay-fade {
+  animation: operation-overlay-in 0.2s ease-out;
+}
+
+/* Indeterminate fill - communicates "working", never a real percentage. */
+@keyframes operation-overlay-progress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
+.operation-overlay-progress {
+  animation: operation-overlay-progress 1.4s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════
+   Toast
+   ═══════════════════════════════════════════ */
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.toast-item {
+  animation: toast-in 0.2s ease-out;
+}
+
+/* ═══════════════════════════════════════════
+   Leaflet zoom control — dark theme to match
+   the rest of the chrome instead of Leaflet's
+   default white square buttons.
+   ═══════════════════════════════════════════ */
+
+.leaflet-control-zoom a {
+  background-color: #1E1B18 !important;
+  color: #D1D5DB !important;
+  border-color: #3A342E !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: #26221D !important;
+  color: #fff !important;
+}
+
+/* ═══════════════════════════════════════════
    Scrollbar
    ═══════════════════════════════════════════ */
 
@@ -187,4 +254,82 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #4a423a;
+}
+
+/* ═══════════════════════════════════════════
+   Landing Page — Hero Fleet Visualization
+   ═══════════════════════════════════════════ */
+
+@keyframes landing-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.landing-float {
+  animation: landing-float 5s ease-in-out infinite;
+}
+
+@keyframes landing-float-chip {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.landing-float-chip {
+  animation: landing-float-chip 4.2s ease-in-out infinite;
+}
+
+@keyframes landing-route-flow {
+  to { stroke-dashoffset: -32; }
+}
+
+.landing-route-flow {
+  stroke-dasharray: 7 5;
+  animation: landing-route-flow 1.4s linear infinite;
+}
+
+@keyframes landing-node-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.landing-node-pulse {
+  animation: landing-node-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes landing-glow-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+}
+
+.landing-glow-pulse {
+  animation: landing-glow-pulse 4.5s ease-in-out infinite;
+}
+
+@keyframes landing-fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.landing-fade-up {
+  animation: landing-fade-up 0.7s ease-out both;
+}
+
+/* Dot-grid backdrop for the hero visual, reusing the graph-view tint used
+   elsewhere in the app so the landing page and dashboard read as one
+   product rather than two different visual systems. */
+.landing-grid-bg {
+  background-color: #0D0C0B;
+  background-image: radial-gradient(rgba(198, 96, 46, 0.16) 1px, transparent 0);
+  background-size: 22px 22px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-float,
+  .landing-float-chip,
+  .landing-route-flow,
+  .landing-node-pulse,
+  .landing-glow-pulse,
+  .landing-fade-up {
+    animation: none;
+  }
 }

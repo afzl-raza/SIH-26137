@@ -1,5 +1,7 @@
 import csv
 import json
+import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -17,7 +19,7 @@ from models import (
     VehicleRoute,
     ObjectiveWeights
 )
-from problem_generator import generate_synthetic_scenario
+from problem_generator import generate_synthetic_scenario, customize_scenario
 from realdata.scenario_store import SCENARIO_STORE, ScenarioNotFoundError
 from realdata.geocoding import GeocodingError, resolve_location
 from realdata.osm_loader import OsmLoaderError, load_osm_graph
@@ -41,7 +43,8 @@ from route_geometry import route_geometries, scenario_geometry_source
 from optimizers.greedy import GreedyOptimizer
 from optimizers.pso import PSOOptimizer
 from optimizers.qpso import QPSOOptimizer
-from optimizers.benchmark import run_benchmark
+from optimizers.exact import ExactOptimizer, ExactSolverTooLargeError
+from optimizers.benchmark import run_benchmark, warm_pool
 from fitness import evaluate_solution
 from experiments.runner import (
     run_e1_algorithm_comparison,
@@ -53,10 +56,20 @@ from experiments.runner import (
 )
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Start the benchmark worker processes in the background so the first
+    # /api/benchmark call doesn't pay process start-up. Non-blocking: the
+    # API is available immediately either way.
+    threading.Thread(target=warm_pool, daemon=True).start()
+    yield
+
+
 app = FastAPI(
     title="Q-DFRO API",
     description="Quantum-Inspired Intelligent Traffic Route Optimization API",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Enable CORS for local frontend development
@@ -83,6 +96,12 @@ class GenerateRequest(BaseModel):
     # exact rule; off by default so every existing caller is unaffected.
     time_windows: bool = False
     tw_width_min: float = 60.0
+
+    # Synthetic only - bounds on each job's randomly drawn demand, and an
+    # optional flat vehicle capacity that skips the demand-derived formula.
+    demand_min: float = 5.0
+    demand_max: float = 15.0
+    vehicle_capacity_override: Optional[float] = None
 
     # Location inputs, any one of which resolves to a bounded area. No city is
     # special: a place name goes through the geocoder, coordinates and boxes
@@ -187,6 +206,9 @@ def generate_problem(req: GenerateRequest):
     if req.source.strip().lower() in ("osm", "openstreetmap"):
         return _generate_from_openstreetmap(req)
 
+    if req.demand_min > req.demand_max:
+        raise HTTPException(status_code=400, detail="demand_min cannot exceed demand_max")
+
     try:
         scenario = generate_synthetic_scenario(
             num_nodes=req.num_nodes,
@@ -195,6 +217,9 @@ def generate_problem(req: GenerateRequest):
             seed=req.seed,
             time_windows=req.time_windows,
             tw_width_min=req.tw_width_min,
+            demand_min=req.demand_min,
+            demand_max=req.demand_max,
+            vehicle_capacity_override=req.vehicle_capacity_override
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -206,6 +231,48 @@ def generate_problem(req: GenerateRequest):
         # Stated up front so the map knows whether these roads have real
         # shapes or are the generator's straight lines, without inspecting
         # every edge itself.
+        "geometry_source": scenario_geometry_source(record.scenario),
+        "scenario": record.scenario,
+    }
+
+
+class CustomizePayload(ScenarioRefMixin):
+    depot_node_id: int
+    job_node_ids: List[int]
+    demand_min: float = 5.0
+    demand_max: float = 15.0
+
+
+@app.post("/api/problem/customize")
+def customize_problem(payload: CustomizePayload):
+    """Rebuilds a stored scenario's depot and delivery stops from
+    operator-picked existing map nodes, instead of the generator's random
+    placement. Requires a stored scenario_id - unlike other scenario-carrying
+    endpoints, the legacy inline-scenario format has nowhere to write the
+    result back to.
+    """
+    if not payload.scenario_id:
+        raise HTTPException(status_code=400, detail="customize requires a stored scenario_id")
+    if payload.demand_min > payload.demand_max:
+        raise HTTPException(status_code=400, detail="demand_min cannot exceed demand_max")
+
+    stored_scenario, scenario_id = _resolve_scenario(payload)
+
+    try:
+        scenario = customize_scenario(
+            stored_scenario,
+            depot_node_id=payload.depot_node_id,
+            job_node_ids=payload.job_node_ids,
+            demand_min=payload.demand_min,
+            demand_max=payload.demand_max,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    record = SCENARIO_STORE.update(scenario_id, scenario)
+    return {
+        **record.metadata(),
+        **_condition_envelope(record.scenario),
         "geometry_source": scenario_geometry_source(record.scenario),
         "scenario": record.scenario,
     }
@@ -304,7 +371,9 @@ def optimize_route(payload: OptimizePayload):
     scenario, _ = _resolve_scenario(payload)
     try:
         algo = payload.config.algorithm.lower()
-        if "qpso" in algo:
+        if "exact" in algo:
+            optimizer = ExactOptimizer()
+        elif "qpso" in algo:
             optimizer = QPSOOptimizer()
         elif "pso" in algo:
             optimizer = PSOOptimizer()
@@ -318,6 +387,8 @@ def optimize_route(payload: OptimizePayload):
 
         result = optimizer.optimize(scenario, payload.config)
         return result
+    except ExactSolverTooLargeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Optimization error: {str(e)}")
 

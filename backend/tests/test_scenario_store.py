@@ -201,6 +201,22 @@ def _generate(**kw):
     return client.post("/api/problem/generate", json=params).json()
 
 
+def test_generate_rejects_demand_min_above_demand_max():
+    response = client.post("/api/problem/generate", json={
+        "num_nodes": 15, "num_jobs": 6, "num_vehicles": 2, "seed": 3,
+        "demand_min": 20.0, "demand_max": 5.0
+    })
+    assert response.status_code == 400
+
+
+def test_generate_applies_demand_range_and_capacity_override():
+    body = _generate(demand_min=9.0, demand_max=9.0, vehicle_capacity_override=42.0)
+    scenario = body["scenario"]
+
+    assert all(job["demand"] == 9.0 for job in scenario["jobs"])
+    assert all(v["capacity"] == 42.0 for v in scenario["vehicles"])
+
+
 def test_optimize_accepts_scenario_id():
     body = _generate()
     response = client.post("/api/optimize", json={
@@ -275,7 +291,8 @@ def test_benchmark_and_evaluate_accept_scenario_id():
 
     bench = client.post("/api/benchmark", json={"scenario_id": scenario_id, "config": config})
     assert bench.status_code == 200
-    assert set(bench.json()["results"].keys()) == {"greedy", "pso", "ga", "qpso", "qpso_memetic"}
+    # 6 jobs is within the exact solver's cap, so it's expected here too.
+    assert set(bench.json()["results"].keys()) == {"greedy", "pso", "ga", "qpso", "qpso_ls", "qpso_memetic", "exact"}
 
     routes = bench.json()["results"]["qpso"]["routes"]
     ev = client.post("/api/evaluate", json={
@@ -326,3 +343,75 @@ def test_legacy_inline_scenario_still_works_for_every_endpoint():
         "weights": {"alpha": 1.0, "beta": 0.5, "gamma": 1.0, "penalty_weight": 1000.0},
     })
     assert ev.status_code == 200
+
+
+# ======================================================= API: manual placement
+
+def test_customize_rebuilds_depot_and_stops_from_picked_nodes():
+    body = _generate(num_nodes=15, num_jobs=6, num_vehicles=2)
+    scenario_id = body["scenario_id"]
+    node_ids = [n["id"] for n in body["scenario"]["nodes"]]
+
+    new_depot = node_ids[3]
+    new_stops = [node_ids[0], node_ids[1], node_ids[2]]
+
+    response = client.post("/api/problem/customize", json={
+        "scenario_id": scenario_id,
+        "depot_node_id": new_depot,
+        "job_node_ids": new_stops,
+    })
+    assert response.status_code == 200
+    out = response.json()["scenario"]
+
+    assert out["depot_node_id"] == new_depot
+    assert {j["node_id"] for j in out["jobs"]} == set(new_stops)
+    assert len(out["jobs"]) == 3
+    depot_nodes = [n for n in out["nodes"] if n["is_depot"]]
+    assert len(depot_nodes) == 1
+    assert depot_nodes[0]["id"] == new_depot
+    # Every vehicle now starts/ends at the new depot.
+    assert all(v["start_node"] == new_depot and v["end_node"] == new_depot for v in out["vehicles"])
+
+
+def test_customize_is_deterministic_for_the_same_picks():
+    body = _generate(num_nodes=15, num_jobs=6, num_vehicles=2)
+    scenario_id = body["scenario_id"]
+    node_ids = [n["id"] for n in body["scenario"]["nodes"]]
+    picks = {"scenario_id": scenario_id, "depot_node_id": node_ids[3],
+             "job_node_ids": [node_ids[0], node_ids[1]]}
+
+    first = client.post("/api/problem/customize", json=picks).json()["scenario"]
+    second = client.post("/api/problem/customize", json=picks).json()["scenario"]
+
+    first_demands = sorted(j["demand"] for j in first["jobs"])
+    second_demands = sorted(j["demand"] for j in second["jobs"])
+    assert first_demands == second_demands
+
+
+def test_customize_rejects_unknown_node_id():
+    body = _generate(num_nodes=10, num_jobs=4, num_vehicles=2)
+    response = client.post("/api/problem/customize", json={
+        "scenario_id": body["scenario_id"],
+        "depot_node_id": 9999,
+        "job_node_ids": [body["scenario"]["nodes"][0]["id"]],
+    })
+    assert response.status_code == 400
+
+
+def test_customize_rejects_depot_also_listed_as_a_stop():
+    body = _generate(num_nodes=10, num_jobs=4, num_vehicles=2)
+    node_ids = [n["id"] for n in body["scenario"]["nodes"]]
+    response = client.post("/api/problem/customize", json={
+        "scenario_id": body["scenario_id"],
+        "depot_node_id": node_ids[0],
+        "job_node_ids": [node_ids[0], node_ids[1]],
+    })
+    assert response.status_code == 400
+
+
+def test_customize_requires_a_stored_scenario_id():
+    response = client.post("/api/problem/customize", json={
+        "depot_node_id": 0,
+        "job_node_ids": [1, 2],
+    })
+    assert response.status_code == 400

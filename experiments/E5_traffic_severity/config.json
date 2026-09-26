@@ -15,7 +15,9 @@
       "beta": 0.5,
       "gamma": 1.0,
       "penalty_weight": 1000.0
-    }
+    },
+    "use_local_search": true,
+    "local_search_interval": 10
   },
   "factors": [
     1.0,

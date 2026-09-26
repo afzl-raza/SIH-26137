@@ -81,10 +81,21 @@ def generate_synthetic_scenario(
     seed: int = 42,
     time_windows: bool = False,
     tw_width_min: float = 60.0,
+    demand_min: float = 5.0,
+    demand_max: float = 15.0,
+    vehicle_capacity_override: Optional[float] = None,
 ) -> ProblemScenario:
     """
     Generates a deterministic synthetic urban transportation scenario.
     Depot is located at node 0.
+
+    `demand_min`/`demand_max` bound each job's randomly drawn demand (same
+    `random.uniform` call as always - just no longer hardcoded to 5.0-15.0).
+    `vehicle_capacity_override`, when given, replaces the demand-derived
+    capacity formula below with a flat value - lets a caller see the same
+    stops covered by fewer or more vehicles, or deliberately create a
+    tight/slack fleet, instead of capacity always auto-sizing to comfortably
+    fit whatever demand was drawn.
     """
     random.seed(seed)
     np.random.seed(seed)
@@ -191,7 +202,7 @@ def generate_synthetic_scenario(
     service_times: List[float] = []
     total_demand = 0.0
     for idx, node_id in enumerate(job_node_ids):
-        demand = round(random.uniform(5.0, 15.0), 1)
+        demand = round(random.uniform(demand_min, demand_max), 1)
         total_demand += demand
         service_time = round(random.uniform(3.0, 8.0), 1)
         service_times.append(service_time)
@@ -221,8 +232,12 @@ def generate_synthetic_scenario(
             job.ready_time = ready
             job.due_time = due
 
-    # 4. Create Vehicles (Capacity total > total job demands)
-    vehicle_capacity = round((total_demand / num_vehicles) * 1.35, 1)
+    # 4. Create Vehicles (Capacity total > total job demands, unless the
+    # caller explicitly overrides it to see a tighter/slacker fleet)
+    if vehicle_capacity_override is not None:
+        vehicle_capacity = round(vehicle_capacity_override, 1)
+    else:
+        vehicle_capacity = round((total_demand / num_vehicles) * 1.35, 1)
     # Warm-neutral fleet palette (ochre/clay/teal/dusty-blue/olive) - keeps
     # vehicles visually distinct without a cool-toned rainbow fighting the
     # UI's asphalt/amber base palette.
@@ -238,10 +253,16 @@ def generate_synthetic_scenario(
             color=colors[v % len(colors)]
         ))
 
-    # The TW params are folded into the hash ONLY when time_windows=True, so
-    # every existing (non-TW) scenario hash - and every frozen E1-E6
-    # experiment config that depends on it - stays byte-identical.
-    hash_extra = f"tw:{tw_width_min}" if time_windows else ""
+    # Extra generation parameters are folded into the hash ONLY when they
+    # diverge from the defaults, so every existing scenario hash - and every
+    # frozen E1-E6 experiment config that depends on it - stays byte-identical.
+    extra = ""
+    if time_windows:
+        extra += f"tw:{tw_width_min}"
+    if (demand_min, demand_max) != (5.0, 15.0):
+        extra += f"d{demand_min}-{demand_max}"
+    if vehicle_capacity_override is not None:
+        extra += f":cap{vehicle_capacity_override}"
 
     return ProblemScenario(
         nodes=nodes,
@@ -250,8 +271,77 @@ def generate_synthetic_scenario(
         jobs=jobs,
         depot_node_id=0,
         seed=seed,
-        scenario_hash=compute_scenario_hash(num_nodes, num_jobs, num_vehicles, seed, extra=hash_extra)
+        scenario_hash=compute_scenario_hash(num_nodes, num_jobs, num_vehicles, seed, extra=extra)
     )
+
+
+def customize_scenario(
+    scenario: ProblemScenario,
+    depot_node_id: int,
+    job_node_ids: List[int],
+    demand_min: float = 5.0,
+    demand_max: float = 15.0,
+) -> ProblemScenario:
+    """Rebuilds a scenario's depot and delivery stops from operator-picked
+    existing map nodes, instead of the generator's random placement. Works
+    the same way for a synthetic or an OSM-sourced scenario since both share
+    `Node.id` as the addressing scheme.
+
+    Demand for each picked stop is drawn the same way
+    `generate_synthetic_scenario` draws it (`random.uniform(demand_min,
+    demand_max)`), seeded by the scenario's own seed so repeating the exact
+    same picks reproduces the exact same demands. Vehicle capacity is
+    recomputed from the new total demand with the same 1.35x-slack formula;
+    every vehicle keeps its id/color/max_route_time and moves its
+    start/end node to the new depot.
+    """
+    node_ids = {n.id for n in scenario.nodes}
+    if depot_node_id not in node_ids:
+        raise ValueError(f"depot_node_id {depot_node_id} is not a node in this scenario")
+    if not job_node_ids:
+        raise ValueError("job_node_ids must not be empty")
+    if len(set(job_node_ids)) != len(job_node_ids):
+        raise ValueError("job_node_ids contains duplicates")
+    unknown = [nid for nid in job_node_ids if nid not in node_ids]
+    if unknown:
+        raise ValueError(f"job_node_ids contains unknown node ids: {unknown}")
+    if depot_node_id in job_node_ids:
+        raise ValueError("depot_node_id cannot also be a delivery stop")
+
+    random.seed(scenario.seed)
+    jobs: List[Job] = []
+    total_demand = 0.0
+    for idx, node_id in enumerate(job_node_ids):
+        demand = round(random.uniform(demand_min, demand_max), 1)
+        total_demand += demand
+        jobs.append(Job(
+            id=idx + 1,
+            node_id=node_id,
+            demand=demand,
+            service_time=round(random.uniform(3.0, 8.0), 1),
+            priority=random.randint(1, 3)
+        ))
+
+    vehicle_capacity = round((total_demand / len(scenario.vehicles)) * 1.35, 1)
+    vehicles = [
+        v.model_copy(update={
+            "start_node": depot_node_id,
+            "end_node": depot_node_id,
+            "capacity": vehicle_capacity,
+        })
+        for v in scenario.vehicles
+    ]
+    nodes = [
+        n.model_copy(update={"is_depot": n.id == depot_node_id})
+        for n in scenario.nodes
+    ]
+
+    return scenario.model_copy(update={
+        "nodes": nodes,
+        "vehicles": vehicles,
+        "jobs": jobs,
+        "depot_node_id": depot_node_id,
+    })
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

@@ -117,6 +117,59 @@ npm run dev
 
 ---
 
+## Executive Overview / Engineering Control Room Split (2026-09-26)
+
+The frontend previously had a single dense workspace. That workspace is now
+called the **Engineering Control Room** (functionally unchanged) and sits
+behind a header nav alongside a new **Executive Overview** — a narrative
+summary page (`ExecutiveOverview.jsx`) built only from state `App.jsx`
+already computes: no new API calls, no fabricated baselines or percentages.
+Full detail is in [`Task.md`](Task.md)'s "Executive Overview / Engineering
+Control Room Split + UI Design System" entry.
+
+Alongside it, a shared UI primitive layer was added under
+`frontend/src/components/ui/` (`Button`, `IconButton`, `SegmentedControl`,
+`Badge`, `ControlSection`, `ComparisonBars`, `VehicleLoader`, `Toast`),
+replacing per-component hand-rolled Tailwind button/toggle strings. The
+brand mark (`Logo.jsx`, `favicon.svg`) changed from an accent-colored
+route/quantum-node glyph to a minimal flat white car + destination-pin
+glyph, reused unchanged in the header, the Executive Overview empty state,
+and the loading indicator (`VehicleLoader`).
+
+This work was done on branch `frontend/ui-polish-executive-overview`, not
+directly on `main`. `npm run build` succeeds; a live in-browser
+click-through was **not** performed this round (skipped per instruction) —
+verification was build success plus manual review of prop wiring, so treat
+this as code-reviewed rather than demo-verified until someone clicks
+through it.
+
+**Revision (same day):** the Executive Overview was reworked after review —
+it led with scenario stats and duplicated the operational map as a second
+smaller instance, which read as redundant rather than insightful. It's now
+an 8-section results narrative (`frontend/src/components/executive/`)
+leading with the outcome/impact, with a purpose-built tilted SVG
+before/after route visualization (real node/route data, not a second
+Leaflet map) instead of the duplicate map, one real interactive map for
+route inspection instead of two, and a single global `OperationOverlay`
+(non-technical copy, indeterminate progress) replacing the scattered
+per-panel loading blocks. This pass **was** verified live via a headless
+Playwright run, which caught and led to fixing a real CSS bug in
+`VehicleLoader` (percentage-width labels collapsing inside a shrink-to-fit
+flex parent). See `Task.md`'s "Executive Overview Revision" entry for
+detail.
+
+**Second revision (same day):** a fresh visitor landed on an empty "No
+Route Plan Yet" screen until manually running an optimization from the
+Engineering Control Room. The requested fix was a hardcoded "Sample
+Scenario" with invented numbers — flagged back as a direct conflict with
+this file's and `CLAUDE.md`'s own "never hard-code claims, results must
+come from actual experiments" rule. Implemented instead: the app now
+auto-runs the real generate → optimize → incident → re-optimize →
+benchmark pipeline once on load, through the same handlers a user triggers
+manually, so the Executive Overview lands fully populated with genuinely
+real numbers (tagged with a small "Demo Scenario" badge until the visitor
+runs something themselves). See `Task.md`'s "Auto-Demo Bootstrap" entry.
+
 ## Map Tile Layer & Dark Mode
 
 ### Problem

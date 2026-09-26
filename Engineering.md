@@ -86,7 +86,7 @@ that comes from the backend.
 | Re-optimization after incident | `handleReOptimize` → `POST /api/optimize` | ✅ Implemented (client-driven) |
 | FastAPI surface | `backend/main.py` | ✅ Implemented |
 | Map-first frontend (Plan/Disrupt/Re-optimize/Prove) | `frontend/src/*` | ✅ Implemented |
-| Unit tests | `backend/tests/*.py` (9 files) | ✅ 36/36 passing |
+| Unit tests | `backend/tests/*.py` (25 files) | ✅ 360/360 passing |
 | Experiment runner (E1–E6, saved to disk) | `backend/experiments/runner.py` | ✅ Implemented, run for real |
 | Experiment results API | `GET /api/experiments/{name}` | ✅ Implemented |
 | Live experiment trigger | `POST /api/experiments/{name}/run` — runs the real `run_eX` synchronously | ✅ Implemented |
@@ -96,9 +96,10 @@ that comes from the backend.
 | Multi-seed reproducibility statistics | `run_e6_reproducibility` | ✅ Implemented |
 | Scalability sweep | `run_e3_scalability` (20→200 nodes) | ✅ Implemented |
 | Research/evidence docs (`docs/*.md`) | `docs/mathematical_model.md`, `qpso_specification.md`, `experiment_protocol.md`, `requirements_traceability.md` | ✅ Implemented |
-| Exact solver for small instances | — | ❌ Not started, optional |
+| Exact solver for small instances (bitmask DP, ≤10 jobs) | `optimizers/exact.py` | ✅ Implemented |
+| 2-opt/or-opt local search (Lamarckian, on QPSO) | `optimizers/local_search.py` | ✅ Implemented |
 | Persisted scenario/run history (DB) | — | ❌ Not started, deferred (§9) |
-| OSM/OSMnx realistic network | — | ❌ Not started, deferred (§9) |
+| OSM/OSMnx realistic network | `realdata/osm_loader.py`, `realdata/osm_scenario.py` | ✅ Implemented |
 | SUMO traffic simulation | — | ❌ Not started, deferred (§9) |
 
 This table is the ground truth for [`Task.md`](Task.md). Update both together.
@@ -309,15 +310,16 @@ objective weights — and only the algorithm (and, in E3 only, its
 runtime-appropriate reduced solver budget, always documented alongside the
 result) varies.
 
-An exact solver (e.g. OR-Tools CP-SAT) remains optional and skipped this round
-— add the `optimality_gap` field only once that reference exists for a given
-scenario.
+An exact solver (`optimizers/exact.py`, bitmask Held-Karp + assignment DP,
+capped at ≤10 jobs) is implemented and auto-included in `run_benchmark`
+whenever a scenario is small enough. `BenchmarkPanel.jsx` shows a "Gap vs
+Optimum" column once `results.exact` is present.
 
 ---
 
 ## 10. Testing Strategy
 
-**36/36 tests passing** across 9 files in `backend/tests/`:
+**360/360 tests passing** across 25 files in `backend/tests/`, including:
 
 - `test_backend.py` — seed determinism, shortest-path correctness/performance,
   Greedy/PSO/GA/QPSO smoke tests, traffic incident sanity, benchmark smoke
@@ -327,8 +329,14 @@ scenario.
   than jobs, zero-jobs contract
 - `test_fitness.py` — capacity/time penalty exactness, congestion formula,
   per-vehicle congestion breakdown
+- `test_exact_optimizer.py` — brute-force-vs-exact agreement, shared-evaluator
+  route completeness, job-cap rejection
+- `test_local_search.py` — raw-cost/canonical-evaluator equivalence, 2-opt
+  untangling, or-opt never losing/duplicating a job, refinement never
+  increasing cost, QPSO+local-search closing the gap against Greedy at scale
 - `test_benchmark_fairness.py` — scenario not mutated across a benchmark run,
-  feasibility flag consistency across all four algorithms
+  feasibility flag consistency across all six algorithms (greedy, pso, ga,
+  qpso, qpso_ls, exact when ≤10 jobs)
 - `test_e2e.py` — full generate → optimize → incident → traffic update →
   re-optimize → benchmark workflow
 - `test_experiments.py` — experiment schema/output, small scalability sweep,
@@ -357,7 +365,7 @@ in the browser against real backend data.
 | POST | `/api/problem/generate` | Create a scenario from `{num_nodes, num_jobs, num_vehicles, seed}` |
 | POST | `/api/optimize` | Run `{scenario, config}` through the selected algorithm |
 | POST | `/api/traffic/update` | Apply edge traffic-factor updates to a scenario |
-| POST | `/api/benchmark` | Run all four algorithms on one scenario/config |
+| POST | `/api/benchmark` | Run greedy/pso/ga/qpso/qpso_ls on one scenario/config, plus `exact` when the scenario has ≤10 jobs |
 | POST | `/api/evaluate` | Re-score an already-computed set of routes against new objective weights via the same `fitness.evaluate_solution` every optimizer uses — no re-optimization, no client-side math |
 | GET | `/api/experiments/{name}` | Read-only: serves `backend/experiments/runner.py`'s saved output for one of the six known experiment names; 404 with a clear "not yet run" message if the experiment hasn't been executed, 400 for an unknown name |
 | POST | `/api/experiments/{name}/run` | Synchronously invokes the real `run_eX` function (same code path as the CLI) and returns its output; 400 for an unknown name, 409 if a frozen prior config conflicts |
@@ -442,7 +450,6 @@ without an explicit decision to move into that phase:
 - PostgreSQL / SQLAlchemy / Alembic persistence layer
 - Docker / docker-compose packaging
 - Full REST resource model (`/api/scenarios/{id}`, stored optimization runs, etc.)
-- OSM/OSMnx realistic road networks
 - SUMO traffic simulation
 - Exact solver (OR-Tools) beyond a small optional reference case
 - Authentication, payments, driver accounts, notifications, live GPS, traffic

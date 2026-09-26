@@ -3,6 +3,9 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker } from '
 import L from 'leaflet';
 import { apiFetch } from '../api';
 import { CONGESTION_ORDER, CONGESTION_STYLES, INCIDENT_STYLE, congestionStyle, congestionLabel } from '../lib/traffic';
+import VehicleLoader from './ui/VehicleLoader';
+import SegmentedControl from './ui/SegmentedControl';
+import Button from './ui/Button';
 
 // Asks the backend for the road shape of an already-computed set of routes.
 //
@@ -96,6 +99,29 @@ const createJobMarkerIcon = (jobId, isLate) => L.divIcon({
   iconAnchor: [24, 10]
 });
 
+// Manual placement is a draft until confirmed, so its markers are visually
+// distinct (dashed border, different accent) from the committed depot/job
+// markers above - never implying the pick is already applied.
+const createDraftDepotMarkerIcon = () => L.divIcon({
+  html: `<div style="background:#1E1B18; border:2px dashed #C6602E; border-radius:6px; padding:2px 6px; color:#E8A93A; font-family:JetBrains Mono, monospace; font-size:10px; font-weight:bold; box-shadow:0 4px 12px rgba(198,96,46,0.35); display:flex; align-items:center; gap:4px;">
+          <svg width="9" height="9" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="2" fill="none" stroke="#C6602E" stroke-width="1.5"/></svg>
+          <span>DEPOT (draft)</span>
+         </div>`,
+  className: 'custom-leaflet-draft-depot',
+  iconSize: [90, 24],
+  iconAnchor: [45, 12]
+});
+
+const createDraftStopMarkerIcon = (index) => L.divIcon({
+  html: `<div style="background:#1E1B18; border:1.5px dashed #6B9A57; border-radius:12px; padding:1px 6px; color:#9ABF87; font-family:JetBrains Mono, monospace; font-size:10px; font-weight:600; box-shadow:0 2px 8px rgba(0,0,0,0.5); display:flex; align-items:center; gap:3px;">
+          <svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3.2" fill="#6B9A57"/></svg>
+          <span>S${index < 10 ? '0' + index : index}</span>
+         </div>`,
+  className: 'custom-leaflet-draft-stop',
+  iconSize: [48, 20],
+  iconAnchor: [24, 10]
+});
+
 const createVehicleMarkerIcon = (vehicleId, color, isSelected) => L.divIcon({
   html: `<div style="background:#1E1B18; border:${isSelected ? '3px' : '2px'} solid ${color}; border-radius:12px; padding:2px 7px; color:#FFFFFF; font-family:JetBrains Mono, monospace; font-size:10px; font-weight:bold; box-shadow:0 4px 14px ${color}66; display:flex; align-items:center; gap:4px; transform:scale(${isSelected ? '1.15' : '1.0'});">
           <svg width="13" height="9" viewBox="0 0 16 10"><rect x="0.5" y="1.5" width="10" height="6.5" rx="1" fill="${color}"/><rect x="10.5" y="3.5" width="4.5" height="4.5" rx="0.8" fill="${color}"/><circle cx="4" cy="9" r="1.3" fill="#1E1B18" stroke="${color}" stroke-width="1"/><circle cx="12.5" cy="9" r="1.3" fill="#1E1B18" stroke="${color}" stroke-width="1"/></svg>
@@ -119,12 +145,25 @@ export default function NetworkMap({
   onDisruptEdge,
   disruptDisabled,
   previewResult,
-  previewedAlgorithm
+  previewedAlgorithm,
+  placementMode = false,
+  draftDepotId = null,
+  draftStopIds = [],
+  onPlaceNode,
+  // Stripped-down read-only mode for side-by-side comparisons: no GIS/Graph
+  // toggle, no vehicle filter bar, no legend, and no scroll-wheel zoom (two
+  // maps next to each other would otherwise hijack page scrolling).
+  compact = false
 }) {
   const [vehicleFilter, setVehicleFilter] = useState('all');
   const [mapView, setMapView] = useState('gis'); // 'gis' | 'graph' - same real nodes/edges, just a render toggle
   const [isLegendOpen, setIsLegendOpen] = useState(false);
   const routeTransition = useRouteTransition(currentResult);
+  // 'both' (default) keeps today's automatic fade; the other three let the
+  // operator pin the comparison instead of relying on catching the 800ms
+  // transition. Same real previous/active route coordinates either way -
+  // this only changes which are visible and at what opacity.
+  const [beforeAfterMode, setBeforeAfterMode] = useState('both'); // 'both' | 'before' | 'after' | 'overlay'
 
   // ALL hooks must be called unconditionally before any early return
   const nodes = scenario?.nodes || [];
@@ -223,6 +262,14 @@ export default function NetworkMap({
 
     return list;
   }, [edges, nodeMap, selectedIncidentEdge]);
+
+  // Derived, not new state: reuses edgeLines' own dedup (one entry per
+  // undirected pair) so this list can never disagree with what the map
+  // itself is drawing as an incident.
+  const closedEdges = useMemo(
+    () => edgeLines.filter(e => e.isIncident),
+    [edgeLines]
+  );
 
   const displayedResult = previewResult || currentResult;
 
@@ -350,10 +397,7 @@ export default function NetworkMap({
     return (
       <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-[#171513] text-gray-400 font-mono text-xs rounded-xl border border-[#332E29]">
         {loading ? (
-          <>
-            <div className="w-4 h-4 border-2 border-[#C6602E] border-t-transparent rounded-full animate-spin"></div>
-            <span>Loading network...</span>
-          </>
+          <VehicleLoader label="Loading Network" sublabel="Building the road network for this scenario..." />
         ) : (
           <span>Generate a scenario to begin fleet route optimization.</span>
         )}
@@ -362,7 +406,10 @@ export default function NetworkMap({
   }
 
   return (
-    <div className="w-full h-full relative rounded-xl overflow-hidden border border-[#332E29] shadow-2xl flex flex-col">
+    // `isolate` gives the map its own stacking context, so Leaflet's
+    // internal z-indexes (panes 400+, controls 1000) can't escape it and
+    // paint over the sticky header or other page chrome while scrolling.
+    <div className="w-full h-full relative rounded-xl overflow-hidden border border-[#332E29] shadow-2xl flex flex-col isolate">
       {routeGlowCss && <style>{routeGlowCss}</style>}
       {previewResult && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1001] bg-[#3A2318] border border-[#5A3A22] text-[#E8A578] px-3 py-1 rounded-full text-[11px] font-mono font-semibold shadow-xl">
@@ -371,27 +418,62 @@ export default function NetworkMap({
       )}
 
       {/* GIS <-> Graph View toggle - same real nodes/edges either way */}
-      <div className="absolute top-3 right-3 z-[1000] clean-panel px-2 py-1.5 rounded-lg text-xs flex items-center gap-1 border border-[#332E29] shadow-xl pointer-events-auto font-mono">
-        <button
-          onClick={() => setMapView('gis')}
-          className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-[#C6602E] ${
-            mapView === 'gis' ? 'bg-[#C6602E] text-white' : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
-          }`}
-        >
-          GIS View
-        </button>
-        <button
-          onClick={() => setMapView('graph')}
-          className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-[#C6602E] ${
-            mapView === 'graph' ? 'bg-[#C6602E] text-white' : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
-          }`}
-        >
-          Graph View
-        </button>
-      </div>
+      {!compact && (
+        <div className="absolute top-3 right-3 z-[1000] clean-panel p-1 rounded-lg border border-[#332E29] shadow-xl pointer-events-auto font-mono w-32">
+          <SegmentedControl
+            options={[
+              { id: 'gis', label: 'GIS View', title: 'Geographic road-network view.' },
+              { id: 'graph', label: 'Graph View', title: 'Network topology view.' }
+            ]}
+            value={mapView}
+            onChange={setMapView}
+          />
+        </div>
+      )}
+
+      {/* Before/After comparison toggle - only meaningful once there is a
+          previous route to compare the active one against. Same underlying
+          coordinates as the automatic post-re-optimize fade; this just lets
+          the operator pin the comparison instead of relying on catching an
+          800ms transition. */}
+      {previousResult && currentResult && (
+        <div className="absolute top-14 right-3 z-[1000] clean-panel px-2 py-1.5 rounded-lg text-xs border border-[#332E29] shadow-xl pointer-events-auto font-mono space-y-1.5">
+          <div className="flex items-center gap-1">
+            {[
+              { id: 'both', label: 'Show Both' },
+              { id: 'before', label: 'Before Only' },
+              { id: 'after', label: 'After Only' },
+              { id: 'overlay', label: 'Overlay' }
+            ].map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => setBeforeAfterMode(opt.id)}
+                aria-pressed={beforeAfterMode === opt.id}
+                className={`px-1.5 py-0.5 rounded text-[9px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-[#C6602E] ${
+                  beforeAfterMode === opt.id ? 'bg-[#C6602E] text-white' : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {/* Which visual style means which - not just the existing
+              dashed-vs-solid line difference. */}
+          <div className="flex items-center gap-3 text-[9px]">
+            <span className="flex items-center gap-1 text-gray-400">
+              <span className="inline-block w-3 h-0 border-t-2 border-dashed" style={{ borderColor: '#6B6259' }} />
+              BEFORE
+            </span>
+            <span className="flex items-center gap-1 text-[#C6602E] font-semibold">
+              <span className="inline-block w-3 h-0.5 bg-[#C6602E]" />
+              AFTER
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Top Filter Bar for Vehicles */}
-      {vehicles.length > 0 && (
+      {!compact && vehicles.length > 0 && (
         <div className="absolute top-14 sm:top-3 left-3 z-[1000] clean-panel px-3 py-1.5 rounded-lg text-xs flex items-center space-x-2 border border-[#332E29] shadow-xl pointer-events-auto font-mono max-w-[calc(100%-1.5rem)] sm:max-w-md overflow-x-auto">
           <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider flex-shrink-0">ROUTES:</span>
           <button
@@ -436,7 +518,7 @@ export default function NetworkMap({
       <MapContainer
         center={center}
         zoom={12}
-        scrollWheelZoom={true}
+        scrollWheelZoom={!compact}
         className="w-full h-full"
       >
         {mapView === 'gis' && (
@@ -487,18 +569,35 @@ export default function NetworkMap({
                 )}
                 {onDisruptEdge && (
                   <div className="border-t border-[#3A342E] mt-1.5 pt-1.5 space-y-1">
-                    <p className="text-gray-400 text-[10px] uppercase">Disrupt This Road</p>
+                    <p className="text-gray-400 text-[10px] uppercase">
+                      {e.isIncident ? 'Road Closed' : 'Disrupt This Road'}
+                    </p>
                     <div className="flex gap-1">
-                      {[{ label: 'Low', factor: 1.5 }, { label: 'Medium', factor: 2.5 }, { label: 'Severe', factor: 4.0 }].map(sev => (
-                        <button
+                      {[
+                        { label: 'Low', factor: 1.5, variant: 'success' },
+                        { label: 'Medium', factor: 2.5, variant: 'warning' },
+                        { label: 'Severe', factor: 4.0, variant: 'destructive' }
+                      ].map(sev => (
+                        <Button
                           key={sev.label}
+                          variant={sev.variant}
+                          size="sm"
+                          fullWidth={false}
                           disabled={disruptDisabled}
                           onClick={() => onDisruptEdge(e.source, e.destination, sev.factor)}
-                          className="px-1.5 py-0.5 rounded bg-[#3A1C18]/80 hover:bg-[#3A1C18] text-[#E8918A] text-[10px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           {sev.label}
-                        </button>
+                        </Button>
                       ))}
+                      {e.isIncident && (
+                        <button
+                          disabled={disruptDisabled}
+                          onClick={() => onDisruptEdge(e.source, e.destination, 1.0)}
+                          className="px-1.5 py-0.5 rounded bg-[#1E2A1E]/80 hover:bg-[#1E2A1E] text-[#9ABF87] text-[10px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          Reopen
+                        </button>
+                      )}
                     </div>
                     {disruptDisabled && (
                       <p className="text-[9px] text-gray-500">Optimize the fleet first to enable disruption.</p>
@@ -510,8 +609,9 @@ export default function NetworkMap({
           </Polyline>
         ))}
 
-        {/* Previous Route Overlay - fades out as the new route fades in
-            (Before->After transition, both endpoints real data) */}
+        {/* Previous Route Overlay - fades out as the new route fades in by
+            default ('both'); the operator's explicit before/after pick
+            overrides that automatic transition. Same coordinates always. */}
         {previousRouteLines.map((pr, idx) => (
           <Polyline
             key={`prev-route-${idx}`}
@@ -520,7 +620,11 @@ export default function NetworkMap({
               color: '#6B6259',
               weight: 2.5,
               dashArray: '6, 8',
-              opacity: 0.4 * (1 - routeTransition)
+              opacity:
+                beforeAfterMode === 'after' ? 0 :
+                beforeAfterMode === 'before' ? 0.9 :
+                beforeAfterMode === 'overlay' ? 0.4 :
+                0.4 * (1 - routeTransition)
             }}
           />
         ))}
@@ -528,6 +632,13 @@ export default function NetworkMap({
         {/* Active Optimized Vehicle Routes */}
         {activeRouteLines.map(ar => {
           if (ar.isFilteredOut) return null;
+
+          const baseOpacity = ar.isSelected ? 1.0 : 0.85;
+          const activeOpacity =
+            beforeAfterMode === 'before' ? 0 :
+            beforeAfterMode === 'after' ? baseOpacity :
+            beforeAfterMode === 'overlay' ? baseOpacity * 0.6 :
+            baseOpacity * Math.max(0.15, routeTransition);
 
           return (
             <Polyline
@@ -542,7 +653,7 @@ export default function NetworkMap({
               pathOptions={{
                 color: ar.color,
                 weight: ar.isSelected ? 7 : 5,
-                opacity: (ar.isSelected ? 1.0 : 0.85) * Math.max(0.15, routeTransition),
+                opacity: activeOpacity,
                 className: `route-glow-v${ar.vehicleId}`
               }}
             >
@@ -565,8 +676,53 @@ export default function NetworkMap({
           );
         })}
 
-        {/* Nodes (Depot, Jobs, Intersections) */}
+        {/* Nodes (Depot, Jobs, Intersections). In placement mode every node
+            is a click target for the operator's manual depot/stop picks,
+            rendered from the in-progress draft rather than the committed
+            scenario - nothing here is applied until confirmed. */}
         {nodes.map(n => {
+          if (placementMode) {
+            const isDraftDepot = n.id === draftDepotId;
+            const draftStopIndex = draftStopIds.indexOf(n.id);
+            const isDraftStop = draftStopIndex !== -1;
+            const clickHandlers = { eventHandlers: { click: () => onPlaceNode?.(n.id) } };
+
+            if (isDraftDepot) {
+              return (
+                <Marker
+                  key={`node-${n.id}`}
+                  position={[n.lat, n.lng]}
+                  icon={createDraftDepotMarkerIcon()}
+                  {...clickHandlers}
+                />
+              );
+            }
+            if (isDraftStop) {
+              return (
+                <Marker
+                  key={`node-${n.id}`}
+                  position={[n.lat, n.lng]}
+                  icon={createDraftStopMarkerIcon(draftStopIndex + 1)}
+                  {...clickHandlers}
+                />
+              );
+            }
+            return (
+              <CircleMarker
+                key={`node-${n.id}`}
+                center={[n.lat, n.lng]}
+                radius={5}
+                pathOptions={{
+                  color: '#C6602E',
+                  fillColor: '#3A342E',
+                  fillOpacity: 1,
+                  weight: 1.5
+                }}
+                {...clickHandlers}
+              />
+            );
+          }
+
           const isJob = jobNodeIds.has(n.id);
           const jobObj = jobMap.get(n.id);
 
@@ -656,6 +812,37 @@ export default function NetworkMap({
       </MapContainer>
       </div>
 
+      {/* Closed Roads panel - lets an operator reopen a road without having
+          to re-find it on the map. Only rendered when something is actually
+          closed; list and reopen both drive the same onDisruptEdge(...,1.0)
+          path the map's own popup uses, so there is no second code path for
+          clearing an incident. */}
+      {closedEdges.length > 0 && onDisruptEdge && (
+        <div className="absolute bottom-3 right-3 z-[1000] clean-panel px-3 py-2 rounded-lg text-xs space-y-1.5 border border-[#332E29] shadow-xl pointer-events-auto max-h-[45vh] max-w-[calc(100vw-2rem)] sm:max-w-xs overflow-y-auto font-mono">
+          <div className="flex items-center gap-1.5 text-gray-300 font-semibold uppercase tracking-wider text-[10px]">
+            <span className="text-[#E8918A]">⚠</span>
+            Closed Roads ({closedEdges.length})
+          </div>
+          <div className="space-y-1">
+            {closedEdges.map(e => (
+              <div key={e.id} className="flex items-center justify-between gap-2">
+                <span className="text-gray-400 text-[10px] truncate" title={e.roadName || `Node ${e.source} → ${e.destination}`}>
+                  {e.roadName || `#${e.source} → #${e.destination}`}
+                </span>
+                <button
+                  disabled={disruptDisabled}
+                  onClick={() => onDisruptEdge(e.source, e.destination, 1.0)}
+                  className="px-1.5 py-0.5 rounded bg-[#1E2A1E]/80 hover:bg-[#1E2A1E] text-[#9ABF87] text-[10px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                >
+                  Reopen
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!compact && (<>
       {/* Mobile Floating Legend Toggle Button */}
       <button
         onClick={() => setIsLegendOpen(!isLegendOpen)}
@@ -740,6 +927,7 @@ export default function NetworkMap({
           </div>
         )}
       </div>
+      </>)}
     </div>
   );
 }

@@ -63,14 +63,29 @@ cd backend
 python -m pytest tests/ -q
 ```
 
+## Two views
+
+The frontend opens on the **Executive Overview** — a narrative summary (real
+scenario stats, primary outcome, key metrics, before/after comparison, the
+route map, operational insights, and a benchmark comparison once one has been
+run) meant to be readable at a glance, with no solver internals on it. The
+header's **Engineering Control Room** toggle switches to the full operator
+workspace — network map, scenario/conditions/operations/solver controls,
+vehicle inspector, and the benchmark/scalability/reproducibility panels. Both
+views read the same live application state; nothing is duplicated data, and
+switching between them never re-runs anything.
+
 ## Demo flow
 
-1. Generate a scenario (auto-generated on load, or click **Generate New Scenario**).
+1. Generate a scenario (auto-generated on load, or click **Generate New Scenario**
+   in the Engineering Control Room).
 2. Click **Optimize Fleet** — QPSO produces fleet routes, metrics update.
 3. Click **Simulate Incident** — a road on an active route gets congested.
 4. Click **Re-Optimize** — routes recalculate around the disruption; before/after
    metrics are shown.
 5. Click **Run Benchmark** — Greedy, PSO, GA and QPSO are run on the identical
    scenario and compared side by side.
+6. Switch to **Executive Overview** at any point to see the same run summarized
+   for a non-technical audience.
 
 See `Task.md`'s "Immediate Next" section for what's actively being worked on.

@@ -29,7 +29,8 @@ def test_e1_writes_expected_files_and_schema(tmp_path):
     assert (out_dir / "raw_results.json").exists()
     assert (out_dir / "results.csv").exists()
 
-    assert set(raw.keys()) == {"greedy", "pso", "ga", "qpso", "qpso_memetic"}
+    # 5 jobs is within the exact solver's cap, so it's expected here too.
+    assert set(raw.keys()) == {"greedy", "pso", "ga", "qpso", "qpso_ls", "qpso_memetic", "exact"}
     for result in raw.values():
         assert "total_cost" in result
         assert "runtime_ms" in result
