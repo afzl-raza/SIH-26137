@@ -22,9 +22,20 @@ Full plan: `adaptive-squishing-hinton` plan file.
       a replacement of it) - sidebar, top bar, greeting/3-step cards,
       onboarding checklist, "today at a glance" metrics, live-map card,
       traffic alerts, recent routes, activity feed. SaaS-only chrome
-      (workspace switcher, invites, notifications) is static decoration;
-      metric cards are marked "Example" - approved exceptions to the
-      evidence-integrity rule, scoped to this one screen only.
+      (workspace switcher, invites, notifications, onboarding checklist,
+      alerts/recent-routes/activity feeds) is static decoration - no real
+      multi-user or run-history backend exists.
+- [x] **Revised**: "Today at a glance" and the live-map card were upgraded
+      from illustrative placeholders to a real, independent
+      `/api/problem/generate` + `/api/optimize` run (same endpoints and
+      config shape Dashboard.jsx uses - no new backend code). Metric cards
+      now show real vehicle/stop counts, travel time, distance, cost,
+      runtime and feasibility; the map card embeds the real
+      `NetworkMap.jsx` component showing the real optimized routes, labeled
+      as a snapshot ("not a live vehicle feed"), not a live feed. This was
+      a direct response to comparing against a teammate's parallel
+      `ExecutiveOverview.jsx` (100% real-data, no illustrative exceptions
+      at all) - see the note below.
       New Space Grotesk/near-black/orange visual system, scoped to this page
       only (`Inter`/`JetBrains Mono`/`Space Grotesk` were already all loaded
       as `font-sans`/`font-mono`/`font-display` - no new font loading).
@@ -50,6 +61,26 @@ all unaffected) → grouped bars + Log scale + Data Table toggle all correct
 on real data → Archetype matrix's win-count and cell highlighting verified
 against actual computed values (not just visually) via direct DOM inspection.
 Zero console errors on a clean session. Backend untouched, 373/373 passing.
+
+**Outstanding: `origin/main` has diverged significantly** while this was
+built - three teammate branches merged (`feature/authentication-flow`,
+`time-window`, `frontend/ui-polish-executive-overview`), touching many of
+the same files this round touched (`App.jsx`, `Dashboard.jsx`,
+`BenchmarkPanel.jsx`, `ArchetypeBenchmarkPanel.jsx`, `ControlPanel.jsx`,
+`NetworkMap.jsx` on the frontend; `fitness.py`, `decoder.py`, `models.py`,
+`optimizers/benchmark.py`, `problem_generator.py` on the backend). Two
+things flagged to the user, not yet resolved:
+1. The authentication flow directly contradicts `CLAUDE.md`'s "Do not
+   implement: Authentication" - left as-is per the user's explicit
+   decision ("leave it, flag it to the team"), not reverted.
+2. A teammate's `ExecutiveOverview.jsx` (a real-data-only results view,
+   toggled as a mode inside `Dashboard.jsx` rather than a separate page)
+   covers similar ground to this round's `Overview.jsx`. Compared live
+   side-by-side (both stacks run simultaneously on different ports); the
+   user preferred this round's visual design once its metrics/map were made
+   real (see the "Revised" bullet above) but **the merge/reconciliation
+   with `origin/main` has not happened yet** - this local `main` is still
+   ahead of and diverged from `origin/main`, not pushed.
 
 ---
 

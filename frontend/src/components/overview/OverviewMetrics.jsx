@@ -1,42 +1,52 @@
 import React from 'react';
-import { Truck, Clock, CalendarCheck, Activity, Info } from 'lucide-react';
+import { Truck, Clock, Gauge, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 
-// Fixed illustrative values matching the approved design exactly. Unlike
-// every other number in this app, these are NOT read from the backend -
-// this prototype has no fleet telemetry, schedule tracking, or live traffic
-// feed to back them with. Each card carries an explicit "Example data" mark
-// so it never reads as a live figure.
-const METRICS = [
-  {
-    icon: Truck, label: 'Vehicles moving', value: '18', accent: '#5D7A9E',
-    detail: 'of 24 active today', tag: '3 waiting',
-  },
-  {
-    icon: Clock, label: 'Time saved today', value: '3h 42m', accent: '#43D493',
-    detail: 'compared with usual routes', tag: '+28 min this hour',
-  },
-  {
-    icon: CalendarCheck, label: 'Routes on schedule', value: '92%', accent: '#F5B942',
-    detail: 'arriving within 5 minutes', tag: '2 need attention',
-  },
-  {
-    icon: Activity, label: 'Traffic conditions', value: 'Moderate', accent: '#FF7A1A',
-    detail: 'across your operating area', tag: 'Rush hour in 45 min',
-  },
-];
+// Every value here comes from a real /api/problem/generate + /api/optimize
+// run (see Overview.jsx) - the same endpoints and the same OptimizationResult
+// shape Dashboard.jsx uses. Nothing is hardcoded; while that run is in
+// flight each card shows a loading state instead of a placeholder number.
+export default function OverviewMetrics({ scenario, result, loading, error }) {
+  const cards = scenario && result
+    ? [
+        {
+          icon: Truck, accent: '#5D7A9E', label: 'Fleet & stops',
+          value: `${scenario.vehicles.length} vehicles`,
+          detail: `${scenario.jobs.length} delivery stops`,
+        },
+        {
+          icon: Clock, accent: '#43D493', label: 'Travel time',
+          value: `${result.total_travel_time.toFixed(0)} min`,
+          detail: `${result.total_distance.toFixed(1)} km driven, whole fleet`,
+        },
+        {
+          icon: Gauge, accent: '#F5B942', label: 'Route cost',
+          value: result.total_cost.toFixed(1),
+          detail: `Time + distance + congestion · solved in ${(result.runtime_ms / 1000).toFixed(2)}s`,
+        },
+        {
+          icon: result.is_feasible ? CheckCircle2 : XCircle,
+          accent: result.is_feasible ? '#43D493' : '#FF6868',
+          label: 'Plan status',
+          value: result.is_feasible ? 'Feasible' : 'Infeasible',
+          detail: result.is_feasible ? 'Every stop covered, no vehicle overloaded' : `${result.constraint_violations} constraint violation(s)`,
+        },
+      ]
+    : [];
 
-export default function OverviewMetrics() {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      {METRICS.map(m => (
-        <div key={m.label} className="bg-[#211E1A] border border-[#3B342A] rounded-xl p-4 relative">
-          <div
-            title="Example data - not a live feed in this prototype"
-            className="absolute top-2 right-2 text-[8px] font-bold uppercase tracking-wider text-[#817970] bg-[#171512] border border-[#3B342A] rounded px-1.5 py-0.5 flex items-center gap-1"
-          >
-            <Info size={9} />
-            Example
-          </div>
+      {loading && cards.length === 0 && [1, 2, 3, 4].map(i => (
+        <div key={i} className="bg-[#211E1A] border border-[#3B342A] rounded-xl p-4 flex items-center justify-center h-[104px]">
+          <Loader2 size={16} className="animate-spin text-[#817970]" />
+        </div>
+      ))}
+      {error && cards.length === 0 && (
+        <div className="col-span-full bg-[#462122]/40 border border-[#5A2A22] rounded-xl p-4 text-[12px] text-[#FF6868]">
+          {error} - is the backend running?
+        </div>
+      )}
+      {cards.map(m => (
+        <div key={m.label} className="bg-[#211E1A] border border-[#3B342A] rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${m.accent}22`, color: m.accent }}>
               <m.icon size={14} />
@@ -47,7 +57,6 @@ export default function OverviewMetrics() {
             {m.value}
           </div>
           <div className="text-[10px] text-[#817970]">{m.detail}</div>
-          <div className="text-[10px] mt-1" style={{ color: m.accent }}>{m.tag}</div>
         </div>
       ))}
     </div>
