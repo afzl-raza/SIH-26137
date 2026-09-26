@@ -12,6 +12,74 @@ verified against the actual code and a full test run (`pytest backend/tests
 
 ---
 
+## Executive Overview Revision — Results-First Narrative + Route Comparison ✅ Done (2026-09-26)
+
+Follow-up revision to the entry below, after review: the first pass still
+led with scenario stats (nodes/network/vehicles/stops) and duplicated the
+Engineering Control Room's Leaflet map as a second, smaller instance for a
+before/after comparison — flagged as redundant and not attractive/insightful
+enough for a judged demo. Revised:
+
+- [x] `ExecutiveOverview.jsx` restructured into 8 focused components under
+      `frontend/src/components/executive/` (`ExecutiveOutcome`,
+      `OptimizationImpact`, `NetworkComparison`, `WhatChanged`,
+      `OperationalResult`, `RoutePerformance`, `BenchmarkComparison`,
+      `ScenarioDetails`), in that order — outcome and impact now lead,
+      scenario metadata moved to the bottom. A shared `executive/metrics.js`
+      holds one real metric-accessor config (`RESULT_METRICS`/
+      `CORE_METRICS`) reused by the impact table, "What Changed", and the
+      benchmark comparison, instead of three copies of the same logic.
+- [x] **`NetworkComparison`** replaced the duplicate-Leaflet-map approach
+      with an original stylized visualization: real node positions and real
+      `node_path`/`job_ids` route data rendered as a tilted (CSS
+      `rotateX`/`perspective`), glowing SVG "route board" with a
+      Before/Optimization toggle — visually distinct from the operational
+      map rather than a smaller copy of it, still 100% real data (no
+      fabricated positions or paths).
+- [x] **`RoutePerformance`** keeps exactly one real interactive Leaflet map
+      (down from two) for actual route/vehicle inspection, paired with the
+      real `VehicleInspector`.
+- [x] **New `ui/OperationOverlay.jsx`** — a single global, full-screen,
+      non-technical loading experience (dimmed backdrop, centered panel,
+      `VehicleLoader`, friendly title/description, indeterminate progress
+      fill) shown for every real in-flight action (generate, optimize,
+      re-optimize, incident/conditions, benchmark), driven by a new
+      `activeOperation` state in `App.jsx`. Replaces the old per-panel
+      "Working..."/"QPSO Optimizing" blocks in `ControlPanel.jsx` (now
+      redundant with the global overlay). Copy never names an algorithm or
+      shows a fake stage/percentage — confirmed the backend has no
+      intermediate progress to report for any of these calls.
+- [x] Toast copy softened to plain language ("Route plan ready", "Comparison
+      ready", "Road conditions updated") and a centralized friendly-error
+      toast added (`useEffect` on `error` in `App.jsx`) alongside the
+      existing technical error banner, rather than exposing the raw
+      exception message as the primary feedback.
+- [x] `BenchmarkComparison` adds a plain-language ⓘ description per metric
+      (Travel Time/Distance/Cost/Runtime); algorithm names themselves are
+      still shown (Greedy/PSO/GA/QPSO) since that's the actual comparison,
+      per your own instruction that this is acceptable outside the
+      no-jargon rule.
+
+**Real bug found and fixed via an actual browser check this round** (this
+revision, unlike the previous entry, was verified live with a headless
+Playwright pass, not just code review): `VehicleLoader`'s "Start"/
+"Destination" label row used `w-full` inside a shrink-to-fit flex parent
+(`OperationOverlay`'s centered column) — a `100%` width with no defined
+containing-block width collapses to content size, so the two labels
+rendered squashed together ("STARTDESTINATION") with `justify-between`
+having no room to act. Fixed by giving both rows a fixed `w-[220px]`
+instead of `w-full max-w-[220px]`. Confirmed fixed via a second screenshot.
+
+Verified: `npm run build` succeeds; live-driven with Playwright
+(Executive Overview empty state, the OperationOverlay during Optimize,
+the populated Executive Overview after Simulate Incident → Re-Optimize
+including the real +0.2% travel-time regression shown honestly in amber
+rather than hidden, the Before/Optimization toggle rendering genuinely
+different route colors, and Route Details' live map) — zero console
+errors across the run.
+
+---
+
 ## Executive Overview / Engineering Control Room Split + UI Design System ✅ Done (2026-09-26)
 
 Frontend interaction & visual polish pass, plus a new Executive Overview

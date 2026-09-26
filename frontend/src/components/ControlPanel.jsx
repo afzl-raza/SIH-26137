@@ -13,7 +13,6 @@ import {
   FileText
 } from 'lucide-react';
 import RecoveryTimeline from './RecoveryTimeline';
-import VehicleLoader from './ui/VehicleLoader';
 import Button from './ui/Button';
 import SegmentedControl from './ui/SegmentedControl';
 import ControlSection from './ui/ControlSection';
@@ -57,7 +56,6 @@ export default function ControlPanel({
   const canSimulateIncident = Boolean(currentResult) && !loading;
   const canReOptimize = Boolean(incidentInfo || conditionsDirty) && !loading;
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const isOptimizing = statusState === 'OPTIMIZING' || statusState === 'RE-OPTIMIZING';
 
   const handleConfigChange = (key, value) => {
     setConfig(prev => ({
@@ -431,29 +429,6 @@ export default function ControlPanel({
           <div className="border-t border-[#5A2C26]/60 pt-2">
             <RecoveryTimeline timeline={timeline} />
           </div>
-        </div>
-      )}
-
-      {/* GENERIC WORKING INDICATOR - covers requests that don't have their
-          own dedicated status block (generate, apply conditions, incident,
-          benchmark). Optimize/Re-Optimize get the richer VehicleLoader block
-          below, so this is suppressed for those two statuses to avoid
-          showing two loading indicators at once. */}
-      {loading && !isOptimizing && (
-        <div className="flex items-center gap-2 text-[10px] text-gray-400 font-mono bg-[#141210]/50 border border-[#332E29] rounded-lg px-2.5 py-1.5">
-          <div className="w-3 h-3 border-2 border-[#C6602E] border-t-transparent rounded-full animate-spin flex-shrink-0" />
-          Working...
-        </div>
-      )}
-
-      {/* OPTIMIZATION STATE - branded vehicle loader, indeterminate (no
-          real intermediate progress exists to report). */}
-      {isOptimizing && (
-        <div className="bg-[#3A2318]/30 border border-[#5A3A22] rounded-lg p-3">
-          <VehicleLoader
-            label={statusState === 'RE-OPTIMIZING' ? 'Re-Optimizing Routes' : 'Optimizing Routes'}
-            sublabel="Searching for a lower-cost feasible fleet solution..."
-          />
         </div>
       )}
 

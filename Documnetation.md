@@ -143,6 +143,21 @@ verification was build success plus manual review of prop wiring, so treat
 this as code-reviewed rather than demo-verified until someone clicks
 through it.
 
+**Revision (same day):** the Executive Overview was reworked after review —
+it led with scenario stats and duplicated the operational map as a second
+smaller instance, which read as redundant rather than insightful. It's now
+an 8-section results narrative (`frontend/src/components/executive/`)
+leading with the outcome/impact, with a purpose-built tilted SVG
+before/after route visualization (real node/route data, not a second
+Leaflet map) instead of the duplicate map, one real interactive map for
+route inspection instead of two, and a single global `OperationOverlay`
+(non-technical copy, indeterminate progress) replacing the scattered
+per-panel loading blocks. This pass **was** verified live via a headless
+Playwright run, which caught and led to fixing a real CSS bug in
+`VehicleLoader` (percentage-width labels collapsing inside a shrink-to-fit
+flex parent). See `Task.md`'s "Executive Overview Revision" entry for
+detail.
+
 ## Map Tile Layer & Dark Mode
 
 ### Problem

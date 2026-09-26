@@ -184,6 +184,30 @@
 }
 
 /* ═══════════════════════════════════════════
+   Operation Overlay (branded, non-technical
+   loading screen shown for any in-flight action)
+   ═══════════════════════════════════════════ */
+
+@keyframes operation-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.operation-overlay-fade {
+  animation: operation-overlay-in 0.2s ease-out;
+}
+
+/* Indeterminate fill - communicates "working", never a real percentage. */
+@keyframes operation-overlay-progress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
+.operation-overlay-progress {
+  animation: operation-overlay-progress 1.4s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════
    Toast
    ═══════════════════════════════════════════ */
 

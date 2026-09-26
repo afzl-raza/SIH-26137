@@ -9,7 +9,11 @@ import { cx } from '../../lib/cx';
 export default function VehicleLoader({ label, sublabel, className = '' }) {
   return (
     <div className={cx('flex flex-col items-center gap-2 py-1', className)}>
-      <div className="relative w-full max-w-[220px] h-6">
+      {/* Fixed pixel width, not w-full/max-w - a percentage width collapses
+          to content size when the parent (e.g. OperationOverlay's centered
+          column) is itself shrink-to-fit, which squashed "Start"/
+          "Destination" together with no gap between them. */}
+      <div className="relative w-[220px] h-6">
         <div className="absolute left-0 right-0 top-1/2 flex items-center" style={{ transform: 'translateY(-50%)' }}>
           <span className="w-1.5 h-1.5 rounded-full bg-[#6B6259] flex-shrink-0" />
           <span className="flex-1 border-t-2 border-dashed border-[#3A342E] mx-1" />
@@ -24,7 +28,7 @@ export default function VehicleLoader({ label, sublabel, className = '' }) {
           </svg>
         </div>
       </div>
-      <div className="flex justify-between w-full max-w-[220px] text-[8px] uppercase tracking-wider text-gray-600 font-mono">
+      <div className="flex justify-between w-[220px] text-[8px] uppercase tracking-wider text-gray-600 font-mono">
         <span>Start</span>
         <span>Destination</span>
       </div>

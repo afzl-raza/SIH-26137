@@ -15,6 +15,7 @@ import Badge from './components/ui/Badge';
 import SegmentedControl from './components/ui/SegmentedControl';
 import IconButton from './components/ui/IconButton';
 import { ToastProvider, useToast } from './components/ui/Toast';
+import OperationOverlay from './components/ui/OperationOverlay';
 import { apiFetch } from './api';
 import { Activity, LayoutDashboard, SlidersHorizontal, X } from 'lucide-react';
 
@@ -92,6 +93,10 @@ function AppShell() {
   const [manifest, setManifest] = useState(null);
 
   const [loading, setLoading] = useState(false);
+  // Which real request is in flight - drives the friendly OperationOverlay's
+  // copy. Never used to fabricate progress, only to pick the right sentence
+  // for a genuinely-running request.
+  const [activeOperation, setActiveOperation] = useState(null);
   const [error, setError] = useState(null);
   const [statusState, setStatusState] = useState('INITIAL');
   const [networkState, setNetworkState] = useState('NORMAL');
@@ -166,12 +171,28 @@ function AppShell() {
     handleGenerateScenario();
   }, []);
 
+  // ─── Friendly failure feedback ───────────────────
+  // The persistent error banner keeps the real message for anyone
+  // debugging; this adds a plain-language toast alongside it rather than
+  // exposing that raw message (which can be a network/server string) as
+  // the primary feedback.
+  useEffect(() => {
+    if (error) {
+      toast('Something went wrong', {
+        tone: 'error',
+        detail: "We couldn't complete the route calculation. Please try again."
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error]);
+
   // ─── API: Generate Scenario ──────────────────────
   // Accepts an optional explicit source so a control can switch network kind
   // and generate in one action without waiting for a state update to land.
   const handleGenerateScenario = async (sourceOverride) => {
     const source = (typeof sourceOverride === 'string') ? sourceOverride : networkSource;
     setLoading(true);
+    setActiveOperation('generate');
     setError(null);
     try {
       const body = {
@@ -255,6 +276,7 @@ function AppShell() {
       return null;
     } finally {
       setLoading(false);
+      setActiveOperation(null);
     }
   };
 
@@ -293,6 +315,7 @@ function AppShell() {
     setLoading(true);
     setError(null);
     const isReopt = networkState === 'DISRUPTED';
+    setActiveOperation(isReopt ? 'reoptimize' : 'optimize');
     setStatusState(isReopt ? 'RE-OPTIMIZING' : 'OPTIMIZING');
     const reoptimizeClickedAt = isReopt ? Date.now() : null;
 
@@ -331,14 +354,15 @@ function AppShell() {
         }));
       }
 
-      toast(isReopt ? 'Fleet re-routed around the disruption' : 'Optimization complete', {
-        detail: `${data.routes?.length ?? 0} routes · cost ${data.total_cost?.toFixed(2) ?? '—'}. Next: review the routes${isReopt ? '' : ' or simulate an incident'}.`
+      toast('Route plan ready', {
+        detail: `${data.routes?.length ?? 0} routes · ${data.total_travel_time?.toFixed(1) ?? '—'} min travel time. Your ${isReopt ? 'updated' : 'optimized'} routes are ready to review.`
       });
     } catch (err) {
       setError(err.message);
       setStatusState('ERROR');
     } finally {
       setLoading(false);
+      setActiveOperation(null);
     }
   };
 
@@ -354,6 +378,7 @@ function AppShell() {
     const weather = nextWeather ?? weatherEnabled;
 
     setLoading(true);
+    setActiveOperation('incident');
     setError(null);
     try {
       const res = await apiFetch('/api/scenario/conditions', {
@@ -385,6 +410,7 @@ function AppShell() {
       setError(err.message);
     } finally {
       setLoading(false);
+      setActiveOperation(null);
     }
   };
 
@@ -395,6 +421,7 @@ function AppShell() {
   const applyIncident = async (targetSource, targetDest, congestionFactor) => {
     if (!scenario) return;
     setLoading(true);
+    setActiveOperation('incident');
     setError(null);
 
     try {
@@ -450,14 +477,15 @@ function AppShell() {
       setNetworkState('DISRUPTED');
       refreshManifest(scenarioId);
 
-      toast('Incident applied', {
+      toast('Road conditions updated', {
         tone: 'error',
-        detail: `${roadName} congestion ×${congestionFactor}. Next: Re-Optimize.`
+        detail: `${roadName} is now congested (×${congestionFactor}). Re-Optimize to update the route plan.`
       });
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+      setActiveOperation(null);
     }
   };
 
@@ -506,6 +534,7 @@ function AppShell() {
   const handleRunBenchmark = async () => {
     if (!scenario) return;
     setLoading(true);
+    setActiveOperation('benchmark');
     setError(null);
     try {
       const res = await apiFetch('/api/benchmark', {
@@ -526,11 +555,12 @@ function AppShell() {
       const data = await res.json();
       setBenchmarkData(data);
       const algoCount = data.results ? Object.keys(data.results).length : 0;
-      toast('Benchmark complete', { detail: `${algoCount} algorithms compared on this scenario.` });
+      toast('Comparison ready', { detail: `The route plans have been compared successfully — ${algoCount} options compared.` });
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+      setActiveOperation(null);
     }
   };
 
@@ -544,6 +574,7 @@ function AppShell() {
   // ═══════════════════════════════════════════
   return (
     <div className="min-h-screen bg-[#0D0C0B] text-gray-100 flex flex-col font-sans selection:bg-[#C6602E] selection:text-white">
+      {loading && activeOperation && <OperationOverlay operation={activeOperation} />}
 
       {/* ═══ HEADER ═══ */}
       <header className="clean-panel border-b border-[#332E29] px-3 sm:px-6 py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xl sticky top-0 z-50">
@@ -654,13 +685,13 @@ function AppShell() {
             currentResult={currentResult}
             previousResult={previousResult}
             benchmarkData={benchmarkData}
-            incidentInfo={incidentInfo}
             networkState={networkState}
             loading={loading}
             selectedVehicle={selectedVehicle}
             selectedRoute={selectedRoute}
             onSelectVehicle={handleSelectVehicle}
-            selectedIncidentEdge={selectedIncidentEdge}
+            trafficMode={trafficMode}
+            weatherEnabled={weatherEnabled}
             weights={config.weights}
             onOpenEngineering={() => setView('engineering')}
           />
