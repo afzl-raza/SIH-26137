@@ -46,7 +46,9 @@ export default function ControlPanel({
   radiusM = 1200,
   setRadiusM,
   networkMeta,
-  manifest
+  manifest,
+  scenarioParams,
+  setScenarioParams
 }) {
   // Demo state-machine guards: an incident can't be simulated before there's
   // an optimized route to disrupt, and re-optimization is meaningless before
@@ -55,6 +57,11 @@ export default function ControlPanel({
   const canSimulateIncident = Boolean(currentResult) && !loading;
   const canReOptimize = Boolean(incidentInfo || conditionsDirty) && !loading;
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showScenarioShape, setShowScenarioShape] = useState(false);
+
+  const handleScenarioParamChange = (key, value) => {
+    setScenarioParams?.(prev => ({ ...prev, [key]: value }));
+  };
 
   const handleConfigChange = (key, value) => {
     setConfig(prev => ({
@@ -246,11 +253,94 @@ export default function ControlPanel({
           )}
         </div>
 
+        {/* Scenario shape - synthetic-only, since num_nodes/num_jobs/
+            num_vehicles/demand range only mean something for the generator;
+            an OSM scenario's node count comes from the real map. */}
+        {networkSource === 'synthetic' && scenarioParams && (
+          <div className="bg-[#141210]/50 border border-[#332E29] rounded-lg p-2.5">
+            <button
+              onClick={() => setShowScenarioShape(!showScenarioShape)}
+              aria-expanded={showScenarioShape}
+              className="flex items-center gap-1.5 text-gray-300 hover:text-gray-100 font-semibold uppercase tracking-wider text-[10px] transition-colors w-full text-left focus-visible:ring-2 focus-visible:ring-[#C6602E] rounded"
+            >
+              {showScenarioShape ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              Scenario Shape
+            </button>
+
+            {showScenarioShape && (
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="space-y-0.5">
+                  <label htmlFor="sp-num-nodes" className="text-gray-400 block text-[10px]">Nodes</label>
+                  <input
+                    id="sp-num-nodes"
+                    type="number"
+                    min="4"
+                    value={scenarioParams.num_nodes}
+                    onChange={(e) => handleScenarioParamChange('num_nodes', Number(e.target.value))}
+                    className="w-full bg-[#26221D] border border-[#3A342E] text-gray-200 rounded px-2 py-1 outline-none focus:border-[#C6602E] font-mono text-[10px]"
+                  />
+                </div>
+                <div className="space-y-0.5">
+                  <label htmlFor="sp-num-jobs" className="text-gray-400 block text-[10px]">Jobs</label>
+                  <input
+                    id="sp-num-jobs"
+                    type="number"
+                    min="1"
+                    value={scenarioParams.num_jobs}
+                    onChange={(e) => handleScenarioParamChange('num_jobs', Number(e.target.value))}
+                    className="w-full bg-[#26221D] border border-[#3A342E] text-gray-200 rounded px-2 py-1 outline-none focus:border-[#C6602E] font-mono text-[10px]"
+                  />
+                </div>
+                <div className="space-y-0.5">
+                  <label htmlFor="sp-num-vehicles" className="text-gray-400 block text-[10px]">Vehicles</label>
+                  <input
+                    id="sp-num-vehicles"
+                    type="number"
+                    min="1"
+                    value={scenarioParams.num_vehicles}
+                    onChange={(e) => handleScenarioParamChange('num_vehicles', Number(e.target.value))}
+                    className="w-full bg-[#26221D] border border-[#3A342E] text-gray-200 rounded px-2 py-1 outline-none focus:border-[#C6602E] font-mono text-[10px]"
+                  />
+                </div>
+                <div className="space-y-0.5">
+                  <label htmlFor="sp-demand-min" className="text-gray-400 block text-[10px]">Demand min</label>
+                  <input
+                    id="sp-demand-min"
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={scenarioParams.demand_min}
+                    onChange={(e) => handleScenarioParamChange('demand_min', Number(e.target.value))}
+                    className="w-full bg-[#26221D] border border-[#3A342E] text-gray-200 rounded px-2 py-1 outline-none focus:border-[#C6602E] font-mono text-[10px]"
+                  />
+                </div>
+                <div className="space-y-0.5 col-span-2">
+                  <label htmlFor="sp-demand-max" className="text-gray-400 block text-[10px]">Demand max</label>
+                  <input
+                    id="sp-demand-max"
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={scenarioParams.demand_max}
+                    onChange={(e) => handleScenarioParamChange('demand_max', Number(e.target.value))}
+                    className="w-full bg-[#26221D] border border-[#3A342E] text-gray-200 rounded px-2 py-1 outline-none focus:border-[#C6602E] font-mono text-[10px]"
+                  />
+                </div>
+                {scenarioParams.demand_min > scenarioParams.demand_max && (
+                  <p className="col-span-2 text-[9px] text-[#B5613F]">
+                    Demand min cannot exceed demand max.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => onGenerate?.()}
-            disabled={loading}
-            className="w-full py-1 text-gray-400 hover:text-gray-200 hover:bg-[#26221D]/50 rounded transition-colors text-[10px] focus-visible:ring-2 focus-visible:ring-[#C6602E]"
+            disabled={loading || (networkSource === 'synthetic' && scenarioParams?.demand_min > scenarioParams?.demand_max)}
+            className="w-full py-1 text-gray-400 hover:text-gray-200 hover:bg-[#26221D]/50 rounded transition-colors text-[10px] focus-visible:ring-2 focus-visible:ring-[#C6602E] disabled:opacity-40"
           >
             Generate New Scenario
           </button>

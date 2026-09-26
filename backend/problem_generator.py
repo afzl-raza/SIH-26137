@@ -34,11 +34,22 @@ def generate_synthetic_scenario(
     num_nodes: int = 30,
     num_jobs: int = 15,
     num_vehicles: int = 3,
-    seed: int = 42
+    seed: int = 42,
+    demand_min: float = 5.0,
+    demand_max: float = 15.0,
+    vehicle_capacity_override: Optional[float] = None,
 ) -> ProblemScenario:
     """
     Generates a deterministic synthetic urban transportation scenario.
     Depot is located at node 0.
+
+    `demand_min`/`demand_max` bound each job's randomly drawn demand (same
+    `random.uniform` call as always - just no longer hardcoded to 5.0-15.0).
+    `vehicle_capacity_override`, when given, replaces the demand-derived
+    capacity formula below with a flat value - lets a caller see the same
+    stops covered by fewer or more vehicles, or deliberately create a
+    tight/slack fleet, instead of capacity always auto-sizing to comfortably
+    fit whatever demand was drawn.
     """
     random.seed(seed)
     np.random.seed(seed)
@@ -144,7 +155,7 @@ def generate_synthetic_scenario(
     jobs: List[Job] = []
     total_demand = 0.0
     for idx, node_id in enumerate(job_node_ids):
-        demand = round(random.uniform(5.0, 15.0), 1)
+        demand = round(random.uniform(demand_min, demand_max), 1)
         total_demand += demand
         jobs.append(Job(
             id=idx + 1,
@@ -154,8 +165,12 @@ def generate_synthetic_scenario(
             priority=random.randint(1, 3)
         ))
 
-    # 4. Create Vehicles (Capacity total > total job demands)
-    vehicle_capacity = round((total_demand / num_vehicles) * 1.35, 1)
+    # 4. Create Vehicles (Capacity total > total job demands, unless the
+    # caller explicitly overrides it to see a tighter/slacker fleet)
+    if vehicle_capacity_override is not None:
+        vehicle_capacity = round(vehicle_capacity_override, 1)
+    else:
+        vehicle_capacity = round((total_demand / num_vehicles) * 1.35, 1)
     # Warm-neutral fleet palette (ochre/clay/teal/dusty-blue/olive) - keeps
     # vehicles visually distinct without a cool-toned rainbow fighting the
     # UI's asphalt/amber base palette.
@@ -171,6 +186,15 @@ def generate_synthetic_scenario(
             color=colors[v % len(colors)]
         ))
 
+    # Only fold demand/capacity into the hash when they diverge from the old
+    # hardcoded defaults, so scenarios generated the old way keep the exact
+    # same hash they always have (see compute_scenario_hash's docstring).
+    extra = ""
+    if (demand_min, demand_max) != (5.0, 15.0):
+        extra += f"d{demand_min}-{demand_max}"
+    if vehicle_capacity_override is not None:
+        extra += f":cap{vehicle_capacity_override}"
+
     return ProblemScenario(
         nodes=nodes,
         edges=edges,
@@ -178,7 +202,7 @@ def generate_synthetic_scenario(
         jobs=jobs,
         depot_node_id=0,
         seed=seed,
-        scenario_hash=compute_scenario_hash(num_nodes, num_jobs, num_vehicles, seed)
+        scenario_hash=compute_scenario_hash(num_nodes, num_jobs, num_vehicles, seed, extra=extra)
     )
 
 

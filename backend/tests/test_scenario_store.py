@@ -197,6 +197,22 @@ def _generate(**kw):
     return client.post("/api/problem/generate", json=params).json()
 
 
+def test_generate_rejects_demand_min_above_demand_max():
+    response = client.post("/api/problem/generate", json={
+        "num_nodes": 15, "num_jobs": 6, "num_vehicles": 2, "seed": 3,
+        "demand_min": 20.0, "demand_max": 5.0
+    })
+    assert response.status_code == 400
+
+
+def test_generate_applies_demand_range_and_capacity_override():
+    body = _generate(demand_min=9.0, demand_max=9.0, vehicle_capacity_override=42.0)
+    scenario = body["scenario"]
+
+    assert all(job["demand"] == 9.0 for job in scenario["jobs"])
+    assert all(v["capacity"] == 42.0 for v in scenario["vehicles"])
+
+
 def test_optimize_accepts_scenario_id():
     body = _generate()
     response = client.post("/api/optimize", json={

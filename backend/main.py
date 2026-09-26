@@ -80,6 +80,12 @@ class GenerateRequest(BaseModel):
     seed: int = 42
     num_nodes: int = 30  # synthetic only - OSM node count comes from the map
 
+    # Synthetic only - bounds on each job's randomly drawn demand, and an
+    # optional flat vehicle capacity that skips the demand-derived formula.
+    demand_min: float = 5.0
+    demand_max: float = 15.0
+    vehicle_capacity_override: Optional[float] = None
+
     # Location inputs, any one of which resolves to a bounded area. No city is
     # special: a place name goes through the geocoder, coordinates and boxes
     # are used directly.
@@ -183,12 +189,18 @@ def generate_problem(req: GenerateRequest):
     if req.source.strip().lower() in ("osm", "openstreetmap"):
         return _generate_from_openstreetmap(req)
 
+    if req.demand_min > req.demand_max:
+        raise HTTPException(status_code=400, detail="demand_min cannot exceed demand_max")
+
     try:
         scenario = generate_synthetic_scenario(
             num_nodes=req.num_nodes,
             num_jobs=req.num_jobs,
             num_vehicles=req.num_vehicles,
-            seed=req.seed
+            seed=req.seed,
+            demand_min=req.demand_min,
+            demand_max=req.demand_max,
+            vehicle_capacity_override=req.vehicle_capacity_override
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

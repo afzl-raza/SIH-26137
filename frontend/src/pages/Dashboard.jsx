@@ -65,6 +65,16 @@ export default function Dashboard({ onExitToLanding }) {
   const [networkSource, setNetworkSource] = useState('synthetic');
   const [place, setPlace] = useState('');
   const [radiusM, setRadiusM] = useState(1200);
+  // Synthetic-only scenario shape - previously hardcoded to 30/15/3 with no
+  // way to change it from the UI even though the backend always supported
+  // arbitrary values here.
+  const [scenarioParams, setScenarioParams] = useState({
+    num_nodes: 30,
+    num_jobs: 15,
+    num_vehicles: 3,
+    demand_min: 5.0,
+    demand_max: 15.0
+  });
   // Provenance of the loaded network, straight from the generate response.
   const [networkMeta, setNetworkMeta] = useState(null);
   // Reproducibility manifest for the current run, read back from the server
@@ -156,9 +166,11 @@ export default function Dashboard({ onExitToLanding }) {
     try {
       const body = {
         source,
-        num_nodes: 30,
-        num_jobs: 15,
-        num_vehicles: 3,
+        num_nodes: scenarioParams.num_nodes,
+        num_jobs: scenarioParams.num_jobs,
+        num_vehicles: scenarioParams.num_vehicles,
+        demand_min: scenarioParams.demand_min,
+        demand_max: scenarioParams.demand_max,
         seed: config.seed
       };
       // For an OSM run the location is the input: the backend geocodes it
@@ -665,6 +677,8 @@ export default function Dashboard({ onExitToLanding }) {
             setRadiusM={setRadiusM}
             networkMeta={networkMeta}
             manifest={manifest}
+            scenarioParams={scenarioParams}
+            setScenarioParams={setScenarioParams}
           />
 
           <VehicleInspector
