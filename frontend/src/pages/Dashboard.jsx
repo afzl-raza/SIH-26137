@@ -773,7 +773,12 @@ function DashboardShell({ onExitToOverview }) {
   // ═══════════════════════════════════════════
   return (
     <div className="min-h-screen bg-[#0D0C0B] text-gray-100 flex flex-col font-sans selection:bg-[#C6602E] selection:text-white">
-      {loading && activeOperation && <OperationOverlay operation={activeOperation} />}
+      {/* Suppressed during the silent auto-bootstrap generate+optimize chain
+          (see "Auto-bootstrap on startup" below) - that run populates the
+          Executive Overview on first load and isn't a user-initiated
+          operation, so it must not show the same full-screen overlay a real
+          Optimize/Re-optimize/Benchmark click does. */}
+      {loading && activeOperation && autoBootstrapStage === 'done' && <OperationOverlay operation={activeOperation} />}
 
       {/* ═══ HEADER ═══ */}
       {/* z-[1200]: must sit above Leaflet's internal panes/controls (400-1000),

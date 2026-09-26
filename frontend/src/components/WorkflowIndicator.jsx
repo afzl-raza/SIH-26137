@@ -57,12 +57,12 @@ export default function WorkflowIndicator({ currentStage = 'INITIAL', narrativeT
                 className={`workflow-stage workflow-stage--${stepState} relative flex-1 sm:flex-none sm:w-[152px] flex flex-row sm:flex-col items-center gap-2 sm:gap-1.5 px-2.5 sm:px-2 py-1.5 sm:py-2 rounded-md`}
               >
                 <div
-                  className={`workflow-stage-icon workflow-stage-icon--${stepState} flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full shrink-0`}
+                  className={`workflow-stage-icon workflow-stage-icon--${stepState} flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full shrink-0`}
                 >
                   {isCompleted ? (
-                    <Check className="w-4 h-4" strokeWidth={2.5} />
+                    <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
                   ) : (
-                    <Icon className="w-4 h-4" strokeWidth={1.75} />
+                    <Icon className="w-3.5 h-3.5" strokeWidth={1.85} />
                   )}
                 </div>
 
@@ -81,7 +81,7 @@ export default function WorkflowIndicator({ currentStage = 'INITIAL', narrativeT
               {/* Connector arrow (desktop row layout only) */}
               {index < STAGES.length - 1 && (
                 <div
-                  className={`workflow-arrow workflow-arrow--${arrowState} hidden sm:flex items-center justify-center shrink-0 sm:mt-[24px]`}
+                  className={`workflow-arrow workflow-arrow--${arrowState} hidden sm:flex items-center justify-center shrink-0 sm:mt-[20px]`}
                 >
                   <svg width="18" height="8" viewBox="0 0 18 8" fill="none">
                     <path
@@ -98,13 +98,6 @@ export default function WorkflowIndicator({ currentStage = 'INITIAL', narrativeT
           );
         })}
       </div>
-
-      {/* Narrative Text */}
-      {narrativeText && (
-        <div className="mt-1.5 text-center text-xs text-gray-400 font-mono">
-          {narrativeText}
-        </div>
-      )}
     </div>
   );
 }
