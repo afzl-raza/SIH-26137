@@ -97,6 +97,12 @@ export default function VehicleInspector({ vehicle, route, scenario, onDeselect 
           <div>
             <div className="text-gray-500 text-[10px] uppercase">Travel Time</div>
             <div className="font-mono text-gray-200 tabular-nums">{Math.round(route.route_travel_time)} min</div>
+            {/* route.wait_time (schedule.simulate_route): total minutes waited
+                across all stops, already folded into route_travel_time above -
+                shown here so waiting is visible, not just baked into the total. */}
+            {route.wait_time > 0 && (
+              <div className="text-[9px] text-[#E8A93A] font-mono tabular-nums">incl. {route.wait_time.toFixed(0)}m wait</div>
+            )}
           </div>
         </div>
         <div className="clean-panel p-2 rounded-lg border border-[#332E29] flex items-center gap-2">

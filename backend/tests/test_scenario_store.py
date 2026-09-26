@@ -123,11 +123,15 @@ def test_updating_one_scenario_does_not_affect_another():
 # ======================================================= store: TTL and cap
 
 def test_expired_entries_are_dropped():
-    store = ScenarioStore(ttl_seconds=0.05)
+    """Uses a fake, manually-advanced clock rather than real sleep()+TTL: a
+    tight TTL compared against the real wall clock is flaky under full-suite
+    load, since a GC or scheduler pause alone can exceed a few dozen ms."""
+    fake_now = [1_000.0]
+    store = ScenarioStore(ttl_seconds=0.05, clock=lambda: fake_now[0])
     record = store.create(_scenario())
     assert store.get(record.scenario_id) is not None
 
-    time.sleep(0.1)
+    fake_now[0] += 0.1
     with pytest.raises(ScenarioNotFoundError):
         store.get(record.scenario_id)
 

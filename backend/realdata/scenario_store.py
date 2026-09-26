@@ -36,7 +36,7 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from models import ProblemScenario, clone_scenario
 
@@ -97,11 +97,17 @@ class ScenarioStore:
         self,
         ttl_seconds: float = DEFAULT_TTL_SECONDS,
         max_entries: int = DEFAULT_MAX_ENTRIES,
+        clock: Callable[[], float] = time.time,
     ):
         self._ttl = ttl_seconds
         self._max_entries = max_entries
         self._lock = threading.RLock()
         self._records: Dict[str, ScenarioRecord] = {}
+        # Injectable so tests can drive expiry with a fake clock instead of
+        # real sleep() calls, which are inherently flaky under full-suite
+        # load (GC/scheduler pauses can alone exceed a tight TTL). Defaults
+        # to the real wall clock, so production behaviour is unchanged.
+        self._clock = clock
 
     # ------------------------------------------------------------ internals
 
@@ -135,7 +141,7 @@ class ScenarioStore:
         location: Optional[dict] = None,
     ) -> ScenarioRecord:
         """Stores a deep copy of `scenario` under a fresh id."""
-        now = time.time()
+        now = self._clock()
         with self._lock:
             self._evict_locked(now)
             scenario_id = self._new_id(scenario)
@@ -162,7 +168,7 @@ class ScenarioStore:
 
         Raises ScenarioNotFoundError for unknown, expired or evicted ids.
         """
-        now = time.time()
+        now = self._clock()
         with self._lock:
             self._evict_locked(now)
             record = self._records.get(scenario_id)
@@ -173,7 +179,7 @@ class ScenarioStore:
     def update(self, scenario_id: str, scenario: ProblemScenario) -> ScenarioRecord:
         """Replaces the scenario behind an existing id with a deep copy of
         `scenario`, preserving the id, data_source and creation time."""
-        now = time.time()
+        now = self._clock()
         with self._lock:
             record = self._records.get(scenario_id)
             if record is None:
