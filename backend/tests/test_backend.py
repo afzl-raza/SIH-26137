@@ -120,9 +120,20 @@ def test_qpso_optimizer():
     config = OptimizationConfig(algorithm="qpso", population_size=10, max_iterations=15)
     opt = QPSOOptimizer()
     res = opt.optimize(s, config)
-    assert res.algorithm == "QPSO (Quantum-behaved PSO)"
+    # use_local_search defaults True, and the label says so - plain QPSO and
+    # QPSO+local-search share this one class, so the two must be
+    # distinguishable in a benchmark table.
+    assert res.algorithm == "QPSO (Quantum-behaved PSO) + Local Search"
     assert len(res.routes) > 0
     assert len(res.convergence_history) == 15
+
+
+def test_qpso_optimizer_ablation_label_when_local_search_disabled():
+    s = generate_synthetic_scenario(num_nodes=20, num_jobs=10, num_vehicles=3, seed=42)
+    config = OptimizationConfig(algorithm="qpso", population_size=10, max_iterations=15, use_local_search=False)
+    opt = QPSOOptimizer()
+    res = opt.optimize(s, config)
+    assert res.algorithm == "QPSO (Quantum-behaved PSO) (ablation, no local search)"
 
 
 def test_qpso_convergence_elapsed_ms_is_real_and_monotonic():

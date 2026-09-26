@@ -41,6 +41,7 @@ from route_geometry import route_geometries, scenario_geometry_source
 from optimizers.greedy import GreedyOptimizer
 from optimizers.pso import PSOOptimizer
 from optimizers.qpso import QPSOOptimizer
+from optimizers.exact import ExactOptimizer, ExactSolverTooLargeError
 from optimizers.benchmark import run_benchmark
 from fitness import evaluate_solution
 from experiments.runner import (
@@ -295,7 +296,9 @@ def optimize_route(payload: OptimizePayload):
     scenario, _ = _resolve_scenario(payload)
     try:
         algo = payload.config.algorithm.lower()
-        if "qpso" in algo:
+        if "exact" in algo:
+            optimizer = ExactOptimizer()
+        elif "qpso" in algo:
             optimizer = QPSOOptimizer()
         elif "pso" in algo:
             optimizer = PSOOptimizer()
@@ -309,6 +312,8 @@ def optimize_route(payload: OptimizePayload):
 
         result = optimizer.optimize(scenario, payload.config)
         return result
+    except ExactSolverTooLargeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Optimization error: {str(e)}")
 

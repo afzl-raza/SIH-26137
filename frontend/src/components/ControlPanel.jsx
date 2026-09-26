@@ -11,7 +11,8 @@ import {
   RotateCcw,
   CloudRain,
   MapPin,
-  FileText
+  FileText,
+  Info
 } from 'lucide-react';
 import RecoveryTimeline from './RecoveryTimeline';
 import { apiFetch } from '../api';
@@ -517,8 +518,28 @@ export default function ControlPanel({
                 <option value="pso">PSO</option>
                 <option value="ga">GA</option>
                 <option value="greedy">Greedy</option>
+                <option value="exact">Exact (&le;10 jobs)</option>
               </select>
             </div>
+
+            {config.algorithm === 'qpso' && (
+              <label htmlFor="use-local-search" className="flex items-center gap-2 text-[11px] text-gray-300 cursor-pointer">
+                <input
+                  id="use-local-search"
+                  type="checkbox"
+                  checked={config.use_local_search !== false}
+                  onChange={(e) => handleConfigChange('use_local_search', e.target.checked)}
+                  className="accent-[#C6602E]"
+                />
+                2-opt/or-opt local search
+                <span
+                  title="Refines QPSO's best-found routes every few iterations by untangling crossings (2-opt) and relocating stops between vehicles (or-opt). On by default - without it, QPSO measurably loses to Greedy at 30+ jobs. Turn off to see the un-hybridized ablation baseline."
+                  className="text-gray-500 hover:text-gray-300 cursor-help"
+                >
+                  <Info size={11} />
+                </span>
+              </label>
+            )}
 
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">

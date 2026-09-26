@@ -54,6 +54,7 @@ def test_full_demo_workflow():
     assert result_after.total_cost > 0
 
     benchmark_result = run_benchmark(scenario, config)
-    assert set(benchmark_result.results.keys()) == {"greedy", "pso", "ga", "qpso"}
+    # 10 jobs is within the exact solver's cap, so it's expected here too.
+    assert set(benchmark_result.results.keys()) == {"greedy", "pso", "ga", "qpso", "qpso_ls", "exact"}
     for result in benchmark_result.results.values():
         assert result.total_cost > 0

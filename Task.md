@@ -12,6 +12,37 @@ verified against the actual code and a full test run (`pytest backend/tests
 
 ---
 
+## Algorithm Correctness + Interactivity + Evidence Layer ⚠️ In progress (2026-09-26)
+
+Full plan: `adaptive-squishing-hinton` plan file. Fixes a real, measured
+regression (plain QPSO losing to Greedy at 30+ jobs, frequently infeasible)
+plus nine user-selected interactivity/evidence items.
+
+- [x] Exact solver (`optimizers/exact.py`, bitmask Held-Karp + assignment DP,
+      capped ≤10 jobs), wired into `/api/optimize` and `run_benchmark`
+- [x] 2-opt/or-opt local search hybrid on QPSO (`optimizers/local_search.py`),
+      Lamarckian reinjection, jump-term cap on the quantum update — closes the
+      gap against Greedy at scale (measured, see `experiments/E3_scalability/`)
+- [x] E1–E6 evidence regenerated against the corrected default
+      (`qpso_ls`); a real bug this caught: the first regeneration showed
+      `qpso`/`qpso_ls` byte-identical at 100+ jobs because the local-search
+      interval could exceed the iteration budget — fixed and re-verified
+      (`qpso.py`'s `effective_interval` now capped at `max_iter // 2`)
+- [x] `Engineering.md`/`Task.md` stale references corrected (test count
+      36→360, files 9→25, "four algorithms"→six, OSM marked done, exact
+      solver marked done)
+- [ ] Configurable scenario params in UI (demand range, capacity override)
+- [ ] Manual depot/stop placement
+- [ ] Road-closure toggle with reopen
+- [ ] Synthetic city archetype presets + feasibility matrix
+- [ ] Before/after map slider
+- [ ] Run-reproducibility footer
+
+Backend: **360/360 passing**, verified after every backend-touching change,
+not assumed.
+
+---
+
 ## Visual Identity & UI Polish Pass ✅ Done (2026-09-18)
 
 Plan: `Q-DFRO — Visual Identity & UI Polish Plan`. Pure presentation-layer
@@ -275,9 +306,11 @@ failing to reach full feasibility at 200 nodes under E3's *reduced* solver
 budget — reported as a genuine finding in `docs/experiment_protocol.md`, not
 smoothed over.
 
-## Phase 9 — Scalability / Realistic Network ❌ Not started (deferred)
+## Phase 9 — Scalability / Realistic Network ⚠️ Partially done
 
-- [ ] OSM/OSMnx, SUMO — unchanged, deliberately deferred (`Engineering.md` §13)
+- [x] OSM/OSMnx real road-network loading (`backend/realdata/osm_loader.py`,
+      `osm_scenario.py`) — implemented since this section was last written
+- [ ] SUMO traffic simulation — still deliberately deferred (`Engineering.md` §13)
 
 ## Phase 10 — Software Platform ✅ Done for this round's scope
 
@@ -335,7 +368,8 @@ smoothed over.
 
 - [x] Scenario, traffic, vehicles, jobs, depot, constraints implemented
 - [x] Traffic can dynamically change edge costs and trigger visible re-optimization
-- [x] Greedy, GA, PSO, QPSO all run through the same evaluator
+- [x] Greedy, GA, PSO, QPSO (+ local search), and the exact solver all run
+      through the same evaluator
 - [x] QPSO records convergence history
 - [x] API and UI show only backend-computed values
 - [x] Benchmark/scalability/reproducibility results are measured **and saved**
@@ -349,10 +383,12 @@ smoothed over.
 ## What's next (beyond this round)
 
 1. Named traffic-level enum (Phase 1) — small, low priority
-2. Exact solver for E1's optimality gap (Phase 5) — optional per master plan
+2. ~~Exact solver for E1's optimality gap (Phase 5)~~ — done: `optimizers/exact.py`,
+   auto-included in benchmarks at ≤10 jobs, "Gap vs Optimum" shown in
+   `BenchmarkPanel.jsx`
 3. Server-side `ReoptimizationResult` if/when a dedicated reoptimize endpoint
    is built (Phase 7)
 4. Multi-scenario repetition of E1 (Phase 8) before making any "X beats Y"
    claim in the paper/PPT — a single scenario is not enough to generalize
-5. Persistence/Docker/OSM/SUMO — only if a human explicitly decides to move
-   into that phase (`Engineering.md` §13)
+5. Persistence/Docker/SUMO — only if a human explicitly decides to move
+   into that phase (`Engineering.md` §13); OSM is done, see Phase 9 above

@@ -271,7 +271,8 @@ def test_benchmark_and_evaluate_accept_scenario_id():
 
     bench = client.post("/api/benchmark", json={"scenario_id": scenario_id, "config": config})
     assert bench.status_code == 200
-    assert set(bench.json()["results"].keys()) == {"greedy", "pso", "ga", "qpso"}
+    # 6 jobs is within the exact solver's cap, so it's expected here too.
+    assert set(bench.json()["results"].keys()) == {"greedy", "pso", "ga", "qpso", "qpso_ls", "exact"}
 
     routes = bench.json()["results"]["qpso"]["routes"]
     ev = client.post("/api/evaluate", json={

@@ -452,14 +452,16 @@ def test_benchmark_runs_all_four_on_the_same_conditioned_scenario(offline_weathe
     assert response.status_code == 200
     results = response.json()["results"]
 
-    assert set(results) == {"greedy", "pso", "ga", "qpso"}
+    # 10 jobs is within the exact solver's cap, so it's expected here too.
+    assert set(results) == {"greedy", "pso", "ga", "qpso", "qpso_ls", "exact"}
     for result in results.values():
         assert result["routes"]
 
 
 def test_a_benchmark_under_conditions_builds_the_matrix_once():
-    """The four-algorithm benchmark must still be one build plus three hits,
-    now that conditions are in the cache key."""
+    """The six-algorithm benchmark (greedy/pso/ga/qpso/qpso_ls/exact, all
+    <=10 jobs) must still be one build plus five hits, now that conditions
+    are in the cache key."""
     scenario = apply_conditions(
         generate_synthetic_scenario(num_nodes=18, num_jobs=7, num_vehicles=2, seed=9),
         ConditionRequest(traffic_mode=MODE_HEAVY),
@@ -472,7 +474,7 @@ def test_a_benchmark_under_conditions_builds_the_matrix_once():
 
     stats = ROUTE_MATRIX_CACHE.stats()
     assert stats["builds"] == 1
-    assert stats["hits"] == 3
+    assert stats["hits"] == 5
 
 
 # ========================================================== 10. reproducibility

@@ -199,11 +199,18 @@ class ObjectiveWeights(BaseModel):
 
 
 class OptimizationConfig(BaseModel):
-    algorithm: str = "qpso"  # greedy, pso, qpso
+    algorithm: str = "qpso"  # greedy, pso, ga, qpso, exact
     population_size: int = 40
     max_iterations: int = 100
     seed: int = 42
     weights: ObjectiveWeights = Field(default_factory=ObjectiveWeights)
+    # QPSO's 2-opt/or-opt local-search hybrid (optimizers/local_search.py).
+    # Defaults on: plain QPSO alone loses to Greedy at 30+ jobs and often
+    # goes infeasible (measured, not assumed) - this is the fix, not an
+    # optional extra. Set False to run the old, un-hybridized QPSO as an
+    # explicit ablation/comparison baseline.
+    use_local_search: bool = True
+    local_search_interval: int = 10  # run it every N iterations on gbest
 
 
 class VehicleRoute(BaseModel):

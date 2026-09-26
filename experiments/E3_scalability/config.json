@@ -18,7 +18,9 @@
       "beta": 0.5,
       "gamma": 1.0,
       "penalty_weight": 1000.0
-    }
+    },
+    "use_local_search": true,
+    "local_search_interval": 10
   },
   "note": "Uses a reduced solver budget relative to E1 so the sweep completes in reasonable time; do not compare these costs directly against E1's. Vehicle count scales with job count (jobs_per_vehicle) so the fleet stays large enough to remain feasible as the problem grows - this experiment measures optimizer scalability, not fleet sizing."
 }
