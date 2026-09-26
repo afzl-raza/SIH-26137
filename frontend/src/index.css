@@ -237,6 +237,15 @@
   color: #fff !important;
 }
 
+/* Phones: the vehicle "routes" bar occupies the map's top-left corner, so
+   Leaflet's zoom buttons (also top-left) move down below it instead of
+   being covered. Desktop keeps Leaflet's default position. */
+@media (max-width: 639px) {
+  .has-map-toolbar .leaflet-top.leaflet-left {
+    top: 3rem;
+  }
+}
+
 /* ═══════════════════════════════════════════
    Scrollbar
    ═══════════════════════════════════════════ */
