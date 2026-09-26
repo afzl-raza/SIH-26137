@@ -188,3 +188,81 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #4a423a;
 }
+
+/* ═══════════════════════════════════════════
+   Landing Page — Hero Fleet Visualization
+   ═══════════════════════════════════════════ */
+
+@keyframes landing-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.landing-float {
+  animation: landing-float 5s ease-in-out infinite;
+}
+
+@keyframes landing-float-chip {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.landing-float-chip {
+  animation: landing-float-chip 4.2s ease-in-out infinite;
+}
+
+@keyframes landing-route-flow {
+  to { stroke-dashoffset: -32; }
+}
+
+.landing-route-flow {
+  stroke-dasharray: 7 5;
+  animation: landing-route-flow 1.4s linear infinite;
+}
+
+@keyframes landing-node-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.landing-node-pulse {
+  animation: landing-node-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes landing-glow-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+}
+
+.landing-glow-pulse {
+  animation: landing-glow-pulse 4.5s ease-in-out infinite;
+}
+
+@keyframes landing-fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.landing-fade-up {
+  animation: landing-fade-up 0.7s ease-out both;
+}
+
+/* Dot-grid backdrop for the hero visual, reusing the graph-view tint used
+   elsewhere in the app so the landing page and dashboard read as one
+   product rather than two different visual systems. */
+.landing-grid-bg {
+  background-color: #0D0C0B;
+  background-image: radial-gradient(rgba(198, 96, 46, 0.16) 1px, transparent 0);
+  background-size: 22px 22px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-float,
+  .landing-float-chip,
+  .landing-route-flow,
+  .landing-node-pulse,
+  .landing-glow-pulse,
+  .landing-fade-up {
+    animation: none;
+  }
+}
