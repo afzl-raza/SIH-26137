@@ -21,7 +21,11 @@ export default function VehicleInspector({ vehicle, route, scenario, onDeselect 
   
   const isOverCapacity = route.capacity_exceeded > 0;
   const isOverTime = route.time_exceeded > 0;
-  const hasLimitsExceeded = isOverCapacity || isOverTime;
+  // Per-stop timing (schedule.simulate_route, via VehicleRoute.stops) and each
+  // job's own delivery window - both backend-computed, nothing derived here.
+  const jobById = new Map((scenario?.jobs || []).map(j => [j.id, j]));
+  const totalLate = route.late_jobs || 0;
+  const hasLimitsExceeded = isOverCapacity || isOverTime || totalLate > 0;
 
   // borderColor set inline - .clean-card's own `border` shorthand rule is
   // equal-specificity and later in source order, so a Tailwind border-[...]
@@ -88,6 +92,12 @@ export default function VehicleInspector({ vehicle, route, scenario, onDeselect 
           <div>
             <div className="text-gray-500 text-[10px] uppercase">Travel Time</div>
             <div className="font-mono text-gray-200 tabular-nums">{Math.round(route.route_travel_time)} min</div>
+            {/* route.wait_time (schedule.simulate_route): total minutes waited
+                across all stops, already folded into route_travel_time above -
+                shown here so waiting is visible, not just baked into the total. */}
+            {route.wait_time > 0 && (
+              <div className="text-[9px] text-[#E8A93A] font-mono tabular-nums">incl. {route.wait_time.toFixed(0)}m wait</div>
+            )}
           </div>
         </div>
         <div className="clean-panel p-2 rounded-lg border border-[#332E29] flex items-center gap-2">
@@ -116,7 +126,9 @@ export default function VehicleInspector({ vehicle, route, scenario, onDeselect 
           <CheckCircle2 size={14} className="text-[#6B9A57]" />
         )}
         <div className={`font-mono text-[11px] ${hasLimitsExceeded ? 'text-[#C1443B]' : 'text-[#6B9A57]'}`}>
-          {hasLimitsExceeded ? 'LIMIT EXCEEDED' : 'FEASIBLE'}
+          {totalLate > 0
+            ? `${totalLate} JOB${totalLate === 1 ? '' : 'S'} LATE`
+            : hasLimitsExceeded ? 'LIMIT EXCEEDED' : 'FEASIBLE'}
         </div>
       </div>
 
@@ -151,24 +163,68 @@ export default function VehicleInspector({ vehicle, route, scenario, onDeselect 
           <div className="text-xs font-mono text-[#C1443B] font-bold">DEPOT (START)</div>
         </div>
 
-        {/* Jobs - numbered by their real visit order (job_ids order
-            IS the sequence the decoder/optimizer produced) */}
-        {route.job_ids?.map((jobId, idx) => (
-          <div key={`${jobId}-${idx}`} className="relative flex items-center gap-2">
-            <div className="relative z-10 w-5 h-5 flex items-center justify-center shrink-0">
-              <div className="w-2.5 h-2.5 rounded-full border-2 border-[#5D7A9E] bg-[#1E1B18]" />
-            </div>
-            <div className="flex-1 flex items-center justify-between clean-panel px-2 py-1.5 rounded border border-[#332E29]/60">
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] text-gray-500 font-mono tabular-nums w-4">{idx + 1}.</span>
-                <span className="text-xs font-mono text-[#9AB3CC]">
-                  JOB {jobId.toString().padStart(2, '0')}
-                </span>
+        {/* Jobs - numbered by their real visit order (job_ids order IS the
+            sequence the decoder/optimizer produced). Each row is a per-stop
+            timing readout from VehicleRoute.stops (schedule.simulate_route):
+            arrival, this job's own delivery window (if any), how long the
+            vehicle waited, and how late it was - late rows in red, a wait in
+            amber, exactly as reported by the backend. */}
+        {route.job_ids?.map((jobId, idx) => {
+          const stop = route.stops?.find(s => s.job_id === jobId);
+          const job = jobById.get(jobId);
+          const hasWindow = job?.ready_time != null && job?.due_time != null;
+          const isLate = (stop?.lateness || 0) > 0;
+          const hasWait = (stop?.wait || 0) > 0;
+
+          return (
+            <div key={`${jobId}-${idx}`} className="relative flex items-center gap-2">
+              <div className="relative z-10 w-5 h-5 flex items-center justify-center shrink-0">
+                <div className={`w-2.5 h-2.5 rounded-full border-2 bg-[#1E1B18] ${isLate ? 'border-[#C1443B]' : 'border-[#5D7A9E]'}`} />
               </div>
-              <CheckCircle2 size={14} className="text-[#6B9A57]/70" />
+              <div className={`flex-1 clean-panel px-2 py-1.5 rounded border ${isLate ? 'border-[#5A2C26] bg-[#3A1C18]/30' : 'border-[#332E29]/60'}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] text-gray-500 font-mono tabular-nums w-4">{idx + 1}.</span>
+                    <span className="text-xs font-mono text-[#9AB3CC]">
+                      JOB {jobId.toString().padStart(2, '0')}
+                    </span>
+                  </div>
+                  {isLate ? (
+                    <AlertTriangle size={14} className="text-[#C1443B]" />
+                  ) : (
+                    <CheckCircle2 size={14} className="text-[#6B9A57]/70" />
+                  )}
+                </div>
+                {stop && (
+                  <div className="mt-1 grid grid-cols-4 gap-x-1 text-[9px] font-mono">
+                    <div>
+                      <div className="uppercase text-gray-600">Arrival</div>
+                      <div className="text-gray-300 tabular-nums">{stop.arrival.toFixed(0)}m</div>
+                    </div>
+                    <div>
+                      <div className="uppercase text-gray-600">Window</div>
+                      <div className="text-gray-300 tabular-nums">
+                        {hasWindow ? `${job.ready_time.toFixed(0)}-${job.due_time.toFixed(0)}` : 'none'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="uppercase text-gray-600">Wait</div>
+                      <div className={`tabular-nums ${hasWait ? 'text-[#E8A93A] font-semibold' : 'text-gray-300'}`}>
+                        {hasWait ? `${stop.wait.toFixed(0)}m` : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="uppercase text-gray-600">Late</div>
+                      <div className={`tabular-nums ${isLate ? 'text-[#C1443B] font-semibold' : 'text-gray-300'}`}>
+                        {isLate ? `+${stop.lateness.toFixed(0)}m` : '—'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {/* End Depot */}
         <div className="relative flex items-center gap-2">

@@ -453,16 +453,16 @@ def test_benchmark_runs_all_four_on_the_same_conditioned_scenario(offline_weathe
     results = response.json()["results"]
 
     # 10 jobs is within the exact solver's cap, so it's expected here too.
-    assert set(results) == {"greedy", "pso", "ga", "qpso", "qpso_ls", "exact"}
+    assert set(results) == {"greedy", "pso", "ga", "qpso", "qpso_ls", "qpso_memetic", "exact"}
     for result in results.values():
         assert result["routes"]
 
 
 def test_a_benchmark_under_conditions_builds_the_matrix_once():
-    """The six-algorithm benchmark (greedy/pso/ga/qpso/qpso_ls/exact, all
-    <=10 jobs) must still build the route matrix exactly once, now that
-    conditions are in the cache key. Everything but Greedy runs in worker
-    processes, so the guarantee is: one build in the parent (reused by
+    """The seven-algorithm benchmark (greedy/pso/ga/qpso/qpso_ls/qpso_memetic/
+    exact, all <=10 jobs) must still build the route matrix exactly once, now
+    that conditions are in the cache key. Everything but Greedy runs in
+    worker processes, so the guarantee is: one build in the parent (reused by
     Greedy), and zero builds in the workers - they're handed that matrix."""
     scenario = apply_conditions(
         generate_synthetic_scenario(num_nodes=18, num_jobs=7, num_vehicles=2, seed=9),

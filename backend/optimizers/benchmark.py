@@ -13,6 +13,7 @@ from optimizers.greedy import GreedyOptimizer
 from optimizers.pso import PSOOptimizer
 from optimizers.ga import GAOptimizer
 from optimizers.qpso import QPSOOptimizer
+from optimizers.qpso_memetic import MemeticQPSOOptimizer
 from optimizers.exact import ExactOptimizer, MAX_EXACT_JOBS
 
 # Optimizer classes the worker processes can run, keyed by a picklable name.
@@ -20,11 +21,12 @@ _OPTIMIZER_CLASSES = {
     "pso": PSOOptimizer,
     "ga": GAOptimizer,
     "qpso": QPSOOptimizer,
+    "qpso_memetic": MemeticQPSOOptimizer,
     "exact": ExactOptimizer,
 }
 
 # Order entries appear in the response.
-_RESULT_ORDER = ("greedy", "pso", "ga", "qpso", "qpso_ls", "exact")
+_RESULT_ORDER = ("greedy", "pso", "ga", "qpso", "qpso_ls", "qpso_memetic", "exact")
 
 # The population-based optimizers (and the exact solver) are CPU-bound pure
 # Python/NumPy, so threads would serialise on the GIL. They run in separate
@@ -121,8 +123,9 @@ def run_benchmark(
     parameters, collecting actual experimental results: Greedy, Classical
     PSO, GA, and QPSO twice (once with its 2-opt/or-opt local search hybrid
     off - the "qpso" ablation baseline - and once with it on, "qpso_ls",
-    the default algorithm). The exact solver is added only when the scenario
-    is small enough for it to run (<=MAX_EXACT_JOBS jobs) - its absence from
+    the default algorithm), plus the QPSO + local-search memetic variant
+    ("qpso_memetic"). The exact solver is added only when the scenario is
+    small enough for it to run (<=MAX_EXACT_JOBS jobs) - its absence from
     `results` for a larger scenario is itself the signal that it wasn't run.
 
     Everything except Greedy runs concurrently in worker processes. Every
@@ -161,6 +164,10 @@ def run_benchmark(
         ("qpso", "qpso", config.model_copy(update={"use_local_search": False})),
         # QPSO + 2-opt/or-opt local search - the default algorithm.
         ("qpso_ls", "qpso", config.model_copy(update={"use_local_search": True})),
+        # QPSO + local search (memetic): greedy warm start + bounded quantum
+        # jump + first-improvement local search, decoded/scored through the
+        # same decoder and fitness function as every other entry.
+        ("qpso_memetic", "qpso_memetic", config),
     ]
     if len(scenario.jobs) <= MAX_EXACT_JOBS:
         tasks.append(("exact", "exact", config))

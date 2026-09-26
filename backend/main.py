@@ -92,6 +92,11 @@ class GenerateRequest(BaseModel):
     seed: int = 42
     num_nodes: int = 30  # synthetic only - OSM node count comes from the map
 
+    # CVRPTW, opt-in. See problem_generator.generate_time_windows for the
+    # exact rule; off by default so every existing caller is unaffected.
+    time_windows: bool = False
+    tw_width_min: float = 60.0
+
     # Synthetic only - bounds on each job's randomly drawn demand, and an
     # optional flat vehicle capacity that skips the demand-derived formula.
     demand_min: float = 5.0
@@ -210,6 +215,8 @@ def generate_problem(req: GenerateRequest):
             num_jobs=req.num_jobs,
             num_vehicles=req.num_vehicles,
             seed=req.seed,
+            time_windows=req.time_windows,
+            tw_width_min=req.tw_width_min,
             demand_min=req.demand_min,
             demand_max=req.demand_max,
             vehicle_capacity_override=req.vehicle_capacity_override
@@ -337,6 +344,8 @@ def _generate_from_openstreetmap(req: GenerateRequest):
             num_jobs=req.num_jobs,
             num_vehicles=req.num_vehicles,
             seed=req.seed,
+            time_windows=req.time_windows,
+            tw_width_min=req.tw_width_min,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

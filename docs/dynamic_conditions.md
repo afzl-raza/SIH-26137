@@ -247,6 +247,38 @@ condition, so there is no second edge-cost calculation anywhere in the backend.
 
 ---
 
+## 5b. Time windows and the (missing) simulation clock
+
+CVRPTW delivery windows (`Job.ready_time`/`due_time`, see
+`docs/mathematical_model.md`) are **absolute** minutes from shift start
+(`t=0` at depot departure), not minutes from "now". They live on `Job`, and
+`realdata.conditions` only ever mutates `Edge` fields — it never touches a
+`Job` — so an incident, a traffic-level change or a weather change leaves
+every window exactly as generated. No extra code was needed to make windows
+"survive" a condition change; they were simply never in the set of fields
+conditions can write.
+
+This backend has **no simulation clock**. It is stateless: every
+`POST /api/optimize` call re-decodes routes from `t=0`, regardless of how
+many incidents happened before it or how much real wall-clock time has
+passed between calls. So "re-optimizing after an incident, at a later time"
+does not mean anything different here than "re-optimizing after an
+incident" — there is no notion of the fleet being partway through its shift
+when re-optimization runs. If a later phase adds a real simulation clock
+(e.g. to model a fleet already partway through its day when disrupted),
+windows should then become relative to that clock rather than to `t=0`, and
+this section must be updated to match — do not claim that behavior until it
+exists.
+
+What an incident *does* change: `current_travel_time` on the disrupted
+edge(s), which changes the route matrix, which can increase (or leave
+unchanged, never decrease) how late a job ends up when the route is
+recomputed — see
+`test_incident_increases_lateness_while_windows_stay_unchanged` in
+`backend/tests/test_time_windows.py`.
+
+---
+
 ## 6. Cache invalidation
 
 The route-matrix cache is content-addressed. Its key covers, per directed edge:
@@ -269,7 +301,11 @@ plus the node set and the routing terminal set.
 - **The individual multipliers are keyed too**, so the guarantee survives even
   the pathological case where a different combination composes to the same
   effective travel time (`test_the_cache_key_separates_conditions_that_multiply_to_the_same_total`).
-- **A benchmark is still one build plus three hits**, now under conditions.
+- **A benchmark is still one build plus N-1 hits** (one route-matrix fetch
+  per algorithm), now under conditions — four hits for the current
+  five-algorithm benchmark (Greedy, PSO, GA, QPSO, Memetic QPSO); Memetic
+  QPSO's greedy warm start reuses the matrix it already fetched rather than
+  fetching it again.
 
 No explicit invalidation call exists or is needed — a changed scenario simply
 produces a different key.
