@@ -3,6 +3,9 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker } from '
 import L from 'leaflet';
 import { apiFetch } from '../api';
 import { CONGESTION_ORDER, CONGESTION_STYLES, INCIDENT_STYLE, congestionStyle, congestionLabel } from '../lib/traffic';
+import VehicleLoader from './ui/VehicleLoader';
+import SegmentedControl from './ui/SegmentedControl';
+import Button from './ui/Button';
 
 // Asks the backend for the road shape of an already-computed set of routes.
 //
@@ -146,7 +149,11 @@ export default function NetworkMap({
   placementMode = false,
   draftDepotId = null,
   draftStopIds = [],
-  onPlaceNode
+  onPlaceNode,
+  // Stripped-down read-only mode for side-by-side comparisons: no GIS/Graph
+  // toggle, no vehicle filter bar, no legend, and no scroll-wheel zoom (two
+  // maps next to each other would otherwise hijack page scrolling).
+  compact = false
 }) {
   const [vehicleFilter, setVehicleFilter] = useState('all');
   const [mapView, setMapView] = useState('gis'); // 'gis' | 'graph' - same real nodes/edges, just a render toggle
@@ -378,10 +385,7 @@ export default function NetworkMap({
     return (
       <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-[#171513] text-gray-400 font-mono text-xs rounded-xl border border-[#332E29]">
         {loading ? (
-          <>
-            <div className="w-4 h-4 border-2 border-[#C6602E] border-t-transparent rounded-full animate-spin"></div>
-            <span>Loading network...</span>
-          </>
+          <VehicleLoader label="Loading Network" sublabel="Building the road network for this scenario..." />
         ) : (
           <span>Generate a scenario to begin fleet route optimization.</span>
         )}
@@ -390,7 +394,10 @@ export default function NetworkMap({
   }
 
   return (
-    <div className="w-full h-full relative rounded-xl overflow-hidden border border-[#332E29] shadow-2xl flex flex-col">
+    // `isolate` gives the map its own stacking context, so Leaflet's
+    // internal z-indexes (panes 400+, controls 1000) can't escape it and
+    // paint over the sticky header or other page chrome while scrolling.
+    <div className="w-full h-full relative rounded-xl overflow-hidden border border-[#332E29] shadow-2xl flex flex-col isolate">
       {routeGlowCss && <style>{routeGlowCss}</style>}
       {previewResult && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1001] bg-[#3A2318] border border-[#5A3A22] text-[#E8A578] px-3 py-1 rounded-full text-[11px] font-mono font-semibold shadow-xl">
@@ -399,24 +406,18 @@ export default function NetworkMap({
       )}
 
       {/* GIS <-> Graph View toggle - same real nodes/edges either way */}
-      <div className="absolute top-3 right-3 z-[1000] clean-panel px-2 py-1.5 rounded-lg text-xs flex items-center gap-1 border border-[#332E29] shadow-xl pointer-events-auto font-mono">
-        <button
-          onClick={() => setMapView('gis')}
-          className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-[#C6602E] ${
-            mapView === 'gis' ? 'bg-[#C6602E] text-white' : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
-          }`}
-        >
-          GIS View
-        </button>
-        <button
-          onClick={() => setMapView('graph')}
-          className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-[#C6602E] ${
-            mapView === 'graph' ? 'bg-[#C6602E] text-white' : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
-          }`}
-        >
-          Graph View
-        </button>
-      </div>
+      {!compact && (
+        <div className="absolute top-3 right-3 z-[1000] clean-panel p-1 rounded-lg border border-[#332E29] shadow-xl pointer-events-auto font-mono w-32">
+          <SegmentedControl
+            options={[
+              { id: 'gis', label: 'GIS View', title: 'Geographic road-network view.' },
+              { id: 'graph', label: 'Graph View', title: 'Network topology view.' }
+            ]}
+            value={mapView}
+            onChange={setMapView}
+          />
+        </div>
+      )}
 
       {/* Before/After comparison toggle - only meaningful once there is a
           previous route to compare the active one against. Same underlying
@@ -460,7 +461,7 @@ export default function NetworkMap({
       )}
 
       {/* Top Filter Bar for Vehicles */}
-      {vehicles.length > 0 && (
+      {!compact && vehicles.length > 0 && (
         <div className="absolute top-14 sm:top-3 left-3 z-[1000] clean-panel px-3 py-1.5 rounded-lg text-xs flex items-center space-x-2 border border-[#332E29] shadow-xl pointer-events-auto font-mono max-w-[calc(100%-1.5rem)] sm:max-w-md overflow-x-auto">
           <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider flex-shrink-0">ROUTES:</span>
           <button
@@ -505,7 +506,7 @@ export default function NetworkMap({
       <MapContainer
         center={center}
         zoom={12}
-        scrollWheelZoom={true}
+        scrollWheelZoom={!compact}
         className="w-full h-full"
       >
         {mapView === 'gis' && (
@@ -560,15 +561,21 @@ export default function NetworkMap({
                       {e.isIncident ? 'Road Closed' : 'Disrupt This Road'}
                     </p>
                     <div className="flex gap-1">
-                      {[{ label: 'Low', factor: 1.5 }, { label: 'Medium', factor: 2.5 }, { label: 'Severe', factor: 4.0 }].map(sev => (
-                        <button
+                      {[
+                        { label: 'Low', factor: 1.5, variant: 'success' },
+                        { label: 'Medium', factor: 2.5, variant: 'warning' },
+                        { label: 'Severe', factor: 4.0, variant: 'destructive' }
+                      ].map(sev => (
+                        <Button
                           key={sev.label}
+                          variant={sev.variant}
+                          size="sm"
+                          fullWidth={false}
                           disabled={disruptDisabled}
                           onClick={() => onDisruptEdge(e.source, e.destination, sev.factor)}
-                          className="px-1.5 py-0.5 rounded bg-[#3A1C18]/80 hover:bg-[#3A1C18] text-[#E8918A] text-[10px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           {sev.label}
-                        </button>
+                        </Button>
                       ))}
                       {e.isIncident && (
                         <button
@@ -813,6 +820,7 @@ export default function NetworkMap({
         </div>
       )}
 
+      {!compact && (<>
       {/* Mobile Floating Legend Toggle Button */}
       <button
         onClick={() => setIsLegendOpen(!isLegendOpen)}
@@ -897,6 +905,7 @@ export default function NetworkMap({
           </div>
         )}
       </div>
+      </>)}
     </div>
   );
 }

@@ -10,9 +10,15 @@ import QPSOExplainability from '../components/QPSOExplainability';
 import ArchitectureSnapshot from '../components/ArchitectureSnapshot';
 import ScalabilityPanel from '../components/ScalabilityPanel';
 import ReproducibilityPanel from '../components/ReproducibilityPanel';
+import ExecutiveOverview from '../components/ExecutiveOverview';
 import Logo from '../components/Logo';
+import Badge from '../components/ui/Badge';
+import SegmentedControl from '../components/ui/SegmentedControl';
+import IconButton from '../components/ui/IconButton';
+import { ToastProvider, useToast } from '../components/ui/Toast';
+import OperationOverlay from '../components/ui/OperationOverlay';
 import { apiFetch } from '../api';
-import { Activity, ArrowLeft } from 'lucide-react';
+import { Activity, ArrowLeft, LayoutDashboard, SlidersHorizontal, X } from 'lucide-react';
 
 // Pulls the condition-provenance envelope out of any scenario-carrying
 // response. Pure field selection - no value is derived or invented here; the
@@ -30,6 +36,39 @@ function extractConditionMeta(data) {
 }
 
 export default function Dashboard({ onExitToLanding }) {
+  return (
+    <ToastProvider>
+      <DashboardShell onExitToLanding={onExitToLanding} />
+    </ToastProvider>
+  );
+}
+
+// Both Optimize and Run Benchmark are only reachable from inside the
+// Engineering Control Room (its ControlPanel), so by the time a real user
+// click fires this toast, #results-section already exists on the page -
+// it's just below the fold. A no-op if it somehow doesn't (e.g. the one
+// automatic bootstrap optimize, which can complete while Executive
+// Overview is showing instead).
+function scrollToId(id) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function scrollToResults() {
+  scrollToId('results-section');
+}
+
+function scrollToBenchmark() {
+  scrollToId('benchmark-section');
+}
+
+function DashboardShell({ onExitToLanding }) {
+  const toast = useToast();
+  // 'overview' (Executive Overview) or 'engineering' (Engineering Control
+  // Room, i.e. the original dense workspace). Nothing about the underlying
+  // demo state machine changes between the two - this is purely which
+  // layout renders it.
+  const [view, setView] = useState('overview');
+
   // ─── Core State ──────────────────────────────────
   const [scenario, setScenario] = useState(null);
   // The backend owns the scenario after generation; requests refer to it
@@ -38,6 +77,11 @@ export default function Dashboard({ onExitToLanding }) {
   const [currentResult, setCurrentResult] = useState(null);
   const [previousResult, setPreviousResult] = useState(null);
   const [benchmarkData, setBenchmarkData] = useState(null);
+  // True once road conditions change after the last benchmark ran - that
+  // benchmark's results were computed against edge costs that no longer
+  // apply, so the Executive Overview must not present them as a current
+  // before/after comparison. Engineering Control Room still shows them.
+  const [benchmarkStale, setBenchmarkStale] = useState(false);
   const [previewedAlgorithm, setPreviewedAlgorithm] = useState(null);
   const [selectedIncidentEdge, setSelectedIncidentEdge] = useState(null);
   const [incidentInfo, setIncidentInfo] = useState(null);
@@ -94,6 +138,10 @@ export default function Dashboard({ onExitToLanding }) {
   const [resultCompletedAt, setResultCompletedAt] = useState(null);
 
   const [loading, setLoading] = useState(false);
+  // Which real request is in flight - drives the friendly OperationOverlay's
+  // copy. Never used to fabricate progress, only to pick the right sentence
+  // for a genuinely-running request.
+  const [activeOperation, setActiveOperation] = useState(null);
   const [error, setError] = useState(null);
   const [statusState, setStatusState] = useState('INITIAL');
   const [networkState, setNetworkState] = useState('NORMAL');
@@ -163,10 +211,42 @@ export default function Dashboard({ onExitToLanding }) {
     }
   }, [networkState, statusState]);
 
-  // ─── Auto-generate on startup ────────────────────
+  // ─── Auto-bootstrap on startup ───────────────────
+  // Loads a real scenario, then runs exactly one real Optimize against it
+  // using a fast solver preset - separate from `config` (which stays at
+  // the slower, "watch it work" defaults Advanced Solver Settings shows
+  // and manual runs use) - so the Executive Overview isn't empty on first
+  // load, without a multi-second wait and without the multi-stage
+  // auto-chain (incident/re-optimize/benchmark) that made everything feel
+  // like it was "just happening." Those three stay entirely manual.
+  const FAST_BOOTSTRAP_CONFIG = { ...config, population_size: 20, max_iterations: 30 };
+  const [autoBootstrapStage, setAutoBootstrapStage] = useState('start');
+
   useEffect(() => {
-    handleGenerateScenario();
+    handleGenerateScenario().then(() => setAutoBootstrapStage('generated'));
   }, []);
+
+  useEffect(() => {
+    if (autoBootstrapStage === 'generated' && scenarioId) {
+      handleOptimize(scenarioId, FAST_BOOTSTRAP_CONFIG).then(() => setAutoBootstrapStage('done'));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoBootstrapStage, scenarioId]);
+
+  // ─── Friendly failure feedback ───────────────────
+  // The persistent error banner keeps the real message for anyone
+  // debugging; this adds a plain-language toast alongside it rather than
+  // exposing that raw message (which can be a network/server string) as
+  // the primary feedback.
+  useEffect(() => {
+    if (error) {
+      toast('Something went wrong', {
+        tone: 'error',
+        detail: "We couldn't complete the route calculation. Please try again."
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error]);
 
   // ─── API: Generate Scenario ──────────────────────
   // Accepts an optional explicit source so a control can switch network kind
@@ -174,6 +254,7 @@ export default function Dashboard({ onExitToLanding }) {
   const handleGenerateScenario = async (sourceOverride) => {
     const source = (typeof sourceOverride === 'string') ? sourceOverride : networkSource;
     setLoading(true);
+    setActiveOperation('generate');
     setError(null);
     try {
       const body = {
@@ -217,6 +298,7 @@ export default function Dashboard({ onExitToLanding }) {
       setCurrentResult(null);
       setPreviousResult(null);
       setBenchmarkData(null);
+      setBenchmarkStale(false);
       setPreviewedAlgorithm(null);
       setSelectedIncidentEdge(null);
       setIncidentInfo(null);
@@ -243,12 +325,24 @@ export default function Dashboard({ onExitToLanding }) {
       });
       setManifest(null);
       setResultCompletedAt(null);
+
+      if (source === 'osm') {
+        toast('Road network loaded', {
+          detail: `${data.node_count ?? '—'} junctions · ${data.edge_count ?? '—'} streets (OpenStreetMap). Next: Optimize Fleet.`
+        });
+      } else {
+        toast('Scenario generated', {
+          detail: `${data.scenario?.vehicles?.length ?? 0} vehicles · ${data.scenario?.jobs?.length ?? 0} jobs · ${data.scenario?.edges?.length ?? 0} road segments. Next: Optimize Fleet.`
+        });
+      }
+
       return data;
     } catch (err) {
       setError(err.message);
       return null;
     } finally {
       setLoading(false);
+      setActiveOperation(null);
     }
   };
 
@@ -288,6 +382,7 @@ export default function Dashboard({ onExitToLanding }) {
   const handleConfirmPlacement = async () => {
     if (draftDepotId === null || draftStopIds.length === 0 || !scenarioId) return;
     setLoading(true);
+    setActiveOperation('generate');
     setError(null);
     try {
       const res = await apiFetch('/api/problem/customize', {
@@ -311,6 +406,7 @@ export default function Dashboard({ onExitToLanding }) {
       setCurrentResult(null);
       setPreviousResult(null);
       setBenchmarkData(null);
+      setBenchmarkStale(false);
       setPreviewedAlgorithm(null);
       setSelectedIncidentEdge(null);
       setIncidentInfo(null);
@@ -326,10 +422,14 @@ export default function Dashboard({ onExitToLanding }) {
       setPlacementMode(false);
       setDraftDepotId(null);
       setDraftStopIds([]);
+      toast('Custom depot and stops applied', {
+        detail: `${data.scenario?.jobs?.length ?? 0} stops placed. Next: Optimize Fleet.`
+      });
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+      setActiveOperation(null);
     }
   };
 
@@ -338,13 +438,14 @@ export default function Dashboard({ onExitToLanding }) {
   // passed so the backend echoes exactly the configuration this client used -
   // it does not retain them otherwise, and inventing them would defeat the
   // point of a manifest.
-  const refreshManifest = async (activeScenarioId) => {
+  const refreshManifest = async (activeScenarioId, configOverride) => {
     const id = activeScenarioId || scenarioId;
     if (!id) return;
+    const cfg = configOverride || config;
     const params = new URLSearchParams({
-      algorithm: config.algorithm,
-      population_size: String(config.population_size),
-      max_iterations: String(config.max_iterations)
+      algorithm: cfg.algorithm,
+      population_size: String(cfg.population_size),
+      max_iterations: String(cfg.max_iterations)
     });
     try {
       const res = await apiFetch(`/api/scenario/${id}/manifest?${params}`);
@@ -360,14 +461,19 @@ export default function Dashboard({ onExitToLanding }) {
   // state. Guarded with a shape check rather than relying on the argument
   // being undefined, since this function is also used directly as a button
   // onClick handler, which would otherwise pass the DOM click event here.
-  const handleOptimize = async (scenarioIdOverride) => {
+  // `configOverride` lets a caller run a one-off solver configuration (the
+  // auto-bootstrap's fast preset) without touching the `config` state that
+  // Advanced Solver Settings displays and that manual runs use.
+  const handleOptimize = async (scenarioIdOverride, configOverride) => {
     const activeScenarioId = (typeof scenarioIdOverride === 'string')
       ? scenarioIdOverride
       : scenarioId;
     if (!activeScenarioId) return;
+    const activeConfig = configOverride || config;
     setLoading(true);
     setError(null);
     const isReopt = networkState === 'DISRUPTED';
+    setActiveOperation(isReopt ? 'reoptimize' : 'optimize');
     setStatusState(isReopt ? 'RE-OPTIMIZING' : 'OPTIMIZING');
     const reoptimizeClickedAt = isReopt ? Date.now() : null;
 
@@ -375,7 +481,7 @@ export default function Dashboard({ onExitToLanding }) {
       const res = await apiFetch('/api/optimize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario_id: activeScenarioId, config })
+        body: JSON.stringify({ scenario_id: activeScenarioId, config: activeConfig })
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => null);
@@ -392,8 +498,9 @@ export default function Dashboard({ onExitToLanding }) {
       // The routes on screen now match the current edge costs again.
       setConditionsDirty(false);
       // The manifest describes the run that just happened, so refresh it here
-      // rather than on a timer.
-      refreshManifest(activeScenarioId);
+      // rather than on a timer - with the config this run actually used, not
+      // necessarily whatever `config` state currently holds.
+      refreshManifest(activeScenarioId, activeConfig);
       if (isReopt) {
         setNetworkState('RE-OPTIMIZED');
         // Recovery Timeline: the "Optimizing" duration is the backend's own
@@ -406,11 +513,17 @@ export default function Dashboard({ onExitToLanding }) {
           optimizingDurationMs: data.runtime_ms
         }));
       }
+
+      toast('Route plan ready', {
+        detail: `${data.routes?.length ?? 0} routes · ${data.total_travel_time?.toFixed(1) ?? '—'} min travel time. Your ${isReopt ? 'updated' : 'optimized'} routes are ready to review.`,
+        action: { label: 'View results', onClick: scrollToResults }
+      });
     } catch (err) {
       setError(err.message);
       setStatusState('ERROR');
     } finally {
       setLoading(false);
+      setActiveOperation(null);
     }
   };
 
@@ -426,6 +539,7 @@ export default function Dashboard({ onExitToLanding }) {
     const weather = nextWeather ?? weatherEnabled;
 
     setLoading(true);
+    setActiveOperation('incident');
     setError(null);
     try {
       const res = await apiFetch('/api/scenario/conditions', {
@@ -447,6 +561,7 @@ export default function Dashboard({ onExitToLanding }) {
       setTrafficMode(mode);
       setWeatherEnabled(weather);
       refreshManifest(scenarioId);
+      if (benchmarkData) setBenchmarkStale(true);
 
       // Routes already on screen were computed against the old edge costs.
       if (currentResult) {
@@ -457,6 +572,7 @@ export default function Dashboard({ onExitToLanding }) {
       setError(err.message);
     } finally {
       setLoading(false);
+      setActiveOperation(null);
     }
   };
 
@@ -467,6 +583,7 @@ export default function Dashboard({ onExitToLanding }) {
   const applyIncident = async (targetSource, targetDest, congestionFactor) => {
     if (!scenario) return;
     setLoading(true);
+    setActiveOperation('incident');
     setError(null);
 
     // A factor of exactly 1.0 clears an incident (see realdata/conditions.py
@@ -480,6 +597,14 @@ export default function Dashboard({ onExitToLanding }) {
         destination: targetDest,
         traffic_factor: congestionFactor
       }];
+
+      // Needed by both the incident and the reopen path (and the toast
+      // below), so it lives outside the branch.
+      const matchingEdge = scenario.edges.find(
+        e => (e.source === targetSource && e.destination === targetDest) ||
+             (e.source === targetDest && e.destination === targetSource)
+      );
+      const roadName = matchingEdge?.road_name || `Road ${targetSource}-${targetDest}`;
 
       if (!isReopen) {
         // Find which vehicles use this edge on the current active routes
@@ -496,12 +621,6 @@ export default function Dashboard({ onExitToLanding }) {
               })
               .map(r => r.vehicle_id)
           : [];
-
-        const matchingEdge = scenario.edges.find(
-          e => (e.source === targetSource && e.destination === targetDest) ||
-               (e.source === targetDest && e.destination === targetSource)
-        );
-        const roadName = matchingEdge?.road_name || `Road ${targetSource}-${targetDest}`;
 
         setSelectedIncidentEdge({ source: targetSource, destination: targetDest });
         setIncidentInfo({
@@ -542,10 +661,23 @@ export default function Dashboard({ onExitToLanding }) {
         setNetworkState('DISRUPTED');
       }
       refreshManifest(scenarioId);
+      if (benchmarkData) setBenchmarkStale(true);
+
+      if (isReopen) {
+        toast('Road reopened', {
+          detail: `${roadName} is clear again. Re-Optimize to update the route plan.`
+        });
+      } else {
+        toast('Road conditions updated', {
+          tone: 'error',
+          detail: `${roadName} is now congested (×${congestionFactor}). Re-Optimize to update the route plan.`
+        });
+      }
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+      setActiveOperation(null);
     }
   };
 
@@ -594,6 +726,7 @@ export default function Dashboard({ onExitToLanding }) {
   const handleRunBenchmark = async () => {
     if (!scenario) return;
     setLoading(true);
+    setActiveOperation('benchmark');
     setError(null);
     try {
       const res = await apiFetch('/api/benchmark', {
@@ -613,10 +746,22 @@ export default function Dashboard({ onExitToLanding }) {
       }
       const data = await res.json();
       setBenchmarkData(data);
+      setBenchmarkStale(false);
+      const algoCount = data.results ? Object.keys(data.results).length : 0;
+      toast('Comparison ready', {
+        detail: data.cached
+          ? `Instant result - identical scenario and settings to an earlier run, so the ${algoCount} saved results were reused.`
+          : `The route plans have been compared successfully - ${algoCount} options compared.`,
+        action: { label: 'View benchmark details', onClick: scrollToBenchmark }
+      });
+      // Take the user straight to the results rather than leaving them
+      // below the fold. Waits a frame so the panel has actually rendered.
+      setTimeout(scrollToBenchmark, 150);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+      setActiveOperation(null);
     }
   };
 
@@ -630,57 +775,85 @@ export default function Dashboard({ onExitToLanding }) {
   // ═══════════════════════════════════════════
   return (
     <div className="min-h-screen bg-[#0D0C0B] text-gray-100 flex flex-col font-sans selection:bg-[#C6602E] selection:text-white">
+      {loading && activeOperation && <OperationOverlay operation={activeOperation} />}
 
       {/* ═══ HEADER ═══ */}
-      <header className="clean-panel border-b border-[#332E29] px-3 sm:px-6 py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xl sticky top-0 z-50">
-        <div className="flex items-center space-x-3">
+      {/* z-[1200]: must sit above Leaflet's internal panes/controls (400-1000),
+          which otherwise scroll over the sticky header. Map containers are
+          also `isolate`d, but this keeps the header safe regardless. */}
+      <header className="clean-panel border-b border-[#332E29] px-3 sm:px-6 py-2 sm:py-2.5 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-3 gap-y-2 shadow-xl sticky top-0 z-[1200]">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
           {onExitToLanding && (
             <button
               onClick={onExitToLanding}
               aria-label="Back to landing page"
-              className="hidden sm:flex items-center gap-1 text-[11px] font-mono text-gray-400 hover:text-[#E8A93A] border border-[#332E29] hover:border-[#5A3A22] rounded px-2 py-1.5 transition-colors"
+              className="hidden sm:flex items-center gap-1 text-[11px] font-mono text-gray-400 hover:text-[#E8A93A] border border-[#332E29] hover:border-[#5A3A22] rounded px-2 py-1.5 transition-colors flex-shrink-0"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               Landing
             </button>
           )}
-          <div className="bg-[#1E1B18] border border-[#3A342E] p-1.5 sm:p-2 rounded-lg shadow-md">
+          <div className="bg-[#1E1B18] border border-[#3A342E] p-1.5 sm:p-2 rounded-lg shadow-md flex-shrink-0">
             <Logo size={20} />
           </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="font-display font-bold text-sm sm:text-base tracking-wide text-gray-100">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-display font-bold text-sm sm:text-base tracking-wide text-gray-100 whitespace-nowrap">
                 Q-DFRO <span className="font-medium text-gray-400">Engine</span>
               </span>
-              <span className="text-[9px] sm:text-[10px] bg-[#3A2318] text-[#E8A93A] border border-[#5A3A22] px-1.5 py-0.5 rounded font-mono font-semibold">
-                QPSO ENGINE
-              </span>
+              <Badge tone="accent" className="hidden sm:inline-flex">QPSO Engine</Badge>
             </div>
-            <p className="text-[10px] sm:text-[11px] text-gray-400 tracking-tight font-mono">
+            <p className="hidden sm:block text-[11px] text-gray-400 tracking-tight font-mono">
               Quantum-Inspired Fleet Optimization Engine
             </p>
           </div>
         </div>
 
+        {/* View nav: Executive Overview <-> Engineering Control Room.
+            Full width on its own row on phones (order-last), inline on
+            desktop - always inside the sticky header, so it stays reachable. */}
+        <div className="w-full lg:w-80 order-last lg:order-none">
+          <SegmentedControl
+            options={[
+              {
+                id: 'overview',
+                icon: LayoutDashboard,
+                label: <><span className="sm:hidden">Overview</span><span className="hidden sm:inline">Executive Overview</span></>
+              },
+              {
+                id: 'engineering',
+                icon: SlidersHorizontal,
+                label: <><span className="sm:hidden">Control Room</span><span className="hidden sm:inline">Engineering Control Room</span></>
+              }
+            ]}
+            value={view}
+            onChange={setView}
+            itemClassName="py-1.5"
+          />
+        </div>
+
         {/* Network State + Engine Status */}
-        <div className="flex items-center space-x-3 sm:space-x-6 w-full sm:w-auto justify-between sm:justify-end">
+        <div className="flex items-center gap-3 sm:gap-6 justify-end">
           <div className="flex items-center space-x-2 font-mono text-xs">
-            <span className={`px-2 sm:px-2.5 py-1 rounded text-[10px] sm:text-xs font-bold uppercase flex items-center gap-1.5 ${
-              networkState === 'DISRUPTED' || statusState === 'RE-OPTIMIZING'
-                ? 'bg-[#3A1C18] text-[#E8918A] border border-[#5A2C26] animate-pulse'
-                : networkState === 'RE-OPTIMIZED'
-                ? 'bg-[#22301B] text-[#9FC589] border border-[#3A4A2E]'
-                : 'bg-[#3A2318] text-[#E8A578] border border-[#5A3A22]'
-            }`}>
-              <span className={`w-2 h-2 rounded-full ${
-                networkState === 'DISRUPTED' || statusState === 'RE-OPTIMIZING' ? 'bg-[#C1443B]' :
-                networkState === 'RE-OPTIMIZED' ? 'bg-[#6B9A57]' : 'bg-[#C6602E]'
-              }`}></span>
+            <Badge
+              pulse={networkState === 'DISRUPTED' || statusState === 'RE-OPTIMIZING'}
+              tone={
+                networkState === 'DISRUPTED' || statusState === 'RE-OPTIMIZING'
+                  ? 'red'
+                  : networkState === 'RE-OPTIMIZED'
+                  ? 'green'
+                  : 'accent'
+              }
+              dotColor={
+                networkState === 'DISRUPTED' || statusState === 'RE-OPTIMIZING' ? '#C1443B' :
+                networkState === 'RE-OPTIMIZED' ? '#6B9A57' : '#C6602E'
+              }
+            >
               {networkStateLabel}
-            </span>
+            </Badge>
           </div>
 
-          <div className="flex items-center space-x-2 border-l border-[#332E29] pl-3 sm:pl-6 text-xs font-mono">
+          <div className="hidden md:flex items-center space-x-2 border-l border-[#332E29] pl-3 sm:pl-6 text-xs font-mono">
             <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#6B9A57]" />
             <div>
               <span className="text-gray-500 block text-[9px] sm:text-[10px] uppercase">Engine</span>
@@ -690,42 +863,68 @@ export default function Dashboard({ onExitToLanding }) {
         </div>
       </header>
 
-      {/* ═══ WORKFLOW INDICATOR ═══ */}
-      <WorkflowIndicator currentStage={demoStage} narrativeText={narrativeText} />
+      {/* ═══ WORKFLOW INDICATOR (Engineering Control Room only - PLAN/
+          DISRUPT/RE-OPTIMIZE/PROVE is an engineering demo-stage concept,
+          not something a non-technical executive summary needs) ═══ */}
+      {view === 'engineering' && (
+        <WorkflowIndicator currentStage={demoStage} narrativeText={narrativeText} />
+      )}
 
-      {/* ═══ MOBILE VIEWPORT SWITCHER (VISIBLE ON SMALL SCREENS ONLY) ═══ */}
-      <div className="lg:hidden flex border-b border-[#332E29] bg-[#171513] p-1.5 gap-2 px-3 sm:px-6 shadow-md sticky top-[57px] z-40">
-        <button
-          onClick={() => setActiveMobileTab('map')}
-          className={`flex-1 py-2 text-xs font-mono font-bold rounded transition-colors flex items-center justify-center gap-1.5 ${
-            activeMobileTab === 'map'
-              ? 'bg-[#C6602E] text-white shadow-sm'
-              : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
-          }`}
-        >
-          <span>🗺️</span> Network Map
-        </button>
-        <button
-          onClick={() => setActiveMobileTab('controls')}
-          className={`flex-1 py-2 text-xs font-mono font-bold rounded transition-colors flex items-center justify-center gap-1.5 ${
-            activeMobileTab === 'controls'
-              ? 'bg-[#C6602E] text-white shadow-sm'
-              : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
-          }`}
-        >
-          <span>⚡</span> Controls & Operations
-        </button>
-      </div>
+      {/* ═══ MOBILE VIEWPORT SWITCHER (Engineering Control Room only, small screens) ═══ */}
+      {view === 'engineering' && (
+        <div className="lg:hidden flex border-b border-[#332E29] bg-[#171513] p-1.5 gap-2 px-3 sm:px-6 shadow-md">
+          <button
+            onClick={() => setActiveMobileTab('map')}
+            className={`flex-1 py-2 text-xs font-mono font-bold rounded transition-colors flex items-center justify-center gap-1.5 ${
+              activeMobileTab === 'map'
+                ? 'bg-[#C6602E] text-white shadow-sm'
+                : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            Network Map
+          </button>
+          <button
+            onClick={() => setActiveMobileTab('controls')}
+            className={`flex-1 py-2 text-xs font-mono font-bold rounded transition-colors flex items-center justify-center gap-1.5 ${
+              activeMobileTab === 'controls'
+                ? 'bg-[#C6602E] text-white shadow-sm'
+                : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            Controls & Operations
+          </button>
+        </div>
+      )}
 
       {/* ═══ ERROR ALERT ═══ */}
       {error && (
         <div className="bg-[#3A1C18]/90 border border-[#5A2C26] text-[#E8918A] px-4 sm:px-6 py-2 text-xs font-mono flex items-center justify-between">
           <span>ERROR: {error}</span>
-          <button onClick={() => setError(null)} className="text-[#E8918A] hover:text-white font-bold ml-4">✕</button>
+          <IconButton icon={X} iconSize={12} onClick={() => setError(null)} aria-label="Dismiss error" className="ml-4 !text-[#E8918A] hover:!text-white" />
         </div>
       )}
 
-      {/* ═══ MAIN WORKSPACE (75% Map / 25% Operations) ═══ */}
+      {/* ═══ EXECUTIVE OVERVIEW ═══ */}
+      {view === 'overview' && (
+        <main className="flex-1 p-2 sm:p-4 max-w-[1400px] w-full mx-auto">
+          <ExecutiveOverview
+            scenario={scenario}
+            scenarioId={scenarioId}
+            benchmarkStale={benchmarkStale}
+            networkMeta={networkMeta}
+            currentResult={currentResult}
+            previousResult={previousResult}
+            benchmarkData={benchmarkData}
+            networkState={networkState}
+            trafficMode={trafficMode}
+            weatherEnabled={weatherEnabled}
+            onOpenEngineering={() => setView('engineering')}
+          />
+        </main>
+      )}
+
+      {/* ═══ ENGINEERING CONTROL ROOM (75% Map / 25% Operations) ═══ */}
+      {view === 'engineering' && (
       <main className="flex-1 p-2 sm:p-4 grid grid-cols-1 lg:grid-cols-4 gap-4 max-w-[1920px] w-full mx-auto items-stretch">
         {/* HERO MAP */}
         <div className={`lg:col-span-3 min-h-[350px] sm:min-h-[480px] lg:min-h-[620px] h-full w-full ${
@@ -822,9 +1021,11 @@ export default function Dashboard({ onExitToLanding }) {
           <ArchitectureSnapshot />
         </div>
       </main>
+      )}
 
-      {/* ═══ METRICS & ANALYTICS ═══ */}
-      <footer className="p-4 pt-0 space-y-4 max-w-[1920px] w-full mx-auto">
+      {/* ═══ METRICS & ANALYTICS (Engineering Control Room only) ═══ */}
+      {view === 'engineering' && (
+      <footer id="results-section" className="p-4 pt-0 space-y-4 max-w-[1920px] w-full mx-auto scroll-mt-28">
         <MetricCards
           result={currentResult}
           previousResult={previousResult}
@@ -834,13 +1035,17 @@ export default function Dashboard({ onExitToLanding }) {
         />
 
         {benchmarkData && (
-          <BenchmarkPanel
-            benchmarkData={benchmarkData}
-            onClose={() => { setBenchmarkData(null); setPreviewedAlgorithm(null); }}
-            config={config}
-            onPreviewAlgorithm={setPreviewedAlgorithm}
-            previewedAlgorithm={previewedAlgorithm}
-          />
+          // scroll-mt keeps the panel's title clear of the sticky header
+          // when the post-benchmark auto-scroll lands on it.
+          <div id="benchmark-section" className="scroll-mt-28">
+            <BenchmarkPanel
+              benchmarkData={benchmarkData}
+              onClose={() => { setBenchmarkData(null); setPreviewedAlgorithm(null); }}
+              config={config}
+              onPreviewAlgorithm={setPreviewedAlgorithm}
+              previewedAlgorithm={previewedAlgorithm}
+            />
+          </div>
         )}
 
         {demoStage === 'PROVE' && (
@@ -852,6 +1057,7 @@ export default function Dashboard({ onExitToLanding }) {
 
         <ArchetypeBenchmarkPanel config={config} />
       </footer>
+      )}
     </div>
   );
 }

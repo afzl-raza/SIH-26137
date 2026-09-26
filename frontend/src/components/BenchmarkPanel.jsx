@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, Trophy, Award, BarChart2, CheckCircle2, XCircle, ShieldCheck } from 'lucide-react';
+import IconButton from './ui/IconButton';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -144,9 +145,7 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
             Same scenario · Same constraints · Same objective · Measured execution
           </p>
         </div>
-        <button onClick={onClose} aria-label="Close benchmark panel" className="p-1 hover:bg-[#26221D] rounded transition-colors text-gray-400 hover:text-white focus-visible:ring-2 focus-visible:ring-[#C6602E]">
-          <X className="w-5 h-5" />
-        </button>
+        <IconButton icon={X} iconSize={18} onClick={onClose} aria-label="Close benchmark panel" />
       </div>
 
       {/* 2. COMPARISON CONDITIONS (fairness) */}

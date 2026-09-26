@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { TrendingUp, Loader2, Play } from 'lucide-react';
 import { apiFetch } from '../api';
+import Button from './ui/Button';
 
 export default function ScalabilityPanel() {
   const [data, setData] = useState(null);
@@ -62,14 +63,17 @@ export default function ScalabilityPanel() {
       <div className="clean-card p-4 rounded-xl border border-[#3A342E] text-gray-500 text-xs space-y-2 min-h-[120px] flex flex-col items-center justify-center text-center">
         <TrendingUp size={20} className="opacity-40" />
         <div className="font-semibold text-gray-400">SCALABILITY — NOT YET RUN</div>
-        <button
+        <Button
+          variant="secondary"
+          size="sm"
+          fullWidth={false}
+          icon={running ? undefined : Play}
+          loading={running}
+          loadingText="Running real sweep (~10-20s)..."
           onClick={handleRunNow}
-          disabled={running}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#3A2318]/60 border border-[#5A3A22] text-[#E8A578] rounded text-[11px] font-semibold hover:bg-[#3A2318] disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[#C6602E]"
         >
-          {running ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
-          {running ? 'Running real sweep (~10-20s)...' : 'Run Now'}
-        </button>
+          Run Now
+        </Button>
         {runError && <p className="text-[10px] text-[#E8918A]">{runError}</p>}
         <div className="max-w-[260px] font-mono text-[9px] leading-relaxed text-gray-600">
           Or run <span className="text-gray-400">python -m experiments.runner --experiment e3</span> from{' '}
@@ -88,15 +92,18 @@ export default function ScalabilityPanel() {
           <TrendingUp size={14} className="text-[#5D7A9E]" />
           Scalability (E3)
         </div>
-        <button
-          onClick={handleRunNow}
-          disabled={running}
+        <Button
+          variant="secondary"
+          size="sm"
+          fullWidth={false}
+          icon={running ? undefined : Play}
+          loading={running}
+          loadingText="Running..."
           title="Re-run the real scalability sweep"
-          className="flex items-center gap-1 px-2 py-0.5 bg-[#3A2318]/60 border border-[#5A3A22] text-[#E8A578] rounded text-[10px] font-semibold hover:bg-[#3A2318] disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-[#C6602E]"
+          onClick={handleRunNow}
         >
-          {running ? <Loader2 size={10} className="animate-spin" /> : <Play size={10} />}
-          {running ? 'Running...' : 'Run Now'}
-        </button>
+          Run Now
+        </Button>
       </div>
       {runError && <p className="text-[10px] text-[#E8918A]">{runError}</p>}
       <div className="text-[10px] text-gray-500 font-mono">

@@ -1,5 +1,7 @@
 import csv
 import json
+import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -42,7 +44,7 @@ from optimizers.greedy import GreedyOptimizer
 from optimizers.pso import PSOOptimizer
 from optimizers.qpso import QPSOOptimizer
 from optimizers.exact import ExactOptimizer, ExactSolverTooLargeError
-from optimizers.benchmark import run_benchmark
+from optimizers.benchmark import run_benchmark, warm_pool
 from fitness import evaluate_solution
 from experiments.runner import (
     run_e1_algorithm_comparison,
@@ -54,10 +56,20 @@ from experiments.runner import (
 )
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Start the benchmark worker processes in the background so the first
+    # /api/benchmark call doesn't pay process start-up. Non-blocking: the
+    # API is available immediately either way.
+    threading.Thread(target=warm_pool, daemon=True).start()
+    yield
+
+
 app = FastAPI(
     title="Q-DFRO API",
     description="Quantum-Inspired Intelligent Traffic Route Optimization API",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Enable CORS for local frontend development
