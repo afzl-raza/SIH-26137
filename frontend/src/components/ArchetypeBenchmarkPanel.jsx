@@ -44,6 +44,7 @@ const ALGO_COLUMNS = [
   { key: 'ga', label: 'GA' },
   { key: 'qpso', label: 'QPSO' },
   { key: 'qpso_ls', label: 'QPSO+LS' },
+  { key: 'qpso_memetic', label: 'QPSO Memetic' },
   { key: 'exact', label: 'Exact' }
 ];
 

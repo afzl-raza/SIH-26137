@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Trophy, Award, BarChart2, CheckCircle2, XCircle, ShieldCheck, Table2, Gauge, Zap } from 'lucide-react';
+import IconButton from './ui/IconButton';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -34,6 +35,9 @@ export const ALGORITHM_COLORS = {
   // is the default algorithm and gets the brand accent instead.
   qpso: { hex: '#8C5A6E', text: 'text-[#8C5A6E]', bg: 'bg-[#8C5A6E]' },
   qpso_ls: { hex: '#C6602E', text: 'text-[#C6602E]', bg: 'bg-[#C6602E]' },
+  // Memetic QPSO (time-window-aware local search) - a separate optimizer
+  // registered in optimizers/benchmark.py, not a qpso_ls variant.
+  qpso_memetic: { hex: '#55C7E8', text: 'text-[#55C7E8]', bg: 'bg-[#55C7E8]' },
   exact: { hex: '#E8A93A', text: 'text-[#E8A93A]', bg: 'bg-[#E8A93A]' }
 };
 const DEFAULT_ALGORITHM_COLOR = { hex: '#9CA3AF', text: 'text-gray-500', bg: 'bg-gray-500' };
@@ -65,7 +69,7 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
   // "exact" is only present when the scenario is small enough to solve
   // exactly (<=10 jobs) - absent otherwise, which resultsArray's filter
   // below handles the same way it already handles any other missing key.
-  const algos = ['greedy', 'pso', 'ga', 'qpso', 'qpso_ls', 'exact'];
+  const algos = ['greedy', 'pso', 'ga', 'qpso', 'qpso_ls', 'qpso_memetic', 'exact'];
 
   const resultsArray = algos.map(k => ({ id: k, ...results[k] })).filter(r => r.total_cost !== undefined);
 
@@ -103,7 +107,7 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
   // directly rather than iterating, so a convergence curve doesn't apply
   // to it (a single flat point would misrepresent what it does).
   const chartDatasets = [];
-  ['pso', 'ga', 'qpso', 'qpso_ls'].forEach(id => {
+  ['pso', 'ga', 'qpso', 'qpso_ls', 'qpso_memetic'].forEach(id => {
     if (results[id] && results[id].convergence_history) {
       chartDatasets.push({
         label: results[id].algorithm || id.toUpperCase(),
@@ -161,9 +165,7 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
             Same scenario · Same constraints · Same objective · Measured execution
           </p>
         </div>
-        <button onClick={onClose} aria-label="Close benchmark panel" className="p-1 hover:bg-[#26221D] rounded transition-colors text-gray-400 hover:text-white focus-visible:ring-2 focus-visible:ring-[#C6602E]">
-          <X className="w-5 h-5" />
-        </button>
+        <IconButton icon={X} iconSize={18} onClick={onClose} aria-label="Close benchmark panel" />
       </div>
 
       {/* 2. COMPARISON CONDITIONS (fairness) */}

@@ -110,49 +110,80 @@
 }
 
 /* ═══════════════════════════════════════════
-   Workflow Indicator
+   Workflow Indicator (PLAN / DISRUPT / RE-OPTIMIZE / PROVE)
    ═══════════════════════════════════════════ */
 
-.workflow-step {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+.workflow-stage {
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.workflow-stage--active {
+  background: rgba(198, 96, 46, 0.08);
+  border-color: rgba(198, 96, 46, 0.35);
+  box-shadow: 0 0 0 1px rgba(198, 96, 46, 0.12), 0 8px 24px -12px rgba(198, 96, 46, 0.45);
+}
+
+.workflow-stage--completed {
+  background: rgba(107, 154, 87, 0.04);
+  border-color: rgba(107, 154, 87, 0.18);
+}
+
+.workflow-stage-icon {
+  background: #1E1B18;
+  border: 1px solid #3A342E;
+  color: #6B6259;
   transition: all 0.3s ease;
 }
 
-.workflow-step--completed {
-  color: #6B9A57;
-}
-
-.workflow-step--active {
+.workflow-stage-icon--active {
+  background: rgba(198, 96, 46, 0.15);
+  border-color: #C6602E;
   color: #C6602E;
 }
 
-.workflow-step--upcoming {
+.workflow-stage-icon--completed {
+  background: rgba(107, 154, 87, 0.12);
+  border-color: #6B9A57;
+  color: #6B9A57;
+}
+
+.workflow-stage-title--active {
+  color: #C6602E;
+}
+
+.workflow-stage-title--completed {
+  color: #6B9A57;
+}
+
+.workflow-stage-title--upcoming {
+  color: #8A8378;
+}
+
+.workflow-stage-desc {
   color: #6B6259;
 }
 
-.workflow-connector {
-  width: 2.5rem;
-  height: 2px;
-  border-radius: 1px;
-  transition: background-color 0.3s ease;
+.workflow-stage--active .workflow-stage-desc {
+  color: #A8A29B;
 }
 
-.workflow-connector--completed {
-  background-color: #6B9A57;
+.workflow-stage--completed .workflow-stage-desc {
+  color: #7C8A73;
 }
 
-.workflow-connector--active {
-  background-color: #C6602E;
+.workflow-arrow {
+  color: #332E29;
+  transition: color 0.3s ease;
 }
 
-.workflow-connector--upcoming {
-  background-color: #332E29;
+.workflow-arrow--completed {
+  color: #6B9A57;
+}
+
+.workflow-arrow--active {
+  color: #C6602E;
 }
 
 /* ═══════════════════════════════════════════
@@ -168,6 +199,73 @@
 .advanced-collapse.expanded {
   max-height: 500px;
   transition: max-height 0.5s ease-in;
+}
+
+/* ═══════════════════════════════════════════
+   Vehicle Loader (branded loading indicator)
+   ═══════════════════════════════════════════ */
+
+@keyframes vehicle-loader-move {
+  0%, 100% { left: 2%; transform: translateY(-50%); }
+  50% { left: 82%; transform: translateY(-50%); }
+}
+
+.vehicle-loader-van {
+  animation: vehicle-loader-move 2.2s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════
+   Operation Overlay (branded, non-technical
+   loading screen shown for any in-flight action)
+   ═══════════════════════════════════════════ */
+
+@keyframes operation-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.operation-overlay-fade {
+  animation: operation-overlay-in 0.2s ease-out;
+}
+
+/* Indeterminate fill - communicates "working", never a real percentage. */
+@keyframes operation-overlay-progress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
+.operation-overlay-progress {
+  animation: operation-overlay-progress 1.4s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════
+   Toast
+   ═══════════════════════════════════════════ */
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.toast-item {
+  animation: toast-in 0.2s ease-out;
+}
+
+/* ═══════════════════════════════════════════
+   Leaflet zoom control — dark theme to match
+   the rest of the chrome instead of Leaflet's
+   default white square buttons.
+   ═══════════════════════════════════════════ */
+
+.leaflet-control-zoom a {
+  background-color: #1E1B18 !important;
+  color: #D1D5DB !important;
+  border-color: #3A342E !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: #26221D !important;
+  color: #fff !important;
 }
 
 /* ═══════════════════════════════════════════

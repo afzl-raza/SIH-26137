@@ -62,25 +62,86 @@ on real data → Archetype matrix's win-count and cell highlighting verified
 against actual computed values (not just visually) via direct DOM inspection.
 Zero console errors on a clean session. Backend untouched, 373/373 passing.
 
-**Outstanding: `origin/main` has diverged significantly** while this was
-built - three teammate branches merged (`feature/authentication-flow`,
-`time-window`, `frontend/ui-polish-executive-overview`), touching many of
-the same files this round touched (`App.jsx`, `Dashboard.jsx`,
-`BenchmarkPanel.jsx`, `ArchetypeBenchmarkPanel.jsx`, `ControlPanel.jsx`,
-`NetworkMap.jsx` on the frontend; `fitness.py`, `decoder.py`, `models.py`,
-`optimizers/benchmark.py`, `problem_generator.py` on the backend). Two
-things flagged to the user, not yet resolved:
+**Reconciled with `origin/main`** (three teammate branches:
+`feature/authentication-flow`, `time-window`, and
+`frontend/ui-polish-executive-overview`, plus later commits) - see the
+merge commit for the full file list. Two things worth recording:
 1. The authentication flow directly contradicts `CLAUDE.md`'s "Do not
    implement: Authentication" - left as-is per the user's explicit
    decision ("leave it, flag it to the team"), not reverted.
 2. A teammate's `ExecutiveOverview.jsx` (a real-data-only results view,
-   toggled as a mode inside `Dashboard.jsx` rather than a separate page)
-   covers similar ground to this round's `Overview.jsx`. Compared live
-   side-by-side (both stacks run simultaneously on different ports); the
-   user preferred this round's visual design once its metrics/map were made
-   real (see the "Revised" bullet above) but **the merge/reconciliation
-   with `origin/main` has not happened yet** - this local `main` is still
-   ahead of and diverged from `origin/main`, not pushed.
+   toggled as a mode inside `Dashboard.jsx`) covered similar ground to this
+   round's `Overview.jsx`. Compared live side-by-side (both stacks run
+   simultaneously on different ports); the user preferred this round's
+   design once its metrics/map were made real (see the "Revised" bullet
+   above), so on merge `ExecutiveOverview.jsx`, `components/executive/*`
+   and the now-orphaned `components/ui/ComparisonBars.jsx` were removed,
+   and `Dashboard.jsx`'s Executive-Overview/Engineering-Control-Room view
+   toggle was removed (Dashboard always renders what was the Control Room).
+   Everything else from that branch (the `ui/*` design system used
+   throughout `ControlPanel.jsx`/`NetworkMap.jsx`/`VehicleInspector.jsx`,
+   `Toast`, `OperationOverlay`, etc.) was kept - those auto-merged cleanly
+   and are genuine quality improvements independent of ExecutiveOverview.
+
+## CVRPTW — Customer Time Windows ✅ Done (2026-09-26)
+
+Turns the problem from CVRP into CVRPTW: jobs may carry a delivery window
+`[ready_time, due_time]` (minutes from shift start), opt-in and off by
+default so every pre-existing scenario/result stays byte-identical.
+
+- [x] `models.py`: `Job.ready_time`/`due_time` (+ validator), `StopTiming`,
+      `VehicleRoute.stops`/`wait_time`/`lateness`/`late_jobs`
+- [x] `schedule.py` (new): `simulate_route` — the single timing function,
+      replacing three separately-duplicated timing loops across
+      `decoder.py` and `optimizers/greedy.py` (and used by
+      `optimizers/qpso_memetic.py::_route_cost`)
+- [x] `optimizers/greedy.py`: candidate ranking is time-until-service-start
+      (`t_leg + wait`), tie-broken by earliest `due_time`, skips a candidate
+      that would arrive late when an on-time option exists — a no-op when
+      windows are off (verified byte-identical against the full pre-existing
+      suite)
+- [x] `fitness.py`: lateness penalty (normalized quadratic + a fixed
+      per-late-job term, same shape as the capacity/time terms);
+      `is_feasible` independently requires zero fleet-wide lateness
+- [x] `optimizers/qpso_memetic.py`: registered in `optimizers/benchmark.py`
+      as `"qpso_memetic"`; its local-search cost model uses the same
+      `simulate_route` and mirrors the lateness penalty exactly (its
+      capacity/time terms carry an additional fixed search-only penalty not
+      present in `fitness.py` — documented in its own docstring, never
+      affects the reported score)
+- [x] `problem_generator.py` / `realdata/osm_scenario.py`:
+      `time_windows`/`tw_width_min` params; windows drawn from an RNG seeded
+      independently of the rest of generation, so job nodes/demands/service
+      times are identical with windows on or off; `compute_scenario_hash`
+      only changes when `time_windows=True`
+- [x] `main.py`: `time_windows`/`tw_width_min` on `POST /api/problem/generate`
+      (both synthetic and OSM paths); `/api/optimize`/`/api/benchmark`
+      responses carry the new route fields with no shape change otherwise
+- [x] Frontend: `ControlPanel.jsx` toggle + 30–120 min width slider;
+      `VehicleInspector.jsx` per-stop table (arrival/window/wait/late, late
+      rows red, waits amber); `NetworkMap.jsx` job popup shows the window and
+      rings a late job's marker red; `MetricCards.jsx` "Late Deliveries" card
+- [x] `docs/mathematical_model.md`: CVRPTW formulation (states that
+      `route_travel_time` includes waiting); `docs/dynamic_conditions.md`
+      §5b: windows are absolute, and there is no simulation clock;
+      `docs/requirements_traceability.md`: new row
+- [x] 14 new tests in `backend/tests/test_time_windows.py` (timing,
+      fitness, generator RNG-isolation/hash-stability/reproducibility,
+      incident-vs-window interaction, API). Full suite: 366 total (352
+      pre-existing + 14 new), no existing test weakened. One pre-existing,
+      unrelated test — `test_scenario_store.py::test_expired_entries_are_dropped`
+      (a 50ms-TTL timing assertion) — is intermittently flaky under full-suite
+      CPU load; it passes reliably in isolation and is untouched by this
+      feature, not a regression introduced here.
+
+**Benchmark finding, reported as-is (30 jobs/6 vans and 50 jobs/10 vans,
+seed 42):** Memetic QPSO is the only algorithm besides Greedy that stays
+feasible with time windows on at both sizes, and remains the lowest-cost
+feasible algorithm throughout. GA and QPSO, at 50 jobs/10 vans with windows
+on, report actual late jobs (1 and 5 respectively) rather than just
+crossing the existing capacity/time infeasibility this default
+population/iteration budget already showed even with windows off — an
+honest new failure mode, not smoothed over.
 
 ---
 
@@ -146,6 +207,326 @@ bare `requestAnimationFrame` test call also never fired, despite
 `document.hidden` reporting `false`) - not a code bug. The raw
 (non-animated) figures elsewhere in the same component, and the reported
 runtime, were correct throughout. Left the animation code as-is.
+
+---
+
+## Benchmark Speed, Result Caching, Mobile Layout, Sticky Nav ✅ Done (2026-09-26)
+
+- [x] **Parallel benchmark** (`optimizers/benchmark.py`): PSO, GA and QPSO now
+      run concurrently in a persistent `ProcessPoolExecutor` (CPU-bound
+      Python, so threads would serialise on the GIL); Greedy stays
+      in-process. Pool is pre-warmed on server start (FastAPI lifespan) so
+      the first call skips process start-up, and each worker is pinned to
+      one BLAS thread to avoid oversubscription. Results are byte-identical
+      to the sequential run (same seeds, same scenario copy). Falls back to
+      sequential if a worker dies.
+- [x] **Route matrix still built once per benchmark**: the parent builds it
+      and hands the same matrix to each worker via a new
+      `RouteMatrixCache.seed()`; `LAST_WORKER_ROUTE_MATRIX_BUILDS` keeps the
+      guarantee testable (asserted 0 in tests).
+- [x] **Benchmark result cache**: seeded optimizers make identical inputs
+      give identical outputs, so results are cached by a hash of the full
+      scenario (graph, every condition multiplier, jobs, vehicles) + full
+      config. Any traffic/weather/incident change is a different key and is
+      recomputed — never served stale (test added). Response carries a
+      `cached` flag; the UI says "Instant result - identical scenario and
+      settings to an earlier run" instead of implying a fresh computation.
+- [x] Solver defaults reverted to the original 40/100 (had been bumped to
+      60/150 earlier today, which made benchmarks feel slow).
+- [x] Measured (server-side): benchmark ~9-20s sequential → **~1.7s**
+      parallel at 40/100; repeat of identical inputs → **23ms** from cache.
+- [x] **Auto-scroll**: when a benchmark completes, the page scrolls to the
+      benchmark results panel (landing just below the sticky header).
+- [x] **Sticky nav fix**: Leaflet's internal z-indexes (400-1000) were
+      painting maps *over* the sticky header while scrolling. Header raised
+      to `z-[1200]` and every map container gets `isolate`. Toasts moved off
+      the header (bottom-centre on phones, below the header on desktop).
+- [x] **Mobile**: compact two-row header (short "Overview / Control Room"
+      labels), no horizontal overflow at 390px in either view; removed a
+      hard-coded `top-[57px]` sticky offset that no longer matched.
+- [x] **Plain-language pass on the Executive Overview**: a 3-step "What
+      Q-DFRO does" intro, one-line meaning under every KPI tile, everyday
+      method names in the comparison ("Nearest-stop", "Swarm search",
+      "Genetic search", "Q-DFRO") with a neutral "X gave the lowest … on
+      this scenario" line. "Cost" is now described as what it actually is —
+      a combined time/distance/traffic score, lower is better — not money.
+
+Backend: **353/353 tests passing**. Verified live at 390px and 1440px via
+Playwright, zero console errors.
+
+---
+
+## Executive Overview — Real-Map "See the Difference" Comparison ✅ Done (2026-09-26)
+
+Replaced the stylized SVG before/after diagram with two real, read-only
+Leaflet maps side by side (new `compact` mode on `NetworkMap`: no GIS/Graph
+toggle, filter bar, legend or scroll-wheel zoom), each showing the real
+depot, stops, vehicle markers and routes, followed directly by a
+plain-language comparison strip and a one-sentence "In short" summary.
+
+- [x] New `executive/comparison.js` picks ONE real before/after pair that
+      drives the headline, KPI tiles, maps and comparison strip, so no two
+      sections can contradict each other: (1) the latest benchmark's
+      Greedy nearest-stop result vs its QPSO result — two methods on the
+      identical scenario in the same run, the honest analogue of "usual
+      dispatch vs our method"; (2) otherwise previous plan vs re-optimized
+      plan; (3) otherwise "no plan yet" with a pointer to run a benchmark.
+      Never a fabricated baseline.
+- [x] New `benchmarkStale` state in `App.jsx`: set when road conditions
+      change (incident or traffic/weather) after a benchmark ran, cleared
+      by a new benchmark or scenario. A stale benchmark is never presented
+      as a current comparison in the Executive Overview.
+- [x] `OptimizationImpact` and `WhatChanged` removed — they compared a
+      different before/after (previous vs current) than the new strip on the
+      same page; their content is folded into the single comparison strip.
+- [x] Headline no longer claims "feasible schedule" when the result is
+      infeasible; shows "Route Plan Ready - Needs Review" instead.
+
+Verified live via Playwright: fresh load (no-baseline state with benchmark
+pointer), then Run Benchmark → Executive Overview showed "10.5% less travel
+time, 20.8% less distance, 12.3% less cost, all 15 stops covered" vs
+nearest-stop dispatch, all from one real benchmark run.
+
+---
+
+## Executive Overview Visual Polish — KPI Grid, Richer Diagram, Stat Cards ✅ Done (2026-09-26)
+
+Third follow-up: asked to make the grids/diagram/details more attractive
+for the judged demo. Analyzed what was actually flat and fixed it rather
+than a generic pass:
+
+- [x] New `executive/KeyMetrics.jsx` — a proper 4-tile KPI grid (Travel
+      Time/Distance/Cost/Runtime, icon chips colored to match
+      `MetricCards.jsx`'s existing palette) reinstated right under the
+      headline; this had been dropped when the page was restructured
+      earlier in the day and left the top of the page thinner than it
+      should be.
+- [x] `NetworkComparison` enhanced: a per-vehicle color legend (only the
+      vehicles actually present in the currently-shown result), a subtle
+      dot-grid depth background behind the tilted board, a soft glow layer
+      under each route line, and a flowing dash animation on the active
+      route paths (`route-flow-dash` keyframe) plus a pulsing depot ring
+      (`depot-pulse-ring`) — all decorative motion on real, already-drawn
+      path data, nothing computed differently.
+- [x] `OperationalResult` rebuilt from a plain bullet list into a grid of
+      icon stat cards (feasibility/stops/routes/vehicles/disruption),
+      matching the visual language of the new KPI grid instead of reading
+      as a checklist.
+- [x] Extracted `MetricCards.jsx`'s `useCountUp` tween into a shared
+      `frontend/src/lib/useCountUp.js` (was duplicated logic waiting to
+      happen) and wired it into the primary outcome percentage and the new
+      KPI tiles, so the headline numbers animate in on reveal instead of
+      snapping to their final value — same principle already established
+      elsewhere in this codebase: it tweens the *display* of an
+      already-known real value, never presents an intermediate frame as a
+      measured reading.
+
+Verified live via Playwright across three separate runs (including one
+that happened to land mid-benchmark, confirming the `OperationOverlay`
+correctly dims the now-fully-populated page underneath it), zero console
+errors each time.
+
+---
+
+## Auto-Demo Bootstrap — Executive Overview Populated On Load ✅ Done (2026-09-26)
+
+Second follow-up: a fresh visitor landed on "No Route Plan Yet" until they
+went into the Engineering Control Room and clicked Optimize themselves —
+flagged as a weak first impression for a judged demo. The requested fix was
+a hardcoded "Sample Scenario" with invented numbers (19.4% less travel
+time, ₹4,850→₹4,120, etc.) — **flagged back to you as a direct conflict
+with this project's own `CLAUDE.md` rule ("never hard-code claims, results
+must come from actual experiments")**, since fabricated performance numbers
+in the source would be a real risk for a SIH submission regardless of a
+"sample" badge. You chose the alternative instead: auto-run the real
+pipeline.
+
+- [x] `App.jsx` now runs the real generate → optimize sequence once on
+      load, through the exact same handlers a user triggers manually,
+      against the real backend. Implemented as a chain of
+      `autoDemoStage`-gated `useEffect`s (`start → generated → done`), each
+      firing only after its own render has already committed the previous
+      stage's fresh state — **not** a single chained async function, which
+      would have kept reading the stale `scenarioId` closure from before
+      generate finished (`handleOptimize` reads component state, and only a
+      genuine effect re-run after a render sees the updated value).
+      Deliberately does **not** continue on to auto-simulate-incident,
+      auto-re-optimize, or auto-run-benchmark (see the correction note
+      above) — those stay manual, Engineering-Control-Room-triggered
+      actions.
+- [x] New `isAutoDemo` state, flipped to `false` the moment the visitor
+      takes their own first action (wrapped onto `ControlPanel`'s
+      Generate/Optimize/Simulate Incident/Re-Optimize/Replay/Run Benchmark
+      props and the map's disrupt-road popup) — drives a small "Demo
+      Scenario" `Badge` next to the Executive Outcome headline so it's
+      clear these particular numbers were produced automatically rather
+      than configured by the visitor. The badge disappears the moment they
+      run anything themselves; every number underneath, before or after, is
+      real either way.
+- [x] `Badge.jsx` gained a passthrough `...rest` (e.g. `title`) it didn't
+      have before.
+
+**Verified live via Playwright** (not just build success): fresh page load
+→ waited through the full real auto-chain → Executive Overview lands fully
+populated (12.9% lower travel time this run, a real cost/distance/runtime
+table, the before/after route diagram, a real feasibility warning shown
+un-hidden, the live route map, and a real 4-algorithm benchmark comparison)
+with the "Demo Scenario" badge visible, zero console errors.
+
+---
+
+## Executive Overview Revision — Results-First Narrative + Route Comparison ✅ Done (2026-09-26)
+
+Follow-up revision to the entry below, after review: the first pass still
+led with scenario stats (nodes/network/vehicles/stops) and duplicated the
+Engineering Control Room's Leaflet map as a second, smaller instance for a
+before/after comparison — flagged as redundant and not attractive/insightful
+enough for a judged demo. Revised:
+
+- [x] `ExecutiveOverview.jsx` restructured into 8 focused components under
+      `frontend/src/components/executive/` (`ExecutiveOutcome`,
+      `OptimizationImpact`, `NetworkComparison`, `WhatChanged`,
+      `OperationalResult`, `RoutePerformance`, `BenchmarkComparison`,
+      `ScenarioDetails`), in that order — outcome and impact now lead,
+      scenario metadata moved to the bottom. A shared `executive/metrics.js`
+      holds one real metric-accessor config (`RESULT_METRICS`/
+      `CORE_METRICS`) reused by the impact table, "What Changed", and the
+      benchmark comparison, instead of three copies of the same logic.
+- [x] **`NetworkComparison`** replaced the duplicate-Leaflet-map approach
+      with an original stylized visualization: real node positions and real
+      `node_path`/`job_ids` route data rendered as a tilted (CSS
+      `rotateX`/`perspective`), glowing SVG "route board" with a
+      Before/Optimization toggle — visually distinct from the operational
+      map rather than a smaller copy of it, still 100% real data (no
+      fabricated positions or paths).
+- [x] **`RoutePerformance`** keeps exactly one real interactive Leaflet map
+      (down from two) for actual route/vehicle inspection, paired with the
+      real `VehicleInspector`.
+- [x] **New `ui/OperationOverlay.jsx`** — a single global, full-screen,
+      non-technical loading experience (dimmed backdrop, centered panel,
+      `VehicleLoader`, friendly title/description, indeterminate progress
+      fill) shown for every real in-flight action (generate, optimize,
+      re-optimize, incident/conditions, benchmark), driven by a new
+      `activeOperation` state in `App.jsx`. Replaces the old per-panel
+      "Working..."/"QPSO Optimizing" blocks in `ControlPanel.jsx` (now
+      redundant with the global overlay). Copy never names an algorithm or
+      shows a fake stage/percentage — confirmed the backend has no
+      intermediate progress to report for any of these calls.
+- [x] Toast copy softened to plain language ("Route plan ready", "Comparison
+      ready", "Road conditions updated") and a centralized friendly-error
+      toast added (`useEffect` on `error` in `App.jsx`) alongside the
+      existing technical error banner, rather than exposing the raw
+      exception message as the primary feedback.
+- [x] `BenchmarkComparison` adds a plain-language ⓘ description per metric
+      (Travel Time/Distance/Cost/Runtime); algorithm names themselves are
+      still shown (Greedy/PSO/GA/QPSO) since that's the actual comparison,
+      per your own instruction that this is acceptable outside the
+      no-jargon rule.
+
+**Real bug found and fixed via an actual browser check this round** (this
+revision, unlike the previous entry, was verified live with a headless
+Playwright pass, not just code review): `VehicleLoader`'s "Start"/
+"Destination" label row used `w-full` inside a shrink-to-fit flex parent
+(`OperationOverlay`'s centered column) — a `100%` width with no defined
+containing-block width collapses to content size, so the two labels
+rendered squashed together ("STARTDESTINATION") with `justify-between`
+having no room to act. Fixed by giving both rows a fixed `w-[220px]`
+instead of `w-full max-w-[220px]`. Confirmed fixed via a second screenshot.
+
+Verified: `npm run build` succeeds; live-driven with Playwright
+(Executive Overview empty state, the OperationOverlay during Optimize,
+the populated Executive Overview after Simulate Incident → Re-Optimize
+including the real +0.2% travel-time regression shown honestly in amber
+rather than hidden, the Before/Optimization toggle rendering genuinely
+different route colors, and Route Details' live map) — zero console
+errors across the run.
+
+*(Corrected 2026-09-26, same day: the auto-demo bootstrap below originally
+chained all five stages — generate, optimize, incident, re-optimize,
+benchmark — automatically on load. Feedback: watching 4-5 loading
+overlays fire back to back with no chance to absorb each result doesn't
+explain anything to a viewer, and takes control away from whoever is
+presenting the demo. Fixed in the "Auto-Demo Bootstrap" entry below: only
+generate + optimize now auto-run; incident/re-optimize/benchmark are
+manual again, so the car-and-data overlay only ever appears because
+someone actually asked for that step.)*
+
+---
+
+## Executive Overview / Engineering Control Room Split + UI Design System ✅ Done (2026-09-26)
+
+Frontend interaction & visual polish pass, plus a new Executive Overview
+view. Pure presentation-layer + one new derived view built from data
+`App.jsx` already computes — no backend/algorithm changes, no new API
+calls, no new npm dependencies.
+
+- [x] New shared UI primitives (`frontend/src/components/ui/`): `Button`,
+      `IconButton`, `SegmentedControl`, `Badge`, `Spinner`, `ControlSection`,
+      `ComparisonBars`, `VehicleLoader`, `Toast` (`ToastProvider`/`useToast`)
+      — replace what were previously one-off hand-rolled Tailwind strings
+      per button/toggle/card, duplicated across `ControlPanel.jsx`,
+      `NetworkMap.jsx`, `BenchmarkPanel.jsx`, `VehicleInspector.jsx`,
+      `ArchitectureSnapshot.jsx`, `ScalabilityPanel.jsx`.
+- [x] Toast feedback wired into `App.jsx` for the 4 actions that previously
+      had no transient success feedback at all (Generate Scenario / Load
+      Road Network, Optimize/Re-Optimize, Simulate Incident, Run Benchmark)
+      — every message is built from the real response payload already in
+      scope; nothing invented.
+- [x] Visible disabled-reason text (`Button`'s `disabledHint`) on Simulate
+      Incident / Re-Optimize / Load Real Road Network, replacing a native
+      `title` attribute that was invisible on touch and to keyboard users.
+- [x] Branded `VehicleLoader` (a white car SVG moving between a
+      Start/Destination marker) replacing the plain spinner in the 3
+      primary loading states (network loading, optimize/re-optimize,
+      benchmark). Deliberately indeterminate — confirmed the backend has no
+      intermediate-stage callback for either `/api/optimize` or
+      `/api/benchmark`, so no percentage or fake "algorithm N of 5" is
+      shown.
+- [x] `Logo.jsx` + `favicon.svg` replaced with a minimal flat white car +
+      destination-pin glyph (previously a route/quantum-node mark in the
+      brand accent color) — same glyph reused in the header, the Executive
+      Overview empty state, and the favicon's own dark backdrop.
+- [x] **New Executive Overview** (`ExecutiveOverview.jsx`), toggled via a
+      header nav ("Executive Overview" / "Engineering Control Room",
+      default: Executive Overview). The prior single dense workspace is now
+      the "Engineering Control Room" and is otherwise functionally
+      unchanged. The new view is a narrative built only from data
+      `App.jsx` already computes: scenario stat row; a primary-outcome
+      headline (a real before/after % when a previous result exists,
+      otherwise the real feasible-plan headline — never a fabricated
+      baseline); key metrics; a "What Changed" + interactive
+      Reference-vs-Optimized bar comparison sharing one metric-selection
+      state; the real `NetworkMap`/`VehicleInspector` reused as a
+      read-only route view (no disrupt-road controls, no benchmark
+      preview overlay — that stays an Engineering-only action); a factual
+      operational-insights checklist; and, once a benchmark has been run,
+      a metric-switchable algorithm comparison using the same
+      `ComparisonBars` primitive as the before/after section.
+- [x] `ControlPanel.jsx` reorganized into numbered `ControlSection`s (01
+      Scenario, 02 Conditions, 03 Operations, 04 Solver) instead of an
+      undifferentiated vertical button stack.
+- [x] Engineering Control Room's GIS/Graph toggle, per-severity
+      road-disruption buttons, and `ArchitectureSnapshot`'s
+      Prototype/Deployment toggle now use the shared primitives instead of
+      three separately hand-rolled toggle implementations.
+
+**Explicitly out of scope this round**, per the brief's own instruction not
+to invent functionality the repo doesn't have: manual boundary drawing,
+manual depot/stop placement, vehicle capacity/fleet-size/demand inputs, a
+2-opt checkbox, a multi-city benchmark race, playback/timeline controls, a
+Profile system — none of these exist in the actual app, and an initial
+audit against reference screenshots that assumed they did was corrected
+before implementation started.
+
+Build verified: `npm run build` succeeds with no errors. `npm run lint`
+could not be run — `eslint` is referenced by `package.json`'s `lint` script
+but is not actually listed in `devDependencies` (pre-existing gap, not
+introduced by this change). **Not verified live in a running browser this
+round** — an automated Playwright check was started but the interactive
+click-through was intentionally skipped per instruction; this pass was
+checked by build success and manual code review of prop wiring and handler
+preservation instead. A manual click-through is recommended before demoing.
+This branch: `frontend/ui-polish-executive-overview` (not merged to `main`).
 
 ---
 
@@ -273,8 +654,13 @@ plus `test_scenario_hash_deterministic_and_distinguishing` and
 
 **Tier 3 — explicitly deferred, not started:** QPSO particle-cloud
 visualization, impact heatmap (skipped, no new mapping dependency), full
-"Proof Mode" dashboard, Executive Impact Summary freeze-frame. Do not start
-without asking first, per the plan's own build order.
+"Proof Mode" dashboard. Do not start without asking first, per the plan's
+own build order.
+
+*(Superseded 2026-09-26: "Executive Impact Summary freeze-frame" — this
+tier's fourth deferred item — is now covered by the Executive Overview view
+built in the "Executive Overview / Engineering Control Room Split + UI
+Design System" entry above.)*
 
 ---
 

@@ -35,8 +35,10 @@ from __future__ import annotations
 import random
 from typing import Dict, List, Optional, Tuple
 
+import networkx as nx
+
 from models import Edge, Job, Node, ProblemScenario, Vehicle
-from problem_generator import compute_scenario_hash
+from problem_generator import compute_scenario_hash, generate_time_windows
 
 from .osm_loader import OsmRoadGraph, haversine_m
 
@@ -56,6 +58,27 @@ def _closest_node(graph: OsmRoadGraph, lat: float, lon: float) -> int:
         graph.nodes.values(),
         key=lambda n: (haversine_m(lat, lon, n.lat, n.lon), n.osm_id),
     ).osm_id
+
+
+def _depot_travel_time_minutes(graph: OsmRoadGraph, depot_osm_id: int) -> Dict[int, float]:
+    """Shortest free-flow travel time (minutes), depot -> every routable OSM
+    node, for time-window generation (t0 in generate_time_windows).
+
+    Built locally with travel_time_minutes as edge weight -
+    `OsmRoadGraph.to_digraph()` uses distance (length_m) for a different
+    purpose (connectivity analysis), so that graph isn't reused here.
+    """
+    g = nx.DiGraph()
+    for osm_id in graph.nodes:
+        g.add_node(osm_id)
+    for edge in graph.edges:
+        w = edge.travel_time_minutes
+        existing = g.get_edge_data(edge.source, edge.target)
+        if existing is None or w < existing["weight"]:
+            g.add_edge(edge.source, edge.target, weight=w)
+    if not g.has_node(depot_osm_id):
+        return {}
+    return nx.single_source_dijkstra_path_length(g, source=depot_osm_id, weight="weight")
 
 
 def select_terminals(
@@ -86,6 +109,8 @@ def osm_graph_to_scenario(
     num_vehicles: int = 3,
     seed: int = 42,
     max_route_time_min: float = DEFAULT_MAX_ROUTE_TIME_MIN,
+    time_windows: bool = False,
+    tw_width_min: float = 60.0,
 ) -> ProblemScenario:
     """Builds a ProblemScenario from a real OSM road graph."""
     if not graph.nodes or not graph.edges:
@@ -137,17 +162,38 @@ def osm_graph_to_scenario(
 
     rng = random.Random(seed)
     jobs: List[Job] = []
+    service_times: List[float] = []
     total_demand = 0.0
     for position, osm_id in enumerate(job_osm_ids):
         demand = round(rng.uniform(DEMAND_MIN, DEMAND_MAX), 1)
         total_demand += demand
+        service_time = round(rng.uniform(SERVICE_TIME_MIN, SERVICE_TIME_MAX), 1)
+        service_times.append(service_time)
         jobs.append(Job(
             id=position + 1,
             node_id=index_of[osm_id],
             demand=demand,
-            service_time=round(rng.uniform(SERVICE_TIME_MIN, SERVICE_TIME_MAX), 1),
+            service_time=service_time,
             priority=rng.randint(1, 3),
         ))
+
+    # Time windows (CVRPTW), opt-in. Drawn from a SEPARATE RNG (see
+    # generate_time_windows) after every job is already fully built, so the
+    # node/demand/service_time draws above are byte-identical whether or not
+    # time_windows is set - only ready_time/due_time are added afterward.
+    if time_windows:
+        depot_travel_time = _depot_travel_time_minutes(graph, depot_osm_id)
+        windows = generate_time_windows(
+            job_node_ids=job_osm_ids,
+            service_times=service_times,
+            depot_travel_time=depot_travel_time,
+            max_route_time=max_route_time_min,
+            tw_width_min=tw_width_min,
+            seed=seed,
+        )
+        for job, (ready, due) in zip(jobs, windows):
+            job.ready_time = ready
+            job.due_time = due
 
     vehicle_count = max(1, num_vehicles)
     capacity = round((total_demand / vehicle_count) * CAPACITY_SLACK, 1) if jobs else 100.0
@@ -165,14 +211,19 @@ def osm_graph_to_scenario(
 
     # Same hash helper as the synthetic path - the bbox is folded in through
     # `extra` so two different places with the same job/vehicle counts do not
-    # collide. No second hashing scheme is introduced.
+    # collide. No second hashing scheme is introduced. The TW param is folded
+    # in ONLY when time_windows=True, so an existing OSM scenario hash stays
+    # byte-identical.
     bbox = graph.location.bbox
+    hash_extra = f"osm:{bbox.to_overpass_bbox()}"
+    if time_windows:
+        hash_extra = f"{hash_extra}:tw:{tw_width_min}"
     scenario_hash = compute_scenario_hash(
         num_nodes=len(nodes),
         num_jobs=len(jobs),
         num_vehicles=vehicle_count,
         seed=seed,
-        extra=f"osm:{bbox.to_overpass_bbox()}",
+        extra=hash_extra,
     )
 
     return ProblemScenario(

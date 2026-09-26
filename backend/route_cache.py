@@ -138,6 +138,25 @@ class RouteMatrixCache:
 
         return matrix
 
+    def seed(
+        self,
+        scenario: ProblemScenario,
+        matrix: RouteMatrix,
+        terminals: Optional[List[int]] = None,
+    ) -> None:
+        """Stores an already-built matrix for this routing state without
+        counting a build or a lookup. Used by benchmark worker processes,
+        which receive the matrix the parent built instead of rebuilding it."""
+        if terminals is None:
+            terminals = terminal_nodes(scenario)
+        key = route_matrix_key(scenario, terminals)
+        with self._lock:
+            if key not in self._entries:
+                self._entries[key] = matrix
+            self._entries.move_to_end(key)
+            while len(self._entries) > self._max_entries:
+                self._entries.popitem(last=False)
+
     def peek(
         self,
         scenario: ProblemScenario,

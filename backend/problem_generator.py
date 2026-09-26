@@ -30,11 +30,57 @@ def compute_scenario_hash(
     return hashlib.sha256(raw.encode()).hexdigest()[:10]
 
 
+# Shared by both generators (synthetic and OSM); kept as a constant here
+# rather than duplicated so window generation and vehicle creation agree on
+# what "max_route_time" means without threading a vehicle object around.
+DEFAULT_MAX_ROUTE_TIME_MIN = 150.0
+
+
+def generate_time_windows(
+    job_node_ids: List[int],
+    service_times: List[float],
+    depot_travel_time: Dict[int, float],
+    max_route_time: float,
+    tw_width_min: float,
+    seed: int,
+) -> List[Tuple[float, float]]:
+    """Deterministically generates (ready_time, due_time) pairs, one per job,
+    in the SAME order as `job_node_ids`.
+
+    Uses its own RNG (`np.random.default_rng([seed, 7])`), independent of -
+    and never advanced by - whatever RNG generated the rest of the scenario
+    (job nodes, demands, service times, vehicle capacity). That's what keeps
+    a scenario generated with time_windows=True byte-identical, on every
+    field other than ready_time/due_time, to the same seed with
+    time_windows=False - callers must pass an already-built jobs list rather
+    than let this function touch job creation itself.
+
+        t0    = depot_travel_time[node]  (shortest free-flow time, depot -> job)
+        ready = uniform(0, max(0, max_route_time * 0.6 - t0))
+        due   = max(ready + tw_width_min, t0 + service_time)
+
+    `due` is always >= t0 + service_time, so a dedicated vehicle leaving the
+    depot alone can always reach and serve the job on time - no window is
+    impossible to hit by construction.
+    """
+    rng = np.random.default_rng([seed, 7])
+    windows: List[Tuple[float, float]] = []
+    for node_id, service_time in zip(job_node_ids, service_times):
+        t0 = depot_travel_time.get(node_id, 0.0)
+        ready_upper = max(0.0, max_route_time * 0.6 - t0)
+        ready = float(rng.uniform(0.0, ready_upper))
+        due = max(ready + tw_width_min, t0 + service_time)
+        windows.append((round(ready, 2), round(due, 2)))
+    return windows
+
+
 def generate_synthetic_scenario(
     num_nodes: int = 30,
     num_jobs: int = 15,
     num_vehicles: int = 3,
     seed: int = 42,
+    time_windows: bool = False,
+    tw_width_min: float = 60.0,
     demand_min: float = 5.0,
     demand_max: float = 15.0,
     vehicle_capacity_override: Optional[float] = None,
@@ -153,17 +199,38 @@ def generate_synthetic_scenario(
     # 3. Select Delivery Locations (Jobs)
     job_node_ids = random.sample(range(1, num_nodes), min(num_jobs, num_nodes - 1))
     jobs: List[Job] = []
+    service_times: List[float] = []
     total_demand = 0.0
     for idx, node_id in enumerate(job_node_ids):
         demand = round(random.uniform(demand_min, demand_max), 1)
         total_demand += demand
+        service_time = round(random.uniform(3.0, 8.0), 1)
+        service_times.append(service_time)
         jobs.append(Job(
             id=idx + 1,
             node_id=node_id,
             demand=demand,
-            service_time=round(random.uniform(3.0, 8.0), 1),
+            service_time=service_time,
             priority=random.randint(1, 3)
         ))
+
+    # Time windows (CVRPTW), opt-in. Drawn from a SEPARATE RNG (see
+    # generate_time_windows) after every job is already fully built, so the
+    # node/demand/service_time draws above are byte-identical whether or not
+    # time_windows is set - only ready_time/due_time are added afterward.
+    if time_windows:
+        depot_travel_time = nx.single_source_dijkstra_path_length(G, source=0, weight='base_time')
+        windows = generate_time_windows(
+            job_node_ids=job_node_ids,
+            service_times=service_times,
+            depot_travel_time=depot_travel_time,
+            max_route_time=DEFAULT_MAX_ROUTE_TIME_MIN,
+            tw_width_min=tw_width_min,
+            seed=seed,
+        )
+        for job, (ready, due) in zip(jobs, windows):
+            job.ready_time = ready
+            job.due_time = due
 
     # 4. Create Vehicles (Capacity total > total job demands, unless the
     # caller explicitly overrides it to see a tighter/slacker fleet)
@@ -182,14 +249,16 @@ def generate_synthetic_scenario(
             capacity=vehicle_capacity,
             start_node=0,
             end_node=0,
-            max_route_time=150.0,
+            max_route_time=DEFAULT_MAX_ROUTE_TIME_MIN,
             color=colors[v % len(colors)]
         ))
 
-    # Only fold demand/capacity into the hash when they diverge from the old
-    # hardcoded defaults, so scenarios generated the old way keep the exact
-    # same hash they always have (see compute_scenario_hash's docstring).
+    # Extra generation parameters are folded into the hash ONLY when they
+    # diverge from the defaults, so every existing scenario hash - and every
+    # frozen E1-E6 experiment config that depends on it - stays byte-identical.
     extra = ""
+    if time_windows:
+        extra += f"tw:{tw_width_min}"
     if (demand_min, demand_max) != (5.0, 15.0):
         extra += f"d{demand_min}-{demand_max}"
     if vehicle_capacity_override is not None:

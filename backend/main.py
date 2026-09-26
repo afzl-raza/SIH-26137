@@ -1,12 +1,23 @@
 import csv
 import json
+import threading
+from contextlib import asynccontextmanager
+import os
+import re
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 
+from auth.security import verify_password
+from auth.store import (
+    EmailAlreadyRegisteredError,
+    PASSWORD_RESET_STORE,
+    SESSION_STORE,
+    USER_STORE,
+)
 from models import (
     ProblemScenario,
     OptimizationConfig,
@@ -42,7 +53,7 @@ from optimizers.greedy import GreedyOptimizer
 from optimizers.pso import PSOOptimizer
 from optimizers.qpso import QPSOOptimizer
 from optimizers.exact import ExactOptimizer, ExactSolverTooLargeError
-from optimizers.benchmark import run_benchmark
+from optimizers.benchmark import run_benchmark, warm_pool
 from fitness import evaluate_solution
 from experiments.runner import (
     run_e1_algorithm_comparison,
@@ -54,10 +65,20 @@ from experiments.runner import (
 )
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Start the benchmark worker processes in the background so the first
+    # /api/benchmark call doesn't pay process start-up. Non-blocking: the
+    # API is available immediately either way.
+    threading.Thread(target=warm_pool, daemon=True).start()
+    yield
+
+
 app = FastAPI(
     title="Q-DFRO API",
     description="Quantum-Inspired Intelligent Traffic Route Optimization API",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Enable CORS for local frontend development
@@ -70,6 +91,183 @@ app.add_middleware(
 )
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# Authentication
+#
+# User/session/reset-token storage lives in auth/store.py (in-memory, same
+# scope as realdata/scenario_store.py - not a database, dropped on restart).
+# Passwords are hashed with PBKDF2-HMAC-SHA256 (auth/security.py) - never
+# stored or logged in plain text. Sessions are an opaque bearer token the
+# frontend sends as `Authorization: Bearer <token>`, not the URL hash.
+# ══════════════════════════════════════════════════════════════════════════
+
+PASSWORD_MIN_LENGTH = 8
+_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+# Only "production" (set via render.yaml in a real deployment) disables the
+# development-only reset-token convenience below - defaults to development
+# so local/demo runs can exercise the full reset flow without an email
+# provider.
+QDFRO_ENVIRONMENT = os.environ.get("QDFRO_ENVIRONMENT", "development").strip().lower()
+IS_PRODUCTION = QDFRO_ENVIRONMENT == "production"
+
+
+class RegisterRequest(BaseModel):
+    name: str
+    position: str
+    company: str
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+def _require_non_empty(value: str, label: str) -> str:
+    stripped = (value or "").strip()
+    if not stripped:
+        raise HTTPException(status_code=400, detail=f"{label} is required.")
+    return stripped
+
+
+def _require_valid_email(email: str) -> str:
+    normalized = (email or "").strip().lower()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Email is required.")
+    if not _EMAIL_PATTERN.match(normalized):
+        raise HTTPException(status_code=400, detail="Enter a valid email address.")
+    return normalized
+
+
+def _require_valid_password(password: str) -> None:
+    if not password or len(password) < PASSWORD_MIN_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Password must be at least {PASSWORD_MIN_LENGTH} characters.",
+        )
+
+
+def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
+    if not authorization:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return None
+    return token.strip()
+
+
+def _current_user(authorization: Optional[str] = Header(None)):
+    """FastAPI dependency: resolves the bearer token to a stored user, or
+    raises 401. Never falls back to "any token works" or "no token works" -
+    an absent/unknown/expired token is always rejected."""
+    token = _extract_bearer_token(authorization)
+    user_id = SESSION_STORE.get_user_id(token) if token else None
+    user = USER_STORE.get_by_id(user_id) if user_id else None
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated.")
+    return user
+
+
+@app.post("/api/auth/register")
+def register(payload: RegisterRequest):
+    name = _require_non_empty(payload.name, "Name")
+    position = _require_non_empty(payload.position, "Position")
+    company = _require_non_empty(payload.company, "Company name")
+    email = _require_valid_email(payload.email)
+    _require_valid_password(payload.password)
+
+    try:
+        user = USER_STORE.create(
+            name=name, position=position, company=company, email=email, password=payload.password
+        )
+    except EmailAlreadyRegisteredError:
+        raise HTTPException(
+            status_code=409,
+            detail="An account with this email already exists. Please log in.",
+        )
+
+    session = SESSION_STORE.create(user.id)
+    return {"token": session.token, "user": user.public()}
+
+
+@app.post("/api/auth/login")
+def login(payload: LoginRequest):
+    email = _require_valid_email(payload.email)
+    _require_valid_password(payload.password)
+
+    user = USER_STORE.get_by_email(email)
+    if user is None:
+        raise HTTPException(
+            status_code=401,
+            detail="No account found with this email. Please create an account first.",
+        )
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Incorrect email or password.")
+
+    session = SESSION_STORE.create(user.id)
+    return {"token": session.token, "user": user.public()}
+
+
+@app.post("/api/auth/logout")
+def logout(authorization: Optional[str] = Header(None)):
+    token = _extract_bearer_token(authorization)
+    if token:
+        SESSION_STORE.revoke(token)
+    return {"message": "Logged out."}
+
+
+@app.get("/api/auth/me")
+def get_current_user(current_user=Depends(_current_user)):
+    return {"user": current_user.public()}
+
+
+@app.post("/api/auth/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest):
+    email = (payload.email or "").strip().lower()
+    # Same response whether or not the email is registered - this endpoint
+    # must never let a caller learn which emails have accounts.
+    response = {
+        "message": "If an account exists for this email, you'll receive instructions to reset your password."
+    }
+    if email:
+        user = USER_STORE.get_by_email(email)
+        if user is not None:
+            reset = PASSWORD_RESET_STORE.create(user.id)
+            if not IS_PRODUCTION:
+                # Development-only convenience: no email-delivery
+                # infrastructure exists in this repository, so the token
+                # can't actually be sent anywhere. Surfacing it here lets the
+                # reset flow be exercised end-to-end locally. Gated on
+                # QDFRO_ENVIRONMENT so a production deployment never returns
+                # this field regardless of what the frontend sends.
+                response["dev_reset_token"] = reset.token
+    return response
+
+
+@app.post("/api/auth/reset-password")
+def reset_password(payload: ResetPasswordRequest):
+    _require_valid_password(payload.new_password)
+    user_id = PASSWORD_RESET_STORE.consume(payload.token)
+    if user_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="This reset link is invalid or has expired. Please request a new one.",
+        )
+    USER_STORE.set_password(user_id, payload.new_password)
+    return {"message": "Password updated. You can now log in with your new password."}
+
+
 class GenerateRequest(BaseModel):
     # "synthetic" keeps the original generated network; "osm" builds the
     # scenario from real OpenStreetMap road data for the requested location.
@@ -79,6 +277,11 @@ class GenerateRequest(BaseModel):
     num_vehicles: int = 3
     seed: int = 42
     num_nodes: int = 30  # synthetic only - OSM node count comes from the map
+
+    # CVRPTW, opt-in. See problem_generator.generate_time_windows for the
+    # exact rule; off by default so every existing caller is unaffected.
+    time_windows: bool = False
+    tw_width_min: float = 60.0
 
     # Synthetic only - bounds on each job's randomly drawn demand, and an
     # optional flat vehicle capacity that skips the demand-derived formula.
@@ -198,6 +401,8 @@ def generate_problem(req: GenerateRequest):
             num_jobs=req.num_jobs,
             num_vehicles=req.num_vehicles,
             seed=req.seed,
+            time_windows=req.time_windows,
+            tw_width_min=req.tw_width_min,
             demand_min=req.demand_min,
             demand_max=req.demand_max,
             vehicle_capacity_override=req.vehicle_capacity_override
@@ -325,6 +530,8 @@ def _generate_from_openstreetmap(req: GenerateRequest):
             num_jobs=req.num_jobs,
             num_vehicles=req.num_vehicles,
             seed=req.seed,
+            time_windows=req.time_windows,
+            tw_width_min=req.tw_width_min,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

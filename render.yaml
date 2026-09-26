@@ -9,4 +9,6 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      - key: QDFRO_ENVIRONMENT
+        value: production
     healthCheckPath: /api/health

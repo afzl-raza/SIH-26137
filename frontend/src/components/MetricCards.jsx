@@ -1,40 +1,6 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Clock, Navigation, Cpu, CheckCircle2, AlertTriangle, TrendingDown, TrendingUp, ArrowRight, GitBranch, Info } from 'lucide-react';
-
-// Animates the *display* of a real, already-known value - both the start
-// and end points are real backend numbers, and the tween never presents an
-// intermediate frame as a measured reading (it's purely a rendering
-// transition, same principle as the route-morph animation in NetworkMap).
-function useCountUp(target, duration = 600) {
-  const [value, setValue] = useState(target ?? 0);
-  const fromRef = useRef(target ?? 0);
-
-  useEffect(() => {
-    if (target == null) return;
-    const from = fromRef.current;
-    const to = target;
-    if (from === to) {
-      setValue(to);
-      return;
-    }
-    const start = performance.now();
-    let raf;
-    const tick = (now) => {
-      const t = Math.min(1, (now - start) / duration);
-      const eased = 1 - Math.pow(1 - t, 3);
-      setValue(from + (to - from) * eased);
-      if (t < 1) {
-        raf = requestAnimationFrame(tick);
-      } else {
-        fromRef.current = to;
-      }
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [target, duration]);
-
-  return value;
-}
+import React, { useMemo } from 'react';
+import { Clock, Navigation, Cpu, CheckCircle2, AlertTriangle, TrendingDown, TrendingUp, ArrowRight, GitBranch, Info, Hourglass } from 'lucide-react';
+import { useCountUp } from '../lib/useCountUp';
 
 export default function MetricCards({ result, previousResult, weights, manifest, completedAt }) {
   // Hooks must run unconditionally on every render, before the early return
@@ -53,10 +19,18 @@ export default function MetricCards({ result, previousResult, weights, manifest,
     ).length;
   }, [result, previousResult]);
 
+  // Sum of VehicleRoute.late_jobs (schedule.simulate_route) across the fleet.
+  // Always 0 when time windows are off, since no stop ever carries a
+  // due_time to miss.
+  const lateDeliveries = useMemo(
+    () => (result?.routes || []).reduce((sum, r) => sum + (r.late_jobs || 0), 0),
+    [result]
+  );
+
   if (!result) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-        {[1, 2, 3, 4, 5].map((i) => (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4">
+        {[1, 2, 3, 4, 5, 6].map((i) => (
           <div key={i} className="clean-card p-4 flex flex-col items-center justify-center text-gray-500">
             <span className="text-2xl font-mono">--</span>
           </div>
@@ -80,7 +54,7 @@ export default function MetricCards({ result, previousResult, weights, manifest,
     <div className="flex flex-col gap-6">
       {/* Solver Output — one dense row, cost given slightly more weight
           via a left accent border rather than a separate oversized block */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4">
         {/* Cost (hero, but sized like its siblings) */}
         {/* borderLeft set inline, not via a Tailwind border-l-* utility -
             .clean-card's own `border` shorthand rule is equal-specificity
@@ -147,6 +121,20 @@ export default function MetricCards({ result, previousResult, weights, manifest,
             <span className="text-gray-400 text-xs uppercase tracking-wider mb-1">Feasibility</span>
             <span className={`font-display text-lg font-bold tabular-nums ${result.is_feasible ? 'text-[#6B9A57]' : 'text-[#C1443B]'}`}>
               {result.is_feasible ? '✓ VALID' : `${result.constraint_violations || 0} VIOLATIONS`}
+            </span>
+          </div>
+        </div>
+
+        {/* Late Deliveries (CVRPTW) - sum of VehicleRoute.late_jobs across
+            the fleet. Always 0/green when time windows are off. */}
+        <div className="clean-card p-4 flex items-start gap-3">
+          <div className={`p-2 rounded ${lateDeliveries > 0 ? 'bg-[#C1443B]/10 text-[#C1443B]' : 'bg-[#6B9A57]/10 text-[#6B9A57]'}`}>
+            <Hourglass size={20} />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-gray-400 text-xs uppercase tracking-wider mb-1">Late Deliveries</span>
+            <span className={`font-display text-lg font-bold tabular-nums ${lateDeliveries > 0 ? 'text-[#C1443B]' : 'text-[#6B9A57]'}`}>
+              {lateDeliveries}
             </span>
           </div>
         </div>
