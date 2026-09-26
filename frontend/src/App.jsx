@@ -42,6 +42,24 @@ export default function App() {
   );
 }
 
+// Both Optimize and Run Benchmark are only reachable from inside the
+// Engineering Control Room (its ControlPanel), so by the time a real user
+// click fires this toast, #results-section already exists on the page -
+// it's just below the fold. A no-op if it somehow doesn't (e.g. the one
+// automatic bootstrap optimize, which can complete while Executive
+// Overview is showing instead).
+function scrollToId(id) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function scrollToResults() {
+  scrollToId('results-section');
+}
+
+function scrollToBenchmark() {
+  scrollToId('benchmark-section');
+}
+
 function AppShell() {
   const toast = useToast();
   // 'overview' (Executive Overview) or 'engineering' (Engineering Control
@@ -58,6 +76,11 @@ function AppShell() {
   const [currentResult, setCurrentResult] = useState(null);
   const [previousResult, setPreviousResult] = useState(null);
   const [benchmarkData, setBenchmarkData] = useState(null);
+  // True once road conditions change after the last benchmark ran - that
+  // benchmark's results were computed against edge costs that no longer
+  // apply, so the Executive Overview must not present them as a current
+  // before/after comparison. Engineering Control Room still shows them.
+  const [benchmarkStale, setBenchmarkStale] = useState(false);
   const [previewedAlgorithm, setPreviewedAlgorithm] = useState(null);
   const [selectedIncidentEdge, setSelectedIncidentEdge] = useState(null);
   const [incidentInfo, setIncidentInfo] = useState(null);
@@ -166,10 +189,27 @@ function AppShell() {
     }
   }, [networkState, statusState]);
 
-  // ─── Auto-generate on startup ────────────────────
+  // ─── Auto-bootstrap on startup ───────────────────
+  // Loads a real scenario, then runs exactly one real Optimize against it
+  // using a fast solver preset - separate from `config` (which stays at
+  // the slower, "watch it work" defaults Advanced Solver Settings shows
+  // and manual runs use) - so the Executive Overview isn't empty on first
+  // load, without a multi-second wait and without the multi-stage
+  // auto-chain (incident/re-optimize/benchmark) that made everything feel
+  // like it was "just happening." Those three stay entirely manual.
+  const FAST_BOOTSTRAP_CONFIG = { algorithm: 'qpso', population_size: 20, max_iterations: 30, seed: 42, weights: config.weights };
+  const [autoBootstrapStage, setAutoBootstrapStage] = useState('start');
+
   useEffect(() => {
-    handleGenerateScenario();
+    handleGenerateScenario().then(() => setAutoBootstrapStage('generated'));
   }, []);
+
+  useEffect(() => {
+    if (autoBootstrapStage === 'generated' && scenarioId) {
+      handleOptimize(scenarioId, FAST_BOOTSTRAP_CONFIG).then(() => setAutoBootstrapStage('done'));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoBootstrapStage, scenarioId]);
 
   // ─── Friendly failure feedback ───────────────────
   // The persistent error banner keeps the real message for anyone
@@ -234,6 +274,7 @@ function AppShell() {
       setCurrentResult(null);
       setPreviousResult(null);
       setBenchmarkData(null);
+      setBenchmarkStale(false);
       setPreviewedAlgorithm(null);
       setSelectedIncidentEdge(null);
       setIncidentInfo(null);
@@ -285,13 +326,14 @@ function AppShell() {
   // passed so the backend echoes exactly the configuration this client used -
   // it does not retain them otherwise, and inventing them would defeat the
   // point of a manifest.
-  const refreshManifest = async (activeScenarioId) => {
+  const refreshManifest = async (activeScenarioId, configOverride) => {
     const id = activeScenarioId || scenarioId;
     if (!id) return;
+    const cfg = configOverride || config;
     const params = new URLSearchParams({
-      algorithm: config.algorithm,
-      population_size: String(config.population_size),
-      max_iterations: String(config.max_iterations)
+      algorithm: cfg.algorithm,
+      population_size: String(cfg.population_size),
+      max_iterations: String(cfg.max_iterations)
     });
     try {
       const res = await apiFetch(`/api/scenario/${id}/manifest?${params}`);
@@ -307,11 +349,15 @@ function AppShell() {
   // state. Guarded with a shape check rather than relying on the argument
   // being undefined, since this function is also used directly as a button
   // onClick handler, which would otherwise pass the DOM click event here.
-  const handleOptimize = async (scenarioIdOverride) => {
+  // `configOverride` lets a caller run a one-off solver configuration (the
+  // auto-bootstrap's fast preset) without touching the `config` state that
+  // Advanced Solver Settings displays and that manual runs use.
+  const handleOptimize = async (scenarioIdOverride, configOverride) => {
     const activeScenarioId = (typeof scenarioIdOverride === 'string')
       ? scenarioIdOverride
       : scenarioId;
     if (!activeScenarioId) return;
+    const activeConfig = configOverride || config;
     setLoading(true);
     setError(null);
     const isReopt = networkState === 'DISRUPTED';
@@ -323,7 +369,7 @@ function AppShell() {
       const res = await apiFetch('/api/optimize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario_id: activeScenarioId, config })
+        body: JSON.stringify({ scenario_id: activeScenarioId, config: activeConfig })
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => null);
@@ -339,8 +385,9 @@ function AppShell() {
       // The routes on screen now match the current edge costs again.
       setConditionsDirty(false);
       // The manifest describes the run that just happened, so refresh it here
-      // rather than on a timer.
-      refreshManifest(activeScenarioId);
+      // rather than on a timer - with the config this run actually used, not
+      // necessarily whatever `config` state currently holds.
+      refreshManifest(activeScenarioId, activeConfig);
       if (isReopt) {
         setNetworkState('RE-OPTIMIZED');
         // Recovery Timeline: the "Optimizing" duration is the backend's own
@@ -355,7 +402,8 @@ function AppShell() {
       }
 
       toast('Route plan ready', {
-        detail: `${data.routes?.length ?? 0} routes · ${data.total_travel_time?.toFixed(1) ?? '—'} min travel time. Your ${isReopt ? 'updated' : 'optimized'} routes are ready to review.`
+        detail: `${data.routes?.length ?? 0} routes · ${data.total_travel_time?.toFixed(1) ?? '—'} min travel time. Your ${isReopt ? 'updated' : 'optimized'} routes are ready to review.`,
+        action: { label: 'View results', onClick: scrollToResults }
       });
     } catch (err) {
       setError(err.message);
@@ -400,6 +448,7 @@ function AppShell() {
       setTrafficMode(mode);
       setWeatherEnabled(weather);
       refreshManifest(scenarioId);
+      if (benchmarkData) setBenchmarkStale(true);
 
       // Routes already on screen were computed against the old edge costs.
       if (currentResult) {
@@ -476,6 +525,7 @@ function AppShell() {
       setStatusState('INCIDENT');
       setNetworkState('DISRUPTED');
       refreshManifest(scenarioId);
+      if (benchmarkData) setBenchmarkStale(true);
 
       toast('Road conditions updated', {
         tone: 'error',
@@ -554,8 +604,17 @@ function AppShell() {
       }
       const data = await res.json();
       setBenchmarkData(data);
+      setBenchmarkStale(false);
       const algoCount = data.results ? Object.keys(data.results).length : 0;
-      toast('Comparison ready', { detail: `The route plans have been compared successfully — ${algoCount} options compared.` });
+      toast('Comparison ready', {
+        detail: data.cached
+          ? `Instant result - identical scenario and settings to an earlier run, so the ${algoCount} saved results were reused.`
+          : `The route plans have been compared successfully - ${algoCount} options compared.`,
+        action: { label: 'View benchmark details', onClick: scrollToBenchmark }
+      });
+      // Take the user straight to the results rather than leaving them
+      // below the fold. Waits a frame so the panel has actually rendered.
+      setTimeout(scrollToBenchmark, 150);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -577,38 +636,52 @@ function AppShell() {
       {loading && activeOperation && <OperationOverlay operation={activeOperation} />}
 
       {/* ═══ HEADER ═══ */}
-      <header className="clean-panel border-b border-[#332E29] px-3 sm:px-6 py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xl sticky top-0 z-50">
-        <div className="flex items-center space-x-3">
-          <div className="bg-[#1E1B18] border border-[#3A342E] p-1.5 sm:p-2 rounded-lg shadow-md">
+      {/* z-[1200]: must sit above Leaflet's internal panes/controls (400-1000),
+          which otherwise scroll over the sticky header. Map containers are
+          also `isolate`d, but this keeps the header safe regardless. */}
+      <header className="clean-panel border-b border-[#332E29] px-3 sm:px-6 py-2 sm:py-2.5 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-3 gap-y-2 shadow-xl sticky top-0 z-[1200]">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+          <div className="bg-[#1E1B18] border border-[#3A342E] p-1.5 sm:p-2 rounded-lg shadow-md flex-shrink-0">
             <Logo size={20} />
           </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="font-display font-bold text-sm sm:text-base tracking-wide text-gray-100">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-display font-bold text-sm sm:text-base tracking-wide text-gray-100 whitespace-nowrap">
                 Q-DFRO <span className="font-medium text-gray-400">Engine</span>
               </span>
-              <Badge tone="accent">QPSO Engine</Badge>
+              <Badge tone="accent" className="hidden sm:inline-flex">QPSO Engine</Badge>
             </div>
-            <p className="text-[10px] sm:text-[11px] text-gray-400 tracking-tight font-mono">
+            <p className="hidden sm:block text-[11px] text-gray-400 tracking-tight font-mono">
               Quantum-Inspired Fleet Optimization Engine
             </p>
           </div>
         </div>
 
-        {/* View nav: Executive Overview <-> Engineering Control Room */}
-        <div className="w-full sm:w-72">
+        {/* View nav: Executive Overview <-> Engineering Control Room.
+            Full width on its own row on phones (order-last), inline on
+            desktop - always inside the sticky header, so it stays reachable. */}
+        <div className="w-full lg:w-80 order-last lg:order-none">
           <SegmentedControl
             options={[
-              { id: 'overview', label: 'Executive Overview', icon: LayoutDashboard },
-              { id: 'engineering', label: 'Engineering Control Room', icon: SlidersHorizontal }
+              {
+                id: 'overview',
+                icon: LayoutDashboard,
+                label: <><span className="sm:hidden">Overview</span><span className="hidden sm:inline">Executive Overview</span></>
+              },
+              {
+                id: 'engineering',
+                icon: SlidersHorizontal,
+                label: <><span className="sm:hidden">Control Room</span><span className="hidden sm:inline">Engineering Control Room</span></>
+              }
             ]}
             value={view}
             onChange={setView}
+            itemClassName="py-1.5"
           />
         </div>
 
         {/* Network State + Engine Status */}
-        <div className="flex items-center space-x-3 sm:space-x-6 w-full sm:w-auto justify-between sm:justify-end">
+        <div className="flex items-center gap-3 sm:gap-6 justify-end">
           <div className="flex items-center space-x-2 font-mono text-xs">
             <Badge
               pulse={networkState === 'DISRUPTED' || statusState === 'RE-OPTIMIZING'}
@@ -628,7 +701,7 @@ function AppShell() {
             </Badge>
           </div>
 
-          <div className="flex items-center space-x-2 border-l border-[#332E29] pl-3 sm:pl-6 text-xs font-mono">
+          <div className="hidden md:flex items-center space-x-2 border-l border-[#332E29] pl-3 sm:pl-6 text-xs font-mono">
             <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#6B9A57]" />
             <div>
               <span className="text-gray-500 block text-[9px] sm:text-[10px] uppercase">Engine</span>
@@ -638,12 +711,16 @@ function AppShell() {
         </div>
       </header>
 
-      {/* ═══ WORKFLOW INDICATOR ═══ */}
-      <WorkflowIndicator currentStage={demoStage} narrativeText={narrativeText} />
+      {/* ═══ WORKFLOW INDICATOR (Engineering Control Room only - PLAN/
+          DISRUPT/RE-OPTIMIZE/PROVE is an engineering demo-stage concept,
+          not something a non-technical executive summary needs) ═══ */}
+      {view === 'engineering' && (
+        <WorkflowIndicator currentStage={demoStage} narrativeText={narrativeText} />
+      )}
 
       {/* ═══ MOBILE VIEWPORT SWITCHER (Engineering Control Room only, small screens) ═══ */}
       {view === 'engineering' && (
-        <div className="lg:hidden flex border-b border-[#332E29] bg-[#171513] p-1.5 gap-2 px-3 sm:px-6 shadow-md sticky top-[57px] z-40">
+        <div className="lg:hidden flex border-b border-[#332E29] bg-[#171513] p-1.5 gap-2 px-3 sm:px-6 shadow-md">
           <button
             onClick={() => setActiveMobileTab('map')}
             className={`flex-1 py-2 text-xs font-mono font-bold rounded transition-colors flex items-center justify-center gap-1.5 ${
@@ -681,18 +758,14 @@ function AppShell() {
           <ExecutiveOverview
             scenario={scenario}
             scenarioId={scenarioId}
+            benchmarkStale={benchmarkStale}
             networkMeta={networkMeta}
             currentResult={currentResult}
             previousResult={previousResult}
             benchmarkData={benchmarkData}
             networkState={networkState}
-            loading={loading}
-            selectedVehicle={selectedVehicle}
-            selectedRoute={selectedRoute}
-            onSelectVehicle={handleSelectVehicle}
             trafficMode={trafficMode}
             weatherEnabled={weatherEnabled}
-            weights={config.weights}
             onOpenEngineering={() => setView('engineering')}
           />
         </main>
@@ -788,17 +861,21 @@ function AppShell() {
 
       {/* ═══ METRICS & ANALYTICS (Engineering Control Room only) ═══ */}
       {view === 'engineering' && (
-      <footer className="p-4 pt-0 space-y-4 max-w-[1920px] w-full mx-auto">
+      <footer id="results-section" className="p-4 pt-0 space-y-4 max-w-[1920px] w-full mx-auto scroll-mt-28">
         <MetricCards result={currentResult} previousResult={previousResult} weights={config.weights} />
 
         {benchmarkData && (
-          <BenchmarkPanel
-            benchmarkData={benchmarkData}
-            onClose={() => { setBenchmarkData(null); setPreviewedAlgorithm(null); }}
-            config={config}
-            onPreviewAlgorithm={setPreviewedAlgorithm}
-            previewedAlgorithm={previewedAlgorithm}
-          />
+          // scroll-mt keeps the panel's title clear of the sticky header
+          // when the post-benchmark auto-scroll lands on it.
+          <div id="benchmark-section" className="scroll-mt-28">
+            <BenchmarkPanel
+              benchmarkData={benchmarkData}
+              onClose={() => { setBenchmarkData(null); setPreviewedAlgorithm(null); }}
+              config={config}
+              onPreviewAlgorithm={setPreviewedAlgorithm}
+              previewedAlgorithm={previewedAlgorithm}
+            />
+          </div>
         )}
 
         {demoStage === 'PROVE' && (

@@ -13,7 +13,10 @@ export default function ScenarioDetails({ scenario, networkMeta, trafficMode, we
 
   return (
     <div className="clean-panel rounded-xl border border-[#332E29] p-4 space-y-3">
-      <SectionHeader icon={MapPin} title="Scenario Details" />
+      <div className="space-y-1">
+        <SectionHeader icon={MapPin} title="Scenario Details" />
+        <p className="text-xs text-gray-500">The delivery job that was planned: where, how many vehicles and stops, and the road conditions.</p>
+      </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat label="Study Area" value={studyArea} icon={MapPin} truncate />
         <Stat label="Network" value={nodeCount != null ? `${nodeCount} nodes` : '—'} sub={edgeCount != null ? `${edgeCount} road segments` : undefined} icon={Route} />

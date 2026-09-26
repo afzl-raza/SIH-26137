@@ -1,173 +1,164 @@
-import React, { useMemo, useState } from 'react';
-import { Route as RouteIcon } from 'lucide-react';
-import SegmentedControl from '../ui/SegmentedControl';
+import React from 'react';
+import { Route as RouteIcon, ArrowRight, SlidersHorizontal } from 'lucide-react';
+import NetworkMap from '../NetworkMap';
+import Button from '../ui/Button';
 import SectionHeader from './SectionHeader';
+import { CORE_METRICS, fmt, pctChange, stopsServed } from './metrics';
 
-// A stylized, tilted route-flow diagram - not a second copy of the Leaflet
-// operational map (that already lives in the Engineering Control Room and
-// in Route Details below). Same real node positions and the same real
-// node_path/job_ids the optimizer actually returned; only the presentation
-// is different: a dark isometric "board" instead of map tiles, built with
-// plain SVG + a CSS 3D tilt, no charting/3D library added.
-const WIDTH = 640;
-const HEIGHT = 340;
-const PAD = 34;
+const COMPARED = CORE_METRICS.filter(m => m.key !== 'runtime');
 
-function makeProjector(nodes) {
-  if (!nodes.length) return () => [WIDTH / 2, HEIGHT / 2];
-  const lats = nodes.map(n => n.lat);
-  const lngs = nodes.map(n => n.lng);
-  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-  const latSpan = maxLat - minLat || 1;
-  const lngSpan = maxLng - minLng || 1;
-  const innerW = WIDTH - PAD * 2;
-  const innerH = HEIGHT - PAD * 2;
-  return (lat, lng) => [
-    PAD + ((lng - minLng) / lngSpan) * innerW,
-    // Flip Y: latitude increases upward, SVG y increases downward.
-    PAD + (1 - (lat - minLat) / latSpan) * innerH
-  ];
-}
-
-function RouteLayer({ nodes, nodeById, jobs, depotNode, result, vehicles, project, active }) {
-  const routes = result?.routes || [];
-
-  const jobIdToNodeId = useMemo(() => new Map(jobs.map(j => [j.id, j.node_id])), [jobs]);
-  const servedNodeIds = useMemo(
-    () => new Set(routes.flatMap(r => (r.job_ids || []).map(jid => jobIdToNodeId.get(jid))).filter(Boolean)),
-    [routes, jobIdToNodeId]
-  );
-
-  const projectedRoutes = useMemo(() => routes.map(r => {
-    const pts = (r.node_path || []).map(id => nodeById.get(id)).filter(Boolean).map(n => project(n.lat, n.lng));
-    const color = vehicles.find(v => v.id === r.vehicle_id)?.color || '#C6602E';
-    const d = pts.length > 1 ? `M ${pts.map(p => p.join(' ')).join(' L ')}` : '';
-    return { vehicleId: r.vehicle_id, color, d };
-  }), [routes, nodeById, project, vehicles]);
-
-  const stopNodes = nodes.filter(n => !n.is_depot && jobIdToNodeId && [...jobIdToNodeId.values()].includes(n.id));
+// Two real, read-only maps side by side - actual map tiles, depot, stops,
+// vehicle markers and routes - for whichever before/after pair
+// pickComparison() chose, followed directly by the measured difference in
+// plain language. Nothing here is computed differently from the Engineering
+// Control Room; this is a presentation of the same real results.
+export default function NetworkComparison({ scenario, scenarioId, comparison, onOpenEngineering }) {
+  const { kind, before, after } = comparison;
 
   return (
-    <svg
-      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-      className={`absolute inset-0 w-full h-full transition-opacity duration-500 ease-out ${active ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-    >
-      {/* Before any route exists, faint dashed spokes from the depot show
-          the delivery points waiting to be served - real positions, no
-          route computed yet, so no colored path is drawn. */}
-      {routes.length === 0 && depotNode && stopNodes.map(n => {
-        const [dx, dy] = project(depotNode.lat, depotNode.lng);
-        const [x, y] = project(n.lat, n.lng);
-        return (
-          <line key={`hint-${n.id}`} x1={dx} y1={dy} x2={x} y2={y}
-            stroke="#3A342E" strokeWidth="1" strokeDasharray="2,5" opacity="0.6" />
-        );
-      })}
+    <div className="clean-panel rounded-xl border border-[#332E29] p-4 space-y-4">
+      <div className="space-y-1">
+        <SectionHeader icon={RouteIcon} title="See the Difference" />
+        <p className="text-xs text-gray-500">{comparison.source}</p>
+      </div>
 
-      {projectedRoutes.map(r => r.d && (
-        <path
-          key={`route-${r.vehicleId}`}
-          d={r.d}
-          fill="none"
-          stroke={r.color}
-          strokeWidth="3.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{ filter: `drop-shadow(0 2px 4px ${r.color}99)` }}
+      <div className="grid lg:grid-cols-[1fr_auto_1fr] gap-3 items-stretch">
+        <MapPane
+          tone="before"
+          title={comparison.beforeTitle}
+          subtitle={comparison.beforeSubtitle}
+          scenario={scenario}
+          scenarioId={scenarioId}
+          result={before}
         />
-      ))}
+        <div className="hidden lg:flex items-center justify-center text-[#C6602E]">
+          <ArrowRight size={22} />
+        </div>
+        <MapPane
+          tone="after"
+          title={comparison.afterTitle}
+          subtitle={comparison.afterSubtitle}
+          scenario={scenario}
+          scenarioId={scenarioId}
+          result={after}
+        />
+      </div>
 
-      {stopNodes.map(n => {
-        const [x, y] = project(n.lat, n.lng);
-        const served = servedNodeIds.has(n.id);
-        return (
-          <g key={`stop-${n.id}`}>
-            <ellipse cx={x} cy={y + 3} rx="5" ry="2" fill="#000" opacity="0.35" />
-            <circle
-              cx={x} cy={y} r="4.5"
-              fill={served ? '#1E1B18' : '#0D0C0B'}
-              stroke={served ? '#5D7A9E' : '#4A423A'}
-              strokeWidth="1.6"
-            />
-          </g>
-        );
-      })}
-
-      {depotNode && (() => {
-        const [x, y] = project(depotNode.lat, depotNode.lng);
-        return (
-          <g>
-            <ellipse cx={x} cy={y + 6} rx="11" ry="4" fill="#000" opacity="0.45" />
-            <circle cx={x} cy={y} r="9" fill="#1E1B18" stroke="#C1443B" strokeWidth="2" />
-            <circle cx={x} cy={y} r="3" fill="#C1443B" />
-          </g>
-        );
-      })()}
-    </svg>
+      {kind === 'none'
+        ? <NoBaselineHint onOpenEngineering={onOpenEngineering} />
+        : <ComparisonStrip before={before} after={after} scenario={scenario} />}
+    </div>
   );
 }
 
-export default function NetworkComparison({ scenario, beforeResult, afterResult }) {
-  const [mode, setMode] = useState('after');
-  const nodes = scenario?.nodes || [];
-  const jobs = scenario?.jobs || [];
-  const vehicles = scenario?.vehicles || [];
-  const nodeById = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes]);
-  const depotNode = nodes.find(n => n.is_depot) || nodeById.get(scenario?.depot_node_id);
-  const project = useMemo(() => makeProjector(nodes), [nodes]);
+function MapPane({ tone, title, subtitle, scenario, scenarioId, result }) {
+  const isAfter = tone === 'after';
+  const routeCount = result?.routes?.length ?? 0;
+  return (
+    <div className={`rounded-xl border overflow-hidden flex flex-col ${isAfter ? 'border-[#5A3A22]' : 'border-[#332E29]'}`}>
+      <div className={`px-3 py-2 flex items-start justify-between gap-2 ${isAfter ? 'bg-[#3A2318]/40' : 'bg-[#141210]/60'}`}>
+        <div className="min-w-0">
+          <div className={`text-[11px] font-bold uppercase tracking-wider ${isAfter ? 'text-[#E8A578]' : 'text-gray-300'}`}>
+            {title}
+          </div>
+          <div className="text-[10px] text-gray-500 mt-0.5 leading-snug">{subtitle}</div>
+        </div>
+        {result && (
+          <span className="text-[10px] font-mono text-gray-400 flex-shrink-0 whitespace-nowrap">
+            {routeCount} vehicle{routeCount === 1 ? '' : 's'} · {fmt(CORE_METRICS[0], result.total_travel_time)}
+          </span>
+        )}
+      </div>
+      <div className="h-[320px] sm:h-[360px]">
+        <NetworkMap
+          scenario={scenario}
+          scenarioId={scenarioId}
+          loading={false}
+          currentResult={result}
+          previousResult={null}
+          disruptDisabled
+          previewResult={null}
+          previewedAlgorithm={null}
+          compact
+        />
+      </div>
+    </div>
+  );
+}
 
-  const shown = mode === 'before' ? beforeResult : afterResult;
-  const routeCount = shown?.routes?.length ?? 0;
-  const stopCount = shown?.routes
-    ? new Set(shown.routes.flatMap(r => r.job_ids || [])).size
-    : 0;
+function ComparisonStrip({ before, after, scenario }) {
+  const beforeStops = stopsServed(before, scenario);
+  const afterStops = stopsServed(after, scenario);
+
+  const cards = COMPARED.map(m => {
+    const b = m.get(before);
+    const a = m.get(after);
+    return { key: m.key, label: m.label, from: fmt(m, b), to: fmt(m, a), pct: pctChange(b, a) };
+  });
 
   return (
-    <div className="clean-panel rounded-xl border border-[#332E29] p-4 space-y-3">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <SectionHeader icon={RouteIcon} title="Before vs Optimized Network" />
-        <div className="w-64">
-          <SegmentedControl
-            options={[
-              { id: 'before', label: 'Before Optimization' },
-              { id: 'after', label: 'Optimized Result', activeColor: '#C6602E' }
-            ]}
-            value={mode}
-            onChange={setMode}
-          />
-        </div>
-      </div>
-
-      <div style={{ perspective: '1400px' }}>
-        <div
-          className="relative w-full rounded-xl border border-[#332E29] overflow-hidden bg-gradient-to-b from-[#171513] to-[#0D0C0B]"
-          style={{
-            height: HEIGHT,
-            transform: 'rotateX(20deg) scale(0.98)',
-            transformOrigin: 'center top',
-            boxShadow: '0 34px 60px -24px rgba(0,0,0,0.65), 0 0 0 1px rgba(198,96,46,0.05)'
-          }}
-        >
-          <RouteLayer
-            nodes={nodes} nodeById={nodeById} jobs={jobs} depotNode={depotNode}
-            result={beforeResult} vehicles={vehicles} project={project}
-            active={mode === 'before'}
-          />
-          <RouteLayer
-            nodes={nodes} nodeById={nodeById} jobs={jobs} depotNode={depotNode}
-            result={afterResult} vehicles={vehicles} project={project}
-            active={mode === 'after'}
-          />
-
-          <div className="absolute top-3 left-3 text-[9px] font-mono uppercase tracking-wider text-gray-400 bg-[#0D0C0B]/70 px-2 py-1 rounded">
-            {mode === 'before' ? 'Before Optimization' : 'Optimized Result'}
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {cards.map(c => <DeltaCard key={c.key} label={c.label} from={c.from} to={c.to} pct={c.pct} />)}
+        <div className="bg-[#141210]/50 border border-[#332E29]/70 rounded-lg p-3">
+          <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Stops Served</div>
+          <div className="font-display text-xl font-bold text-white mt-1 tabular-nums">
+            {afterStops.served ?? '—'} / {afterStops.total ?? '—'}
           </div>
-          <div className="absolute bottom-3 right-3 text-[10px] font-mono text-gray-300 bg-[#0D0C0B]/70 px-2 py-1 rounded">
-            {routeCount} route{routeCount === 1 ? '' : 's'} · {stopCount} stop{stopCount === 1 ? '' : 's'}
+          <div className="text-[10px] font-mono text-gray-500 mt-0.5">
+            before: {beforeStops.served ?? '—'} / {beforeStops.total ?? '—'}
           </div>
         </div>
       </div>
+      <PlainSummary cards={cards} afterStops={afterStops} />
+    </div>
+  );
+}
+
+function DeltaCard({ label, from, to, pct }) {
+  const better = pct != null && pct > 0;
+  const same = pct != null && Math.abs(pct) < 0.05;
+  const color = pct == null || same ? 'text-gray-300' : better ? 'text-[#6B9A57]' : 'text-[#E8A93A]';
+  return (
+    <div className="bg-[#141210]/50 border border-[#332E29]/70 rounded-lg p-3">
+      <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">{label}</div>
+      <div className={`font-display text-xl font-bold mt-1 tabular-nums ${color}`}>
+        {pct == null ? '—' : same ? 'No change' : `${Math.abs(pct).toFixed(1)}% ${better ? 'less' : 'more'}`}
+      </div>
+      <div className="text-[10px] font-mono text-gray-500 mt-0.5">{from} → {to}</div>
+    </div>
+  );
+}
+
+// One plain sentence built only from the real deltas above - worse results
+// are stated as worse, never softened or dropped.
+function PlainSummary({ cards, afterStops }) {
+  const parts = cards
+    .filter(c => c.pct != null && Math.abs(c.pct) >= 0.05)
+    .map(c => `${Math.abs(c.pct).toFixed(1)}% ${c.pct > 0 ? 'less' : 'more'} ${c.label.toLowerCase()}`);
+  if (parts.length === 0) return null;
+  const stopsText = afterStops.total == null ? ''
+    : afterStops.served === afterStops.total ? `All ${afterStops.total} stops covered, with `
+    : `${afterStops.served} of ${afterStops.total} stops covered, with `;
+  const joined = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
+  return (
+    <p className="text-sm text-gray-300 bg-[#3A2318]/20 border border-[#5A3A22]/50 rounded-lg px-3 py-2">
+      <span className="text-[#E8A578] font-semibold">In short: </span>
+      {stopsText}{joined}.
+    </p>
+  );
+}
+
+function NoBaselineHint({ onOpenEngineering }) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#141210]/50 border border-dashed border-[#332E29] rounded-lg px-4 py-3">
+      <p className="text-xs text-gray-400">
+        Want to see how much better this plan is? Run a benchmark in the Engineering Control Room
+        to compare it against simple nearest-stop dispatch on the same scenario.
+      </p>
+      <Button variant="secondary" size="sm" fullWidth={false} icon={SlidersHorizontal} onClick={onOpenEngineering}>
+        Open Engineering Control Room
+      </Button>
     </div>
   );
 }

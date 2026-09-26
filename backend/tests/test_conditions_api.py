@@ -458,21 +458,46 @@ def test_benchmark_runs_all_four_on_the_same_conditioned_scenario(offline_weathe
 
 
 def test_a_benchmark_under_conditions_builds_the_matrix_once():
-    """The four-algorithm benchmark must still be one build plus three hits,
-    now that conditions are in the cache key."""
+    """The four-algorithm benchmark must still build the route matrix exactly
+    once, now that conditions are in the cache key. PSO/GA/QPSO run in worker
+    processes, so the guarantee is: one build in the parent (reused by
+    Greedy), and zero builds in the workers - they're handed that matrix."""
     scenario = apply_conditions(
         generate_synthetic_scenario(num_nodes=18, num_jobs=7, num_vehicles=2, seed=9),
         ConditionRequest(traffic_mode=MODE_HEAVY),
     )
+    from optimizers import benchmark
     ROUTE_MATRIX_CACHE.clear()
     ROUTE_MATRIX_CACHE.reset_stats()
+    benchmark.clear_result_cache()
 
-    from optimizers.benchmark import run_benchmark
-    run_benchmark(scenario, OptimizationConfig(population_size=8, max_iterations=8, seed=42))
+    benchmark.run_benchmark(scenario, OptimizationConfig(population_size=8, max_iterations=8, seed=42))
 
     stats = ROUTE_MATRIX_CACHE.stats()
     assert stats["builds"] == 1
-    assert stats["hits"] == 3
+    assert stats["hits"] >= 1  # Greedy reused the parent's build
+    assert benchmark.LAST_WORKER_ROUTE_MATRIX_BUILDS == 0
+
+
+def test_a_repeat_benchmark_is_served_from_the_result_cache_and_a_change_is_not():
+    """Seeded optimizers make identical inputs produce identical outputs, so a
+    repeat is served from cache - but any condition change is a different
+    key and must be recomputed, never served stale."""
+    from optimizers import benchmark
+    benchmark.clear_result_cache()
+    base = generate_synthetic_scenario(num_nodes=18, num_jobs=7, num_vehicles=2, seed=11)
+    config = OptimizationConfig(population_size=8, max_iterations=8, seed=42)
+
+    first = benchmark.run_benchmark(base, config)
+    repeat = benchmark.run_benchmark(base, config)
+    assert first.cached is False
+    assert repeat.cached is True
+    assert repeat.results == first.results
+
+    heavy = apply_conditions(base, ConditionRequest(traffic_mode=MODE_HEAVY))
+    changed = benchmark.run_benchmark(heavy, config)
+    assert changed.cached is False
+    assert changed.results["greedy"].total_cost != first.results["greedy"].total_cost
 
 
 # ========================================================== 10. reproducibility

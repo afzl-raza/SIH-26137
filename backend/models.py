@@ -248,3 +248,8 @@ class TrafficUpdateBatch(BaseModel):
 class BenchmarkResult(BaseModel):
     scenario_seed: int
     results: Dict[str, OptimizationResult]
+    # True when served from the deterministic result cache (identical
+    # scenario content + config as an earlier run) rather than recomputed.
+    # Each result's runtime_ms is still the time genuinely measured when it
+    # was computed.
+    cached: bool = False

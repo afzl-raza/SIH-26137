@@ -12,6 +12,171 @@ verified against the actual code and a full test run (`pytest backend/tests
 
 ---
 
+## Benchmark Speed, Result Caching, Mobile Layout, Sticky Nav ✅ Done (2026-09-26)
+
+- [x] **Parallel benchmark** (`optimizers/benchmark.py`): PSO, GA and QPSO now
+      run concurrently in a persistent `ProcessPoolExecutor` (CPU-bound
+      Python, so threads would serialise on the GIL); Greedy stays
+      in-process. Pool is pre-warmed on server start (FastAPI lifespan) so
+      the first call skips process start-up, and each worker is pinned to
+      one BLAS thread to avoid oversubscription. Results are byte-identical
+      to the sequential run (same seeds, same scenario copy). Falls back to
+      sequential if a worker dies.
+- [x] **Route matrix still built once per benchmark**: the parent builds it
+      and hands the same matrix to each worker via a new
+      `RouteMatrixCache.seed()`; `LAST_WORKER_ROUTE_MATRIX_BUILDS` keeps the
+      guarantee testable (asserted 0 in tests).
+- [x] **Benchmark result cache**: seeded optimizers make identical inputs
+      give identical outputs, so results are cached by a hash of the full
+      scenario (graph, every condition multiplier, jobs, vehicles) + full
+      config. Any traffic/weather/incident change is a different key and is
+      recomputed — never served stale (test added). Response carries a
+      `cached` flag; the UI says "Instant result - identical scenario and
+      settings to an earlier run" instead of implying a fresh computation.
+- [x] Solver defaults reverted to the original 40/100 (had been bumped to
+      60/150 earlier today, which made benchmarks feel slow).
+- [x] Measured (server-side): benchmark ~9-20s sequential → **~1.7s**
+      parallel at 40/100; repeat of identical inputs → **23ms** from cache.
+- [x] **Auto-scroll**: when a benchmark completes, the page scrolls to the
+      benchmark results panel (landing just below the sticky header).
+- [x] **Sticky nav fix**: Leaflet's internal z-indexes (400-1000) were
+      painting maps *over* the sticky header while scrolling. Header raised
+      to `z-[1200]` and every map container gets `isolate`. Toasts moved off
+      the header (bottom-centre on phones, below the header on desktop).
+- [x] **Mobile**: compact two-row header (short "Overview / Control Room"
+      labels), no horizontal overflow at 390px in either view; removed a
+      hard-coded `top-[57px]` sticky offset that no longer matched.
+- [x] **Plain-language pass on the Executive Overview**: a 3-step "What
+      Q-DFRO does" intro, one-line meaning under every KPI tile, everyday
+      method names in the comparison ("Nearest-stop", "Swarm search",
+      "Genetic search", "Q-DFRO") with a neutral "X gave the lowest … on
+      this scenario" line. "Cost" is now described as what it actually is —
+      a combined time/distance/traffic score, lower is better — not money.
+
+Backend: **353/353 tests passing**. Verified live at 390px and 1440px via
+Playwright, zero console errors.
+
+---
+
+## Executive Overview — Real-Map "See the Difference" Comparison ✅ Done (2026-09-26)
+
+Replaced the stylized SVG before/after diagram with two real, read-only
+Leaflet maps side by side (new `compact` mode on `NetworkMap`: no GIS/Graph
+toggle, filter bar, legend or scroll-wheel zoom), each showing the real
+depot, stops, vehicle markers and routes, followed directly by a
+plain-language comparison strip and a one-sentence "In short" summary.
+
+- [x] New `executive/comparison.js` picks ONE real before/after pair that
+      drives the headline, KPI tiles, maps and comparison strip, so no two
+      sections can contradict each other: (1) the latest benchmark's
+      Greedy nearest-stop result vs its QPSO result — two methods on the
+      identical scenario in the same run, the honest analogue of "usual
+      dispatch vs our method"; (2) otherwise previous plan vs re-optimized
+      plan; (3) otherwise "no plan yet" with a pointer to run a benchmark.
+      Never a fabricated baseline.
+- [x] New `benchmarkStale` state in `App.jsx`: set when road conditions
+      change (incident or traffic/weather) after a benchmark ran, cleared
+      by a new benchmark or scenario. A stale benchmark is never presented
+      as a current comparison in the Executive Overview.
+- [x] `OptimizationImpact` and `WhatChanged` removed — they compared a
+      different before/after (previous vs current) than the new strip on the
+      same page; their content is folded into the single comparison strip.
+- [x] Headline no longer claims "feasible schedule" when the result is
+      infeasible; shows "Route Plan Ready - Needs Review" instead.
+
+Verified live via Playwright: fresh load (no-baseline state with benchmark
+pointer), then Run Benchmark → Executive Overview showed "10.5% less travel
+time, 20.8% less distance, 12.3% less cost, all 15 stops covered" vs
+nearest-stop dispatch, all from one real benchmark run.
+
+---
+
+## Executive Overview Visual Polish — KPI Grid, Richer Diagram, Stat Cards ✅ Done (2026-09-26)
+
+Third follow-up: asked to make the grids/diagram/details more attractive
+for the judged demo. Analyzed what was actually flat and fixed it rather
+than a generic pass:
+
+- [x] New `executive/KeyMetrics.jsx` — a proper 4-tile KPI grid (Travel
+      Time/Distance/Cost/Runtime, icon chips colored to match
+      `MetricCards.jsx`'s existing palette) reinstated right under the
+      headline; this had been dropped when the page was restructured
+      earlier in the day and left the top of the page thinner than it
+      should be.
+- [x] `NetworkComparison` enhanced: a per-vehicle color legend (only the
+      vehicles actually present in the currently-shown result), a subtle
+      dot-grid depth background behind the tilted board, a soft glow layer
+      under each route line, and a flowing dash animation on the active
+      route paths (`route-flow-dash` keyframe) plus a pulsing depot ring
+      (`depot-pulse-ring`) — all decorative motion on real, already-drawn
+      path data, nothing computed differently.
+- [x] `OperationalResult` rebuilt from a plain bullet list into a grid of
+      icon stat cards (feasibility/stops/routes/vehicles/disruption),
+      matching the visual language of the new KPI grid instead of reading
+      as a checklist.
+- [x] Extracted `MetricCards.jsx`'s `useCountUp` tween into a shared
+      `frontend/src/lib/useCountUp.js` (was duplicated logic waiting to
+      happen) and wired it into the primary outcome percentage and the new
+      KPI tiles, so the headline numbers animate in on reveal instead of
+      snapping to their final value — same principle already established
+      elsewhere in this codebase: it tweens the *display* of an
+      already-known real value, never presents an intermediate frame as a
+      measured reading.
+
+Verified live via Playwright across three separate runs (including one
+that happened to land mid-benchmark, confirming the `OperationOverlay`
+correctly dims the now-fully-populated page underneath it), zero console
+errors each time.
+
+---
+
+## Auto-Demo Bootstrap — Executive Overview Populated On Load ✅ Done (2026-09-26)
+
+Second follow-up: a fresh visitor landed on "No Route Plan Yet" until they
+went into the Engineering Control Room and clicked Optimize themselves —
+flagged as a weak first impression for a judged demo. The requested fix was
+a hardcoded "Sample Scenario" with invented numbers (19.4% less travel
+time, ₹4,850→₹4,120, etc.) — **flagged back to you as a direct conflict
+with this project's own `CLAUDE.md` rule ("never hard-code claims, results
+must come from actual experiments")**, since fabricated performance numbers
+in the source would be a real risk for a SIH submission regardless of a
+"sample" badge. You chose the alternative instead: auto-run the real
+pipeline.
+
+- [x] `App.jsx` now runs the real generate → optimize sequence once on
+      load, through the exact same handlers a user triggers manually,
+      against the real backend. Implemented as a chain of
+      `autoDemoStage`-gated `useEffect`s (`start → generated → done`), each
+      firing only after its own render has already committed the previous
+      stage's fresh state — **not** a single chained async function, which
+      would have kept reading the stale `scenarioId` closure from before
+      generate finished (`handleOptimize` reads component state, and only a
+      genuine effect re-run after a render sees the updated value).
+      Deliberately does **not** continue on to auto-simulate-incident,
+      auto-re-optimize, or auto-run-benchmark (see the correction note
+      above) — those stay manual, Engineering-Control-Room-triggered
+      actions.
+- [x] New `isAutoDemo` state, flipped to `false` the moment the visitor
+      takes their own first action (wrapped onto `ControlPanel`'s
+      Generate/Optimize/Simulate Incident/Re-Optimize/Replay/Run Benchmark
+      props and the map's disrupt-road popup) — drives a small "Demo
+      Scenario" `Badge` next to the Executive Outcome headline so it's
+      clear these particular numbers were produced automatically rather
+      than configured by the visitor. The badge disappears the moment they
+      run anything themselves; every number underneath, before or after, is
+      real either way.
+- [x] `Badge.jsx` gained a passthrough `...rest` (e.g. `title`) it didn't
+      have before.
+
+**Verified live via Playwright** (not just build success): fresh page load
+→ waited through the full real auto-chain → Executive Overview lands fully
+populated (12.9% lower travel time this run, a real cost/distance/runtime
+table, the before/after route diagram, a real feasibility warning shown
+un-hidden, the live route map, and a real 4-algorithm benchmark comparison)
+with the "Demo Scenario" badge visible, zero console errors.
+
+---
+
 ## Executive Overview Revision — Results-First Narrative + Route Comparison ✅ Done (2026-09-26)
 
 Follow-up revision to the entry below, after review: the first pass still
@@ -77,6 +242,16 @@ including the real +0.2% travel-time regression shown honestly in amber
 rather than hidden, the Before/Optimization toggle rendering genuinely
 different route colors, and Route Details' live map) — zero console
 errors across the run.
+
+*(Corrected 2026-09-26, same day: the auto-demo bootstrap below originally
+chained all five stages — generate, optimize, incident, re-optimize,
+benchmark — automatically on load. Feedback: watching 4-5 loading
+overlays fire back to back with no chance to absorb each result doesn't
+explain anything to a viewer, and takes control away from whoever is
+presenting the demo. Fixed in the "Auto-Demo Bootstrap" entry below: only
+generate + optimize now auto-run; incident/re-optimize/benchmark are
+manual again, so the car-and-data overlay only ever appears because
+someone actually asked for that step.)*
 
 ---
 

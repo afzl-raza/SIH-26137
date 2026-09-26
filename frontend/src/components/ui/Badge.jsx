@@ -9,7 +9,7 @@ const TONES = {
   red: 'bg-[#3A1C18] text-[#E8918A] border-[#5A2C26]'
 };
 
-export default function Badge({ tone = 'neutral', pulse = false, dotColor, children, className = '' }) {
+export default function Badge({ tone = 'neutral', pulse = false, dotColor, children, className = '', ...rest }) {
   return (
     <span
       className={cx(
@@ -18,6 +18,7 @@ export default function Badge({ tone = 'neutral', pulse = false, dotColor, child
         pulse ? 'animate-pulse' : '',
         className
       )}
+      {...rest}
     >
       {dotColor && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: dotColor }} />}
       {children}

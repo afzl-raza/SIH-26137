@@ -1,7 +1,6 @@
 // Shared metric config for the Executive Overview - one definition reused by
-// the optimization-impact table, the "What Changed" list, and the benchmark
-// comparison, so all three read the same real fields the same way instead
-// of three separate copies of the same accessor logic.
+// the before/after comparison strip and the benchmark comparison, so both
+// read the same real fields the same way.
 export const CORE_METRICS = [
   { key: 'travel_time', label: 'Travel Time', unit: 'min', get: r => r?.total_travel_time, decimals: 1 },
   { key: 'distance', label: 'Distance', unit: 'km', get: r => r?.total_distance, decimals: 1 },
@@ -9,23 +8,26 @@ export const CORE_METRICS = [
   { key: 'runtime', label: 'Runtime', unit: 'ms', get: r => r?.runtime_ms, decimals: 0 }
 ];
 
-// Route count only exists on a full optimize/re-optimize result, not on a
-// benchmark algorithm's summary row - kept separate so the benchmark
-// comparison never offers a metric it has no real data for.
-export const RESULT_METRICS = [
-  ...CORE_METRICS,
-  { key: 'routes', label: 'Routes', unit: '', get: r => r?.routes?.length, decimals: 0 }
-];
-
 // Matches BenchmarkPanel.jsx's ALGORITHM_COLORS so the two views agree
 // visually on what each algorithm's color means.
 export const ALGO_COLORS = { greedy: '#6B9A57', pso: '#5D7A9E', ga: '#8A8C4E', qpso: '#C6602E' };
 
+// Plain-language meaning of each metric. "Cost" is the optimizer's combined
+// score (weighted travel time + distance + traffic delay, plus penalties for
+// broken limits) - not money - so it's described as a score, lower is better.
 export const METRIC_DESCRIPTIONS = {
-  travel_time: 'Total time required to complete the planned routes.',
-  distance: 'Total distance covered by all planned routes.',
-  cost: 'Estimated operating cost for the route plan.',
-  runtime: 'Time taken by the system to calculate the route plan.'
+  travel_time: 'Total driving time for all vehicles combined. Lower is better.',
+  distance: 'Total kilometres driven by all vehicles combined. Lower is better.',
+  cost: 'One overall score combining travel time, distance and traffic delay. Lower is better.',
+  runtime: 'How long the computer took to work out the route plan.'
+};
+
+// Everyday names for the four planning methods, for the non-technical view.
+export const METHOD_LABELS = {
+  greedy: 'Nearest-stop',
+  pso: 'Swarm search',
+  ga: 'Genetic search',
+  qpso: 'Q-DFRO'
 };
 
 export function fmt(metric, value) {

@@ -122,7 +122,11 @@ export default function NetworkMap({
   onDisruptEdge,
   disruptDisabled,
   previewResult,
-  previewedAlgorithm
+  previewedAlgorithm,
+  // Stripped-down read-only mode for side-by-side comparisons: no GIS/Graph
+  // toggle, no vehicle filter bar, no legend, and no scroll-wheel zoom (two
+  // maps next to each other would otherwise hijack page scrolling).
+  compact = false
 }) {
   const [vehicleFilter, setVehicleFilter] = useState('all');
   const [mapView, setMapView] = useState('gis'); // 'gis' | 'graph' - same real nodes/edges, just a render toggle
@@ -350,7 +354,10 @@ export default function NetworkMap({
   }
 
   return (
-    <div className="w-full h-full relative rounded-xl overflow-hidden border border-[#332E29] shadow-2xl flex flex-col">
+    // `isolate` gives the map its own stacking context, so Leaflet's
+    // internal z-indexes (panes 400+, controls 1000) can't escape it and
+    // paint over the sticky header or other page chrome while scrolling.
+    <div className="w-full h-full relative rounded-xl overflow-hidden border border-[#332E29] shadow-2xl flex flex-col isolate">
       {routeGlowCss && <style>{routeGlowCss}</style>}
       {previewResult && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1001] bg-[#3A2318] border border-[#5A3A22] text-[#E8A578] px-3 py-1 rounded-full text-[11px] font-mono font-semibold shadow-xl">
@@ -359,19 +366,21 @@ export default function NetworkMap({
       )}
 
       {/* GIS <-> Graph View toggle - same real nodes/edges either way */}
-      <div className="absolute top-3 right-3 z-[1000] clean-panel p-1 rounded-lg border border-[#332E29] shadow-xl pointer-events-auto font-mono w-32">
-        <SegmentedControl
-          options={[
-            { id: 'gis', label: 'GIS View', title: 'Geographic road-network view.' },
-            { id: 'graph', label: 'Graph View', title: 'Network topology view.' }
-          ]}
-          value={mapView}
-          onChange={setMapView}
-        />
-      </div>
+      {!compact && (
+        <div className="absolute top-3 right-3 z-[1000] clean-panel p-1 rounded-lg border border-[#332E29] shadow-xl pointer-events-auto font-mono w-32">
+          <SegmentedControl
+            options={[
+              { id: 'gis', label: 'GIS View', title: 'Geographic road-network view.' },
+              { id: 'graph', label: 'Graph View', title: 'Network topology view.' }
+            ]}
+            value={mapView}
+            onChange={setMapView}
+          />
+        </div>
+      )}
 
       {/* Top Filter Bar for Vehicles */}
-      {vehicles.length > 0 && (
+      {!compact && vehicles.length > 0 && (
         <div className="absolute top-14 sm:top-3 left-3 z-[1000] clean-panel px-3 py-1.5 rounded-lg text-xs flex items-center space-x-2 border border-[#332E29] shadow-xl pointer-events-auto font-mono max-w-[calc(100%-1.5rem)] sm:max-w-md overflow-x-auto">
           <span className="text-gray-400 text-[10px] uppercase font-bold tracking-wider flex-shrink-0">ROUTES:</span>
           <button
@@ -416,7 +425,7 @@ export default function NetworkMap({
       <MapContainer
         center={center}
         zoom={12}
-        scrollWheelZoom={true}
+        scrollWheelZoom={!compact}
         className="w-full h-full"
       >
         {mapView === 'gis' && (
@@ -632,6 +641,7 @@ export default function NetworkMap({
       </MapContainer>
       </div>
 
+      {!compact && (<>
       {/* Mobile Floating Legend Toggle Button */}
       <button
         onClick={() => setIsLegendOpen(!isLegendOpen)}
@@ -716,6 +726,7 @@ export default function NetworkMap({
           </div>
         )}
       </div>
+      </>)}
     </div>
   );
 }

@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 import main as main_module
 from models import OptimizationConfig
+from optimizers import benchmark
 from optimizers.benchmark import run_benchmark
 from problem_generator import compute_route_matrix, generate_synthetic_scenario, terminal_nodes
 from route_cache import (
@@ -182,19 +183,22 @@ def test_cached_matrix_equals_an_uncached_computation(cache):
 
 def test_benchmark_builds_the_matrix_once_and_hits_three_times():
     """Greedy, PSO, GA and QPSO run on one identical scenario, so the matrix
-    must be built once and reused three times."""
+    must be built exactly once. PSO/GA/QPSO run in worker processes that are
+    handed the parent's matrix, so: one build in the parent, zero in workers."""
     s = _scenario(num_nodes=25, num_jobs=8, num_vehicles=3, seed=17)
     config = OptimizationConfig(population_size=6, max_iterations=3, seed=17)
 
     ROUTE_MATRIX_CACHE.clear()
     ROUTE_MATRIX_CACHE.reset_stats()
+    benchmark.clear_result_cache()
 
     result = run_benchmark(s, config)
     stats = ROUTE_MATRIX_CACHE.stats()
 
     assert set(result.results.keys()) == {"greedy", "pso", "ga", "qpso"}
     assert stats["builds"] == 1, f"expected a single matrix build, got {stats}"
-    assert stats["hits"] == 3, f"expected three cache hits, got {stats}"
+    assert stats["hits"] >= 1, f"expected Greedy to reuse the build, got {stats}"
+    assert benchmark.LAST_WORKER_ROUTE_MATRIX_BUILDS == 0
 
 
 def test_benchmark_after_incident_rebuilds_once_more():
@@ -203,14 +207,16 @@ def test_benchmark_after_incident_rebuilds_once_more():
 
     ROUTE_MATRIX_CACHE.clear()
     ROUTE_MATRIX_CACHE.reset_stats()
+    benchmark.clear_result_cache()
 
-    run_benchmark(s, config)
+    first = run_benchmark(s, config)
     _congest(s)
-    run_benchmark(s, config)
+    second = run_benchmark(s, config)
 
     stats = ROUTE_MATRIX_CACHE.stats()
+    assert first.cached is False and second.cached is False, "an incident must never be served from the result cache"
     assert stats["builds"] == 2, f"incident must force exactly one rebuild, got {stats}"
-    assert stats["hits"] == 6
+    assert benchmark.LAST_WORKER_ROUTE_MATRIX_BUILDS == 0
 
 
 # ==================================================== eviction and bounds

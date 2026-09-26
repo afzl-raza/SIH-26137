@@ -158,6 +158,18 @@ Playwright run, which caught and led to fixing a real CSS bug in
 flex parent). See `Task.md`'s "Executive Overview Revision" entry for
 detail.
 
+**Second revision (same day):** a fresh visitor landed on an empty "No
+Route Plan Yet" screen until manually running an optimization from the
+Engineering Control Room. The requested fix was a hardcoded "Sample
+Scenario" with invented numbers — flagged back as a direct conflict with
+this file's and `CLAUDE.md`'s own "never hard-code claims, results must
+come from actual experiments" rule. Implemented instead: the app now
+auto-runs the real generate → optimize → incident → re-optimize →
+benchmark pipeline once on load, through the same handlers a user triggers
+manually, so the Executive Overview lands fully populated with genuinely
+real numbers (tagged with a small "Demo Scenario" badge until the visitor
+runs something themselves). See `Task.md`'s "Auto-Demo Bootstrap" entry.
+
 ## Map Tile Layer & Dark Mode
 
 ### Problem
