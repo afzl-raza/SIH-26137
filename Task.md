@@ -39,7 +39,12 @@ plus nine user-selected interactivity/evidence items.
       existing map node to set depot/stops; deterministic demand redraw
       seeded by the scenario's own seed; works for OSM scenarios too since
       both share `Node.id`; verified live end-to-end including optimize)
-- [ ] Road-closure toggle with reopen
+- [x] Road-closure toggle with reopen (frontend-only: reused the existing
+      `POST /api/traffic/update` factor=1.0-clears-an-incident behavior;
+      "Closed Roads (N)" panel + per-row Reopen button in `NetworkMap.jsx`;
+      fixed a real bug caught while building this - a reopen was being
+      reported as a *new* incident since `applyIncident` didn't distinguish
+      the two; verified live)
 - [ ] Synthetic city archetype presets + feasibility matrix
 - [ ] Before/after map slider
 - [ ] Run-reproducibility footer

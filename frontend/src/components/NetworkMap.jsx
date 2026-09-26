@@ -251,6 +251,14 @@ export default function NetworkMap({
     return list;
   }, [edges, nodeMap, selectedIncidentEdge]);
 
+  // Derived, not new state: reuses edgeLines' own dedup (one entry per
+  // undirected pair) so this list can never disagree with what the map
+  // itself is drawing as an incident.
+  const closedEdges = useMemo(
+    () => edgeLines.filter(e => e.isIncident),
+    [edgeLines]
+  );
+
   const displayedResult = previewResult || currentResult;
 
   const activeRouteGeometry = useBackendRouteGeometry(scenarioId, displayedResult, isOsmNetwork);
@@ -502,7 +510,9 @@ export default function NetworkMap({
                 )}
                 {onDisruptEdge && (
                   <div className="border-t border-[#3A342E] mt-1.5 pt-1.5 space-y-1">
-                    <p className="text-gray-400 text-[10px] uppercase">Disrupt This Road</p>
+                    <p className="text-gray-400 text-[10px] uppercase">
+                      {e.isIncident ? 'Road Closed' : 'Disrupt This Road'}
+                    </p>
                     <div className="flex gap-1">
                       {[{ label: 'Low', factor: 1.5 }, { label: 'Medium', factor: 2.5 }, { label: 'Severe', factor: 4.0 }].map(sev => (
                         <button
@@ -514,6 +524,15 @@ export default function NetworkMap({
                           {sev.label}
                         </button>
                       ))}
+                      {e.isIncident && (
+                        <button
+                          disabled={disruptDisabled}
+                          onClick={() => onDisruptEdge(e.source, e.destination, 1.0)}
+                          className="px-1.5 py-0.5 rounded bg-[#1E2A1E]/80 hover:bg-[#1E2A1E] text-[#9ABF87] text-[10px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          Reopen
+                        </button>
+                      )}
                     </div>
                     {disruptDisabled && (
                       <p className="text-[9px] text-gray-500">Optimize the fleet first to enable disruption.</p>
@@ -705,6 +724,36 @@ export default function NetworkMap({
         ))}
       </MapContainer>
       </div>
+
+      {/* Closed Roads panel - lets an operator reopen a road without having
+          to re-find it on the map. Only rendered when something is actually
+          closed; list and reopen both drive the same onDisruptEdge(...,1.0)
+          path the map's own popup uses, so there is no second code path for
+          clearing an incident. */}
+      {closedEdges.length > 0 && onDisruptEdge && (
+        <div className="absolute bottom-3 right-3 z-[1000] clean-panel px-3 py-2 rounded-lg text-xs space-y-1.5 border border-[#332E29] shadow-xl pointer-events-auto max-h-[45vh] max-w-[calc(100vw-2rem)] sm:max-w-xs overflow-y-auto font-mono">
+          <div className="flex items-center gap-1.5 text-gray-300 font-semibold uppercase tracking-wider text-[10px]">
+            <span className="text-[#E8918A]">⚠</span>
+            Closed Roads ({closedEdges.length})
+          </div>
+          <div className="space-y-1">
+            {closedEdges.map(e => (
+              <div key={e.id} className="flex items-center justify-between gap-2">
+                <span className="text-gray-400 text-[10px] truncate" title={e.roadName || `Node ${e.source} → ${e.destination}`}>
+                  {e.roadName || `#${e.source} → #${e.destination}`}
+                </span>
+                <button
+                  disabled={disruptDisabled}
+                  onClick={() => onDisruptEdge(e.source, e.destination, 1.0)}
+                  className="px-1.5 py-0.5 rounded bg-[#1E2A1E]/80 hover:bg-[#1E2A1E] text-[#9ABF87] text-[10px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                >
+                  Reopen
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Mobile Floating Legend Toggle Button */}
       <button

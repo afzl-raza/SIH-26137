@@ -461,41 +461,48 @@ export default function Dashboard({ onExitToLanding }) {
     setLoading(true);
     setError(null);
 
+    // A factor of exactly 1.0 clears an incident (see realdata/conditions.py
+    // apply_incidents) rather than creating one - this is a reopen, not a
+    // new disruption, and must not be reported as one.
+    const isReopen = congestionFactor === 1.0;
+
     try {
-      // Find which vehicles use this edge on the current active routes
-      const affectedVehicleIds = currentResult?.routes
-        ? currentResult.routes
-            .filter(r => {
-              for (let i = 0; i < r.node_path.length - 1; i++) {
-                if (
-                  (r.node_path[i] === targetSource && r.node_path[i + 1] === targetDest) ||
-                  (r.node_path[i] === targetDest && r.node_path[i + 1] === targetSource)
-                ) return true;
-              }
-              return false;
-            })
-            .map(r => r.vehicle_id)
-        : [];
-
-      const matchingEdge = scenario.edges.find(
-        e => (e.source === targetSource && e.destination === targetDest) ||
-             (e.source === targetDest && e.destination === targetSource)
-      );
-      const roadName = matchingEdge?.road_name || `Road ${targetSource}-${targetDest}`;
-
       const updates = [{
         source: targetSource,
         destination: targetDest,
         traffic_factor: congestionFactor
       }];
 
-      setSelectedIncidentEdge({ source: targetSource, destination: targetDest });
-      setIncidentInfo({
-        roadName,
-        congestionFactor,
-        affectedVehicleIds: affectedVehicleIds.length > 0 ? affectedVehicleIds : [1]
-      });
-      setTimeline({ incidentAt: Date.now() });
+      if (!isReopen) {
+        // Find which vehicles use this edge on the current active routes
+        const affectedVehicleIds = currentResult?.routes
+          ? currentResult.routes
+              .filter(r => {
+                for (let i = 0; i < r.node_path.length - 1; i++) {
+                  if (
+                    (r.node_path[i] === targetSource && r.node_path[i + 1] === targetDest) ||
+                    (r.node_path[i] === targetDest && r.node_path[i + 1] === targetSource)
+                  ) return true;
+                }
+                return false;
+              })
+              .map(r => r.vehicle_id)
+          : [];
+
+        const matchingEdge = scenario.edges.find(
+          e => (e.source === targetSource && e.destination === targetDest) ||
+               (e.source === targetDest && e.destination === targetSource)
+        );
+        const roadName = matchingEdge?.road_name || `Road ${targetSource}-${targetDest}`;
+
+        setSelectedIncidentEdge({ source: targetSource, destination: targetDest });
+        setIncidentInfo({
+          roadName,
+          congestionFactor,
+          affectedVehicleIds: affectedVehicleIds.length > 0 ? affectedVehicleIds : [1]
+        });
+        setTimeline({ incidentAt: Date.now() });
+      }
 
       const res = await apiFetch('/api/traffic/update', {
         method: 'POST',
@@ -510,8 +517,22 @@ export default function Dashboard({ onExitToLanding }) {
       const data = await res.json();
       setScenario(data.scenario);
       setConditionMeta(extractConditionMeta(data));
-      setStatusState('INCIDENT');
-      setNetworkState('DISRUPTED');
+
+      if (isReopen) {
+        // Reopening still changes edge costs, so a re-optimize stays
+        // meaningful even once every road is clear again.
+        setConditionsDirty(true);
+        const anyIncidentRemains = data.scenario.edges.some(e => e.has_incident);
+        if (!anyIncidentRemains) {
+          setNetworkState('NORMAL');
+          setStatusState(currentResult ? 'OPTIMIZED' : 'READY');
+          setSelectedIncidentEdge(null);
+          setIncidentInfo(null);
+        }
+      } else {
+        setStatusState('INCIDENT');
+        setNetworkState('DISRUPTED');
+      }
       refreshManifest(scenarioId);
     } catch (err) {
       setError(err.message);
