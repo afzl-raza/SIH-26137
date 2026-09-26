@@ -4,6 +4,7 @@ import ControlPanel from '../components/ControlPanel';
 import VehicleInspector from '../components/VehicleInspector';
 import MetricCards from '../components/MetricCards';
 import BenchmarkPanel from '../components/BenchmarkPanel';
+import ArchetypeBenchmarkPanel from '../components/ArchetypeBenchmarkPanel';
 import WorkflowIndicator from '../components/WorkflowIndicator';
 import QPSOExplainability from '../components/QPSOExplainability';
 import ArchitectureSnapshot from '../components/ArchitectureSnapshot';
@@ -835,6 +836,8 @@ export default function Dashboard({ onExitToLanding }) {
             <ReproducibilityPanel />
           </div>
         )}
+
+        <ArchetypeBenchmarkPanel config={config} />
       </footer>
     </div>
   );

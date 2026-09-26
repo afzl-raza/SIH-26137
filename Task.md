@@ -45,7 +45,13 @@ plus nine user-selected interactivity/evidence items.
       fixed a real bug caught while building this - a reopen was being
       reported as a *new* incident since `applyIncident` didn't distinguish
       the two; verified live)
-- [ ] Synthetic city archetype presets + feasibility matrix
+- [x] Synthetic city archetype presets + feasibility matrix
+      (`ArchetypeBenchmarkPanel.jsx` - 3 named parameter presets for the
+      existing generator, explicitly labeled as synthetic presets, not a new
+      topology engine; sequential real generate+benchmark calls per
+      archetype, no client-side objective math; verified live - correctly
+      showed an honest 1/5 feasible result for "Sprawling Network" and
+      omitted the Exact column where >10 jobs, nothing smoothed over)
 - [ ] Before/after map slider
 - [ ] Run-reproducibility footer
 

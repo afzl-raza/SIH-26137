@@ -25,7 +25,7 @@ ChartJS.register(
 // Single source of truth for per-algorithm color across the chart, bar
 // visualization, and table - previously three separate switch statements
 // that had to be kept in sync by hand.
-const ALGORITHM_COLORS = {
+export const ALGORITHM_COLORS = {
   greedy: { hex: '#6B9A57', text: 'text-[#6B9A57]', bg: 'bg-[#6B9A57]' },
   pso: { hex: '#5D7A9E', text: 'text-[#5D7A9E]', bg: 'bg-[#5D7A9E]' },
   ga: { hex: '#8A8C4E', text: 'text-[#8A8C4E]', bg: 'bg-[#8A8C4E]' },
