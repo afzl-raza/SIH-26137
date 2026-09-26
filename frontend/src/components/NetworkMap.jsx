@@ -3,6 +3,9 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker } from '
 import L from 'leaflet';
 import { apiFetch } from '../api';
 import { CONGESTION_ORDER, CONGESTION_STYLES, INCIDENT_STYLE, congestionStyle, congestionLabel } from '../lib/traffic';
+import VehicleLoader from './ui/VehicleLoader';
+import SegmentedControl from './ui/SegmentedControl';
+import Button from './ui/Button';
 
 // Asks the backend for the road shape of an already-computed set of routes.
 //
@@ -338,10 +341,7 @@ export default function NetworkMap({
     return (
       <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-[#171513] text-gray-400 font-mono text-xs rounded-xl border border-[#332E29]">
         {loading ? (
-          <>
-            <div className="w-4 h-4 border-2 border-[#C6602E] border-t-transparent rounded-full animate-spin"></div>
-            <span>Loading network...</span>
-          </>
+          <VehicleLoader label="Loading Network" sublabel="Building the road network for this scenario..." />
         ) : (
           <span>Generate a scenario to begin fleet route optimization.</span>
         )}
@@ -359,23 +359,15 @@ export default function NetworkMap({
       )}
 
       {/* GIS <-> Graph View toggle - same real nodes/edges either way */}
-      <div className="absolute top-3 right-3 z-[1000] clean-panel px-2 py-1.5 rounded-lg text-xs flex items-center gap-1 border border-[#332E29] shadow-xl pointer-events-auto font-mono">
-        <button
-          onClick={() => setMapView('gis')}
-          className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-[#C6602E] ${
-            mapView === 'gis' ? 'bg-[#C6602E] text-white' : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
-          }`}
-        >
-          GIS View
-        </button>
-        <button
-          onClick={() => setMapView('graph')}
-          className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-[#C6602E] ${
-            mapView === 'graph' ? 'bg-[#C6602E] text-white' : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
-          }`}
-        >
-          Graph View
-        </button>
+      <div className="absolute top-3 right-3 z-[1000] clean-panel p-1 rounded-lg border border-[#332E29] shadow-xl pointer-events-auto font-mono w-32">
+        <SegmentedControl
+          options={[
+            { id: 'gis', label: 'GIS View', title: 'Geographic road-network view.' },
+            { id: 'graph', label: 'Graph View', title: 'Network topology view.' }
+          ]}
+          value={mapView}
+          onChange={setMapView}
+        />
       </div>
 
       {/* Top Filter Bar for Vehicles */}
@@ -477,15 +469,21 @@ export default function NetworkMap({
                   <div className="border-t border-[#3A342E] mt-1.5 pt-1.5 space-y-1">
                     <p className="text-gray-400 text-[10px] uppercase">Disrupt This Road</p>
                     <div className="flex gap-1">
-                      {[{ label: 'Low', factor: 1.5 }, { label: 'Medium', factor: 2.5 }, { label: 'Severe', factor: 4.0 }].map(sev => (
-                        <button
+                      {[
+                        { label: 'Low', factor: 1.5, variant: 'success' },
+                        { label: 'Medium', factor: 2.5, variant: 'warning' },
+                        { label: 'Severe', factor: 4.0, variant: 'destructive' }
+                      ].map(sev => (
+                        <Button
                           key={sev.label}
+                          variant={sev.variant}
+                          size="sm"
+                          fullWidth={false}
                           disabled={disruptDisabled}
                           onClick={() => onDisruptEdge(e.source, e.destination, sev.factor)}
-                          className="px-1.5 py-0.5 rounded bg-[#3A1C18]/80 hover:bg-[#3A1C18] text-[#E8918A] text-[10px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           {sev.label}
-                        </button>
+                        </Button>
                       ))}
                     </div>
                     {disruptDisabled && (

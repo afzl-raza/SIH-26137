@@ -117,6 +117,32 @@ npm run dev
 
 ---
 
+## Executive Overview / Engineering Control Room Split (2026-09-26)
+
+The frontend previously had a single dense workspace. That workspace is now
+called the **Engineering Control Room** (functionally unchanged) and sits
+behind a header nav alongside a new **Executive Overview** — a narrative
+summary page (`ExecutiveOverview.jsx`) built only from state `App.jsx`
+already computes: no new API calls, no fabricated baselines or percentages.
+Full detail is in [`Task.md`](Task.md)'s "Executive Overview / Engineering
+Control Room Split + UI Design System" entry.
+
+Alongside it, a shared UI primitive layer was added under
+`frontend/src/components/ui/` (`Button`, `IconButton`, `SegmentedControl`,
+`Badge`, `ControlSection`, `ComparisonBars`, `VehicleLoader`, `Toast`),
+replacing per-component hand-rolled Tailwind button/toggle strings. The
+brand mark (`Logo.jsx`, `favicon.svg`) changed from an accent-colored
+route/quantum-node glyph to a minimal flat white car + destination-pin
+glyph, reused unchanged in the header, the Executive Overview empty state,
+and the loading indicator (`VehicleLoader`).
+
+This work was done on branch `frontend/ui-polish-executive-overview`, not
+directly on `main`. `npm run build` succeeds; a live in-browser
+click-through was **not** performed this round (skipped per instruction) —
+verification was build success plus manual review of prop wiring, so treat
+this as code-reviewed rather than demo-verified until someone clicks
+through it.
+
 ## Map Tile Layer & Dark Mode
 
 ### Problem

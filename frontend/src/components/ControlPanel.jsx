@@ -5,7 +5,6 @@ import {
   RefreshCw,
   BarChart2,
   Settings,
-  Activity,
   ChevronRight,
   ChevronDown,
   RotateCcw,
@@ -14,6 +13,10 @@ import {
   FileText
 } from 'lucide-react';
 import RecoveryTimeline from './RecoveryTimeline';
+import VehicleLoader from './ui/VehicleLoader';
+import Button from './ui/Button';
+import SegmentedControl from './ui/SegmentedControl';
+import ControlSection from './ui/ControlSection';
 import { apiFetch } from '../api';
 
 export default function ControlPanel({
@@ -54,6 +57,7 @@ export default function ControlPanel({
   const canSimulateIncident = Boolean(currentResult) && !loading;
   const canReOptimize = Boolean(incidentInfo || conditionsDirty) && !loading;
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const isOptimizing = statusState === 'OPTIMIZING' || statusState === 'RE-OPTIMIZING';
 
   const handleConfigChange = (key, value) => {
     setConfig(prev => ({
@@ -114,57 +118,39 @@ export default function ControlPanel({
     : 'READY';
 
   return (
-    <div className="clean-panel p-3.5 rounded-xl space-y-3 border border-[#332E29] text-xs shadow-xl w-full h-full flex flex-col">
-      {/* 1. ESSENTIAL SECTION */}
-      <div className="space-y-2">
-        {scenario && (
-          <div className="font-mono text-gray-300 mb-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px]">
-            <span>{scenario.vehicles?.length || 0} Vehicles</span>
-            <span className="text-gray-600">·</span>
-            <span>{scenario.edges?.length || 0} Road Segments</span>
-            <span className="text-gray-600">·</span>
-            <span>{scenario.jobs?.length || 0} Delivery Points</span>
-            <span className="text-gray-600">·</span>
-            <span
-              className={hasCongestion ? 'text-[#E8A93A]' : 'text-[#6B9A57]'}
-              title="Simulated congestion from the traffic model - not a live traffic feed"
-            >
-              Sim. Traffic: {hasCongestion ? 'Congested' : 'Free flow'}
-            </span>
-            <span className="text-gray-600">·</span>
-            <span className="text-[#C6602E] font-bold">{healthLabel}</span>
-          </div>
-        )}
+    <div className="clean-panel p-3.5 rounded-xl space-y-4 border border-[#332E29] text-xs shadow-xl w-full h-full flex flex-col">
+      {scenario && (
+        <div className="font-mono text-gray-300 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px]">
+          <span>{scenario.vehicles?.length || 0} Vehicles</span>
+          <span className="text-gray-600">·</span>
+          <span>{scenario.edges?.length || 0} Road Segments</span>
+          <span className="text-gray-600">·</span>
+          <span>{scenario.jobs?.length || 0} Delivery Points</span>
+          <span className="text-gray-600">·</span>
+          <span
+            className={hasCongestion ? 'text-[#E8A93A]' : 'text-[#6B9A57]'}
+            title="Simulated congestion from the traffic model - not a live traffic feed"
+          >
+            Sim. Traffic: {hasCongestion ? 'Congested' : 'Free flow'}
+          </span>
+          <span className="text-gray-600">·</span>
+          <span className="text-[#C6602E] font-bold">{healthLabel}</span>
+        </div>
+      )}
 
-        {/* Network source. The OSM path is the backend's existing
-            Nominatim -> Overpass chain; nothing about the network is
-            constructed here. */}
+      {/* 01. SCENARIO */}
+      <ControlSection index={1} title="Scenario" icon={MapPin}>
         <div className="bg-[#141210]/50 border border-[#332E29] rounded-lg p-2.5 space-y-2">
-          <div className="flex items-center gap-1.5 text-gray-300 font-semibold uppercase tracking-wider text-[10px]">
-            <MapPin size={12} className="text-[#5D7A9E]" />
-            Road Network
-          </div>
-
-          <div className="grid grid-cols-2 gap-1">
-            {[
+          <SegmentedControl
+            options={[
               { id: 'synthetic', label: 'Synthetic' },
               { id: 'osm', label: 'OpenStreetMap' }
-            ].map(opt => (
-              <button
-                key={opt.id}
-                onClick={() => setNetworkSource?.(opt.id)}
-                disabled={loading}
-                aria-pressed={networkSource === opt.id}
-                className={`px-2 py-1 rounded border text-[10px] transition-colors disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-[#5D7A9E] ${
-                  networkSource === opt.id
-                    ? 'bg-[#1E2A33] border-[#2E4A56] text-[#8FBAC9]'
-                    : 'bg-[#26221D] border-[#3A342E] text-gray-400 hover:text-gray-200'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+            ]}
+            value={networkSource}
+            onChange={(id) => setNetworkSource?.(id)}
+            disabled={loading}
+            className="!grid-cols-2"
+          />
 
           {networkSource === 'osm' && (
             <div className="space-y-1.5">
@@ -192,13 +178,14 @@ export default function ControlPanel({
                   className="w-full bg-[#26221D] border border-[#3A342E] text-gray-200 rounded px-2 py-0.5 outline-none focus:border-[#5D7A9E] font-mono text-[10px]"
                 />
               </div>
-              <button
+              <Button
+                variant="secondary"
                 onClick={() => onGenerate?.('osm')}
                 disabled={loading || !place.trim()}
-                className="w-full py-1.5 bg-[#1E2A33]/60 border border-[#2E4A56] text-[#8FBAC9] hover:bg-[#1E2A33] rounded text-[11px] transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-[#5D7A9E]"
+                disabledHint={!place.trim() ? 'Enter a location to load its road network.' : undefined}
               >
                 Load Real Road Network
-              </button>
+              </Button>
               <p className="text-[9px] text-gray-600 leading-snug">
                 OpenStreetMap supplies roads, geometry, one-way rules and speed limits only.
                 It carries no traffic data. If the area cannot be loaded the request fails —
@@ -246,200 +233,184 @@ export default function ControlPanel({
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={() => onGenerate?.()}
-            disabled={loading}
-            className="w-full py-1 text-gray-400 hover:text-gray-200 hover:bg-[#26221D]/50 rounded transition-colors text-[10px] focus-visible:ring-2 focus-visible:ring-[#C6602E]"
-          >
+          <Button variant="tertiary" size="sm" onClick={() => onGenerate?.()} disabled={loading}>
             Generate New Scenario
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="tertiary"
+            size="sm"
+            icon={RotateCcw}
             onClick={onReplay}
             disabled={loading || !scenario}
             title="Re-run generate + optimize with the exact same seed and config"
-            className="w-full py-1 text-gray-400 hover:text-gray-200 hover:bg-[#26221D]/50 rounded transition-colors text-[10px] focus-visible:ring-2 focus-visible:ring-[#C6602E] disabled:opacity-40 flex items-center justify-center gap-1"
           >
-            <RotateCcw size={10} />
             Replay Run
-          </button>
+          </Button>
         </div>
+      </ControlSection>
 
-        <button
-          onClick={onOptimize}
-          disabled={loading}
-          className="w-full py-2.5 bg-[#C6602E] hover:bg-[#B0552A] text-white rounded-md text-sm font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-[#C6602E] focus-visible:ring-offset-2 focus-visible:ring-offset-[#171513]"
-        >
-          <Zap size={16} />
-          OPTIMIZE FLEET
-        </button>
+      {/* 02. CONDITIONS */}
+      <ControlSection index={2} title="Conditions" icon={CloudRain}>
+        <div className="bg-[#141210]/50 border border-[#332E29] rounded-lg p-2.5 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label htmlFor="traffic-mode" className="text-gray-400 block text-[10px]">
+                Simulated Traffic
+              </label>
+              <select
+                id="traffic-mode"
+                value={trafficMode}
+                disabled={loading || !scenarioId}
+                onChange={(e) => onApplyConditions?.(e.target.value, weatherEnabled)}
+                className="w-full bg-[#26221D] border border-[#3A342E] text-gray-200 rounded px-2 py-1 outline-none focus:border-[#C6602E] focus-visible:ring-2 focus-visible:ring-[#C6602E] text-[10px] disabled:opacity-40"
+              >
+                <option value="normal">Normal (1.0x)</option>
+                <option value="moderate">Moderate (1.5x)</option>
+                <option value="heavy">Heavy (2.5x)</option>
+                <option value="severe">Severe (4.0x)</option>
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-gray-400 block text-[10px]">Weather</span>
+              <SegmentedControl
+                options={[
+                  { id: 'disabled', label: 'Disabled' },
+                  { id: 'enabled', label: 'Enabled', activeClassName: 'bg-[#1E2A28] border-[#3A5A52] text-[#8FC9BA]' }
+                ]}
+                value={weatherEnabled ? 'enabled' : 'disabled'}
+                onChange={(id) => onApplyConditions?.(trafficMode, id === 'enabled')}
+                disabled={loading || !scenarioId}
+                className="!grid-cols-2"
+              />
+            </div>
+          </div>
+
+          {/* Condition status - backend-reported provenance only. */}
+          {conditionMeta && (
+            <div className="grid grid-cols-[auto,1fr] gap-x-2 gap-y-0.5 font-mono text-[9px] text-gray-400 border-t border-[#332E29]/60 pt-1.5">
+              <span className="text-gray-500">Traffic:</span>
+              <span className="text-[#E8C578]">
+                {conditionMeta.trafficSource === 'simulated' ? 'Simulated model' : conditionMeta.trafficSource}
+                {conditionMeta.trafficMode ? ` · ${conditionMeta.trafficMode}` : ''}
+              </span>
+
+              <span className="text-gray-500">Weather:</span>
+              <span className={conditionMeta.fallbackUsed ? 'text-[#E8918A]' : 'text-[#8FC9BA]'}>
+                {conditionMeta.weatherSource
+                  ? `${conditionMeta.weatherSource}${conditionMeta.weatherCondition ? ` · ${conditionMeta.weatherCondition}` : ''}`
+                  : 'not applied'}
+                {conditionMeta.conditions?.weather?.provider
+                  ? ` · ${conditionMeta.conditions.weather.provider}`
+                  : ''}
+              </span>
+
+              {/* Weather is the one genuinely observed input, so every field the
+                  provider returned is shown, and a field it did not return is
+                  simply absent rather than filled in. */}
+              {conditionMeta.conditions?.weather?.description && (
+                <>
+                  <span className="text-gray-500">Condition:</span>
+                  <span>
+                    {conditionMeta.conditions.weather.description}
+                    {conditionMeta.conditions.weather.temperature_c != null
+                      ? ` · ${conditionMeta.conditions.weather.temperature_c}°C`
+                      : ''}
+                    {conditionMeta.conditions.weather.precipitation_mm != null
+                      ? ` · ${conditionMeta.conditions.weather.precipitation_mm} mm`
+                      : ''}
+                    {conditionMeta.conditions.weather.wind_speed_kph != null
+                      ? ` · ${conditionMeta.conditions.weather.wind_speed_kph} km/h`
+                      : ''}
+                    {` · ×${conditionMeta.conditions.weather.multiplier}`}
+                  </span>
+                </>
+              )}
+
+              {conditionMeta.conditions?.weather?.observed_at && (
+                <>
+                  <span className="text-gray-500">Observed at:</span>
+                  <span>{conditionMeta.conditions.weather.observed_at}</span>
+                </>
+              )}
+
+              {conditionMeta.conditions?.weather?.retrieved_at && (
+                <>
+                  <span className="text-gray-500">Retrieved:</span>
+                  <span>{conditionMeta.conditions.weather.retrieved_at}</span>
+                </>
+              )}
+
+              {conditionMeta.conditions?.updated_at && (
+                <>
+                  <span className="text-gray-500">Applied:</span>
+                  <span>{new Date(conditionMeta.conditions.updated_at).toLocaleTimeString()}</span>
+                </>
+              )}
+            </div>
+          )}
+
+          {conditionMeta?.fallbackUsed && (
+            <div className="text-[9px] text-[#E8918A] bg-[#3A1C18]/40 border border-[#5A2C26]/60 rounded px-2 py-1 leading-snug">
+              Weather provider unavailable - fallback in use. No weather effect applied to edge costs.
+            </div>
+          )}
+
+          <p className="text-[9px] text-gray-600 leading-snug">
+            Traffic congestion is a documented simulation, not a live feed. Weather is a real
+            Open-Meteo observation when the source above says network/cache.
+          </p>
+
+          {conditionsDirty && (
+            <div className="text-[9px] text-[#E8C578] bg-[#3A2E14]/40 border border-[#5A4A22]/60 rounded px-2 py-1 leading-snug">
+              Conditions changed - the routes shown were computed against the previous edge costs.
+              Re-Optimize to update them.
+            </div>
+          )}
+        </div>
+      </ControlSection>
+
+      {/* 03. OPERATIONS */}
+      <ControlSection index={3} title="Operations" icon={Zap}>
+        <Button variant="primary" size="lg" icon={Zap} onClick={onOptimize} disabled={loading}>
+          Optimize Fleet
+        </Button>
 
         <div className="grid grid-cols-2 gap-2">
-          <button
+          <Button
+            variant="destructive"
+            size="sm"
+            icon={AlertTriangle}
             onClick={onSimulateIncident}
             disabled={!canSimulateIncident}
-            title={!currentResult ? 'Optimize the fleet first to have an active route to disrupt' : ''}
-            className="py-1.5 bg-[#3A1C18]/80 border border-[#5A2C26] text-[#E8918A] hover:bg-[#3A1C18] rounded flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-[11px] focus-visible:ring-2 focus-visible:ring-[#C1443B]"
+            disabledHint={!currentResult ? 'Optimize the fleet first to have an active route to disrupt.' : undefined}
           >
-            <AlertTriangle size={12} className="flex-shrink-0" />
             Simulate Incident
-          </button>
+          </Button>
 
-          <button
+          <Button
+            variant="warning"
+            size="sm"
+            icon={RefreshCw}
             onClick={onReOptimize}
             disabled={!canReOptimize}
-            title={!incidentInfo ? 'Simulate a traffic incident first' : ''}
-            className="py-1.5 bg-[#3A2E14]/80 border border-[#5A4A22] text-[#E8C578] hover:bg-[#3A2E14] rounded flex items-center justify-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-[11px] focus-visible:ring-2 focus-visible:ring-[#E8A93A]"
+            disabledHint={!incidentInfo && !conditionsDirty ? 'Simulate an incident or change conditions first.' : undefined}
           >
-            <RefreshCw size={12} className="flex-shrink-0" />
             Re-Optimize
-          </button>
+          </Button>
         </div>
 
-        <button
-          onClick={onRunBenchmark}
-          disabled={loading}
-          className="w-full py-1.5 bg-[#1E2A33]/60 border border-[#2E4A56] text-[#8FBAC9] hover:bg-[#1E2A33] rounded flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 text-[11px] focus-visible:ring-2 focus-visible:ring-[#5D7A9E]"
-        >
-          <BarChart2 size={12} />
+        <Button variant="secondary" size="sm" icon={BarChart2} onClick={onRunBenchmark} disabled={loading}>
           Run Benchmark
-        </button>
-      </div>
+        </Button>
+      </ControlSection>
 
-      {/* 1b. ENVIRONMENTAL CONDITIONS */}
-      {/* Every value displayed here comes from the backend condition engine.
-          Nothing is computed in React - the selects send a request, and the
-          status lines below echo what the backend reported back. */}
-      <div className="bg-[#141210]/50 border border-[#332E29] rounded-lg p-2.5 space-y-2">
-        <div className="flex items-center gap-1.5 text-gray-300 font-semibold uppercase tracking-wider text-[10px]">
-          <CloudRain size={12} className="text-[#5F8A80]" />
-          Conditions
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <div className="space-y-1">
-            <label htmlFor="traffic-mode" className="text-gray-400 block text-[10px]">
-              Simulated Traffic
-            </label>
-            <select
-              id="traffic-mode"
-              value={trafficMode}
-              disabled={loading || !scenarioId}
-              onChange={(e) => onApplyConditions?.(e.target.value, weatherEnabled)}
-              className="w-full bg-[#26221D] border border-[#3A342E] text-gray-200 rounded px-2 py-1 outline-none focus:border-[#C6602E] focus-visible:ring-2 focus-visible:ring-[#C6602E] text-[10px] disabled:opacity-40"
-            >
-              <option value="normal">Normal (1.0x)</option>
-              <option value="moderate">Moderate (1.5x)</option>
-              <option value="heavy">Heavy (2.5x)</option>
-              <option value="severe">Severe (4.0x)</option>
-            </select>
-          </div>
-
-          <div className="space-y-1">
-            <span className="text-gray-400 block text-[10px]">Weather</span>
-            <button
-              onClick={() => onApplyConditions?.(trafficMode, !weatherEnabled)}
-              disabled={loading || !scenarioId}
-              aria-pressed={weatherEnabled}
-              className={`w-full px-2 py-1 rounded border text-[10px] transition-colors disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-[#5F8A80] ${
-                weatherEnabled
-                  ? 'bg-[#1E2A28] border-[#3A5A52] text-[#8FC9BA]'
-                  : 'bg-[#26221D] border-[#3A342E] text-gray-400'
-              }`}
-            >
-              {weatherEnabled ? 'Enabled' : 'Disabled'}
-            </button>
-          </div>
-        </div>
-
-        {/* Condition status - backend-reported provenance only. */}
-        {conditionMeta && (
-          <div className="grid grid-cols-[auto,1fr] gap-x-2 gap-y-0.5 font-mono text-[9px] text-gray-400 border-t border-[#332E29]/60 pt-1.5">
-            <span className="text-gray-500">Traffic:</span>
-            <span className="text-[#E8C578]">
-              {conditionMeta.trafficSource === 'simulated' ? 'Simulated model' : conditionMeta.trafficSource}
-              {conditionMeta.trafficMode ? ` · ${conditionMeta.trafficMode}` : ''}
-            </span>
-
-            <span className="text-gray-500">Weather:</span>
-            <span className={conditionMeta.fallbackUsed ? 'text-[#E8918A]' : 'text-[#8FC9BA]'}>
-              {conditionMeta.weatherSource
-                ? `${conditionMeta.weatherSource}${conditionMeta.weatherCondition ? ` · ${conditionMeta.weatherCondition}` : ''}`
-                : 'not applied'}
-              {conditionMeta.conditions?.weather?.provider
-                ? ` · ${conditionMeta.conditions.weather.provider}`
-                : ''}
-            </span>
-
-            {/* Weather is the one genuinely observed input, so every field the
-                provider returned is shown, and a field it did not return is
-                simply absent rather than filled in. */}
-            {conditionMeta.conditions?.weather?.description && (
-              <>
-                <span className="text-gray-500">Condition:</span>
-                <span>
-                  {conditionMeta.conditions.weather.description}
-                  {conditionMeta.conditions.weather.temperature_c != null
-                    ? ` · ${conditionMeta.conditions.weather.temperature_c}°C`
-                    : ''}
-                  {conditionMeta.conditions.weather.precipitation_mm != null
-                    ? ` · ${conditionMeta.conditions.weather.precipitation_mm} mm`
-                    : ''}
-                  {conditionMeta.conditions.weather.wind_speed_kph != null
-                    ? ` · ${conditionMeta.conditions.weather.wind_speed_kph} km/h`
-                    : ''}
-                  {` · ×${conditionMeta.conditions.weather.multiplier}`}
-                </span>
-              </>
-            )}
-
-            {conditionMeta.conditions?.weather?.observed_at && (
-              <>
-                <span className="text-gray-500">Observed at:</span>
-                <span>{conditionMeta.conditions.weather.observed_at}</span>
-              </>
-            )}
-
-            {conditionMeta.conditions?.weather?.retrieved_at && (
-              <>
-                <span className="text-gray-500">Retrieved:</span>
-                <span>{conditionMeta.conditions.weather.retrieved_at}</span>
-              </>
-            )}
-
-            {conditionMeta.conditions?.updated_at && (
-              <>
-                <span className="text-gray-500">Applied:</span>
-                <span>{new Date(conditionMeta.conditions.updated_at).toLocaleTimeString()}</span>
-              </>
-            )}
-          </div>
-        )}
-
-        {conditionMeta?.fallbackUsed && (
-          <div className="text-[9px] text-[#E8918A] bg-[#3A1C18]/40 border border-[#5A2C26]/60 rounded px-2 py-1 leading-snug">
-            Weather provider unavailable - fallback in use. No weather effect applied to edge costs.
-          </div>
-        )}
-
-        <p className="text-[9px] text-gray-600 leading-snug">
-          Traffic congestion is a documented simulation, not a live feed. Weather is a real
-          Open-Meteo observation when the source above says network/cache.
-        </p>
-
-        {conditionsDirty && (
-          <div className="text-[9px] text-[#E8C578] bg-[#3A2E14]/40 border border-[#5A4A22]/60 rounded px-2 py-1 leading-snug">
-            Conditions changed - the routes shown were computed against the previous edge costs.
-            Re-Optimize to update them.
-          </div>
-        )}
-      </div>
-
-      {/* 2. INCIDENT INFO PANEL */}
+      {/* INCIDENT INFO PANEL */}
       {incidentInfo && (
         <div className="bg-[#3A1C18]/30 border border-[#5A2C26] rounded-lg p-3 space-y-2">
           <div className="flex items-center gap-2 text-[#E8918A] font-semibold uppercase tracking-wider mb-1">
             <AlertTriangle size={14} />
-            ⚠ TRAFFIC INCIDENT
+            Traffic Incident
           </div>
           <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-gray-300 font-mono text-[10px]">
             <span className="text-gray-400">Road:</span>
@@ -463,45 +434,45 @@ export default function ControlPanel({
         </div>
       )}
 
-      {/* 2b. GENERIC WORKING INDICATOR - covers requests that don't have
-          their own dedicated status block (generate, apply conditions,
-          incident, benchmark). Optimize/Re-Optimize get their own richer
-          block below, so this is suppressed for those two statuses to
-          avoid showing two spinners at once. */}
-      {loading && statusState !== 'OPTIMIZING' && statusState !== 'RE-OPTIMIZING' && (
+      {/* GENERIC WORKING INDICATOR - covers requests that don't have their
+          own dedicated status block (generate, apply conditions, incident,
+          benchmark). Optimize/Re-Optimize get the richer VehicleLoader block
+          below, so this is suppressed for those two statuses to avoid
+          showing two loading indicators at once. */}
+      {loading && !isOptimizing && (
         <div className="flex items-center gap-2 text-[10px] text-gray-400 font-mono bg-[#141210]/50 border border-[#332E29] rounded-lg px-2.5 py-1.5">
-          <div className="w-3 h-3 border-2 border-[#C6602E] border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+          <div className="w-3 h-3 border-2 border-[#C6602E] border-t-transparent rounded-full animate-spin flex-shrink-0" />
           Working...
         </div>
       )}
 
-      {/* 3. OPTIMIZATION STATE */}
-      {(statusState === 'OPTIMIZING' || statusState === 'RE-OPTIMIZING') && (
-        <div className="bg-[#3A2318]/30 border border-[#5A3A22] rounded-lg p-3 space-y-2">
-          <div className="flex items-center gap-2 text-[#C6602E] font-semibold uppercase tracking-wider">
-            <Activity size={14} className="animate-pulse" />
-            QPSO {statusState === 'RE-OPTIMIZING' ? 'RE-OPTIMIZING' : 'OPTIMIZING'}
-          </div>
-          <div className="text-gray-400 text-[10px]">
-            Searching for a lower-cost feasible fleet solution...
-          </div>
-          <div className="flex justify-center py-2">
-            <div className="w-4 h-4 border-2 border-[#C6602E] border-t-transparent rounded-full animate-spin"></div>
-          </div>
+      {/* OPTIMIZATION STATE - branded vehicle loader, indeterminate (no
+          real intermediate progress exists to report). */}
+      {isOptimizing && (
+        <div className="bg-[#3A2318]/30 border border-[#5A3A22] rounded-lg p-3">
+          <VehicleLoader
+            label={statusState === 'RE-OPTIMIZING' ? 'Re-Optimizing Routes' : 'Optimizing Routes'}
+            sublabel="Searching for a lower-cost feasible fleet solution..."
+          />
         </div>
       )}
 
-      {/* 4. ADVANCED SECTION */}
+      {/* 04. SOLVER (ADVANCED) */}
       <div className="pt-2 border-t border-[#332E29] mt-auto">
-        <button
+        <Button
+          variant="tertiary"
+          size="sm"
+          fullWidth
           onClick={() => setShowAdvanced(!showAdvanced)}
           aria-expanded={showAdvanced}
-          className="flex items-center gap-1.5 text-gray-400 hover:text-gray-200 transition-colors py-1 w-full text-left focus-visible:ring-2 focus-visible:ring-[#C6602E] rounded"
+          className="justify-start"
         >
-          {showAdvanced ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          <Settings size={12} className="ml-1" />
-          Advanced Solver Settings
-        </button>
+          <span className="flex items-center gap-1.5">
+            {showAdvanced ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <Settings size={12} />
+            04 · Solver Settings
+          </span>
+        </Button>
 
         <div className={`advanced-collapse ${showAdvanced ? 'expanded' : ''}`}>
           <div className="mt-3 space-y-3 p-2 bg-[#141210]/50 rounded-lg border border-[#332E29]/50">
@@ -677,7 +648,7 @@ export default function ControlPanel({
               </div>
             )}
           </div>
-          </div>
+        </div>
       </div>
     </div>
   );

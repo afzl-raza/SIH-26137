@@ -9,9 +9,14 @@ import QPSOExplainability from './components/QPSOExplainability';
 import ArchitectureSnapshot from './components/ArchitectureSnapshot';
 import ScalabilityPanel from './components/ScalabilityPanel';
 import ReproducibilityPanel from './components/ReproducibilityPanel';
+import ExecutiveOverview from './components/ExecutiveOverview';
 import Logo from './components/Logo';
+import Badge from './components/ui/Badge';
+import SegmentedControl from './components/ui/SegmentedControl';
+import IconButton from './components/ui/IconButton';
+import { ToastProvider, useToast } from './components/ui/Toast';
 import { apiFetch } from './api';
-import { Activity } from 'lucide-react';
+import { Activity, LayoutDashboard, SlidersHorizontal, X } from 'lucide-react';
 
 // Pulls the condition-provenance envelope out of any scenario-carrying
 // response. Pure field selection - no value is derived or invented here; the
@@ -29,6 +34,21 @@ function extractConditionMeta(data) {
 }
 
 export default function App() {
+  return (
+    <ToastProvider>
+      <AppShell />
+    </ToastProvider>
+  );
+}
+
+function AppShell() {
+  const toast = useToast();
+  // 'overview' (Executive Overview) or 'engineering' (Engineering Control
+  // Room, i.e. the original dense workspace). Nothing about the underlying
+  // demo state machine changes between the two - this is purely which
+  // layout renders it.
+  const [view, setView] = useState('overview');
+
   // ─── Core State ──────────────────────────────────
   const [scenario, setScenario] = useState(null);
   // The backend owns the scenario after generation; requests refer to it
@@ -218,6 +238,17 @@ export default function App() {
         edgeCount: data.edge_count ?? null
       });
       setManifest(null);
+
+      if (source === 'osm') {
+        toast('Road network loaded', {
+          detail: `${data.node_count ?? '—'} junctions · ${data.edge_count ?? '—'} streets (OpenStreetMap). Next: Optimize Fleet.`
+        });
+      } else {
+        toast('Scenario generated', {
+          detail: `${data.scenario?.vehicles?.length ?? 0} vehicles · ${data.scenario?.jobs?.length ?? 0} jobs · ${data.scenario?.edges?.length ?? 0} road segments. Next: Optimize Fleet.`
+        });
+      }
+
       return data;
     } catch (err) {
       setError(err.message);
@@ -299,6 +330,10 @@ export default function App() {
           optimizingDurationMs: data.runtime_ms
         }));
       }
+
+      toast(isReopt ? 'Fleet re-routed around the disruption' : 'Optimization complete', {
+        detail: `${data.routes?.length ?? 0} routes · cost ${data.total_cost?.toFixed(2) ?? '—'}. Next: review the routes${isReopt ? '' : ' or simulate an incident'}.`
+      });
     } catch (err) {
       setError(err.message);
       setStatusState('ERROR');
@@ -414,6 +449,11 @@ export default function App() {
       setStatusState('INCIDENT');
       setNetworkState('DISRUPTED');
       refreshManifest(scenarioId);
+
+      toast('Incident applied', {
+        tone: 'error',
+        detail: `${roadName} congestion ×${congestionFactor}. Next: Re-Optimize.`
+      });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -485,6 +525,8 @@ export default function App() {
       }
       const data = await res.json();
       setBenchmarkData(data);
+      const algoCount = data.results ? Object.keys(data.results).length : 0;
+      toast('Benchmark complete', { detail: `${algoCount} algorithms compared on this scenario.` });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -514,9 +556,7 @@ export default function App() {
               <span className="font-display font-bold text-sm sm:text-base tracking-wide text-gray-100">
                 Q-DFRO <span className="font-medium text-gray-400">Engine</span>
               </span>
-              <span className="text-[9px] sm:text-[10px] bg-[#3A2318] text-[#E8A93A] border border-[#5A3A22] px-1.5 py-0.5 rounded font-mono font-semibold">
-                QPSO ENGINE
-              </span>
+              <Badge tone="accent">QPSO Engine</Badge>
             </div>
             <p className="text-[10px] sm:text-[11px] text-gray-400 tracking-tight font-mono">
               Quantum-Inspired Fleet Optimization Engine
@@ -524,22 +564,37 @@ export default function App() {
           </div>
         </div>
 
+        {/* View nav: Executive Overview <-> Engineering Control Room */}
+        <div className="w-full sm:w-72">
+          <SegmentedControl
+            options={[
+              { id: 'overview', label: 'Executive Overview', icon: LayoutDashboard },
+              { id: 'engineering', label: 'Engineering Control Room', icon: SlidersHorizontal }
+            ]}
+            value={view}
+            onChange={setView}
+          />
+        </div>
+
         {/* Network State + Engine Status */}
         <div className="flex items-center space-x-3 sm:space-x-6 w-full sm:w-auto justify-between sm:justify-end">
           <div className="flex items-center space-x-2 font-mono text-xs">
-            <span className={`px-2 sm:px-2.5 py-1 rounded text-[10px] sm:text-xs font-bold uppercase flex items-center gap-1.5 ${
-              networkState === 'DISRUPTED' || statusState === 'RE-OPTIMIZING'
-                ? 'bg-[#3A1C18] text-[#E8918A] border border-[#5A2C26] animate-pulse'
-                : networkState === 'RE-OPTIMIZED'
-                ? 'bg-[#22301B] text-[#9FC589] border border-[#3A4A2E]'
-                : 'bg-[#3A2318] text-[#E8A578] border border-[#5A3A22]'
-            }`}>
-              <span className={`w-2 h-2 rounded-full ${
-                networkState === 'DISRUPTED' || statusState === 'RE-OPTIMIZING' ? 'bg-[#C1443B]' :
-                networkState === 'RE-OPTIMIZED' ? 'bg-[#6B9A57]' : 'bg-[#C6602E]'
-              }`}></span>
+            <Badge
+              pulse={networkState === 'DISRUPTED' || statusState === 'RE-OPTIMIZING'}
+              tone={
+                networkState === 'DISRUPTED' || statusState === 'RE-OPTIMIZING'
+                  ? 'red'
+                  : networkState === 'RE-OPTIMIZED'
+                  ? 'green'
+                  : 'accent'
+              }
+              dotColor={
+                networkState === 'DISRUPTED' || statusState === 'RE-OPTIMIZING' ? '#C1443B' :
+                networkState === 'RE-OPTIMIZED' ? '#6B9A57' : '#C6602E'
+              }
+            >
               {networkStateLabel}
-            </span>
+            </Badge>
           </div>
 
           <div className="flex items-center space-x-2 border-l border-[#332E29] pl-3 sm:pl-6 text-xs font-mono">
@@ -555,39 +610,65 @@ export default function App() {
       {/* ═══ WORKFLOW INDICATOR ═══ */}
       <WorkflowIndicator currentStage={demoStage} narrativeText={narrativeText} />
 
-      {/* ═══ MOBILE VIEWPORT SWITCHER (VISIBLE ON SMALL SCREENS ONLY) ═══ */}
-      <div className="lg:hidden flex border-b border-[#332E29] bg-[#171513] p-1.5 gap-2 px-3 sm:px-6 shadow-md sticky top-[57px] z-40">
-        <button
-          onClick={() => setActiveMobileTab('map')}
-          className={`flex-1 py-2 text-xs font-mono font-bold rounded transition-colors flex items-center justify-center gap-1.5 ${
-            activeMobileTab === 'map'
-              ? 'bg-[#C6602E] text-white shadow-sm'
-              : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
-          }`}
-        >
-          <span>🗺️</span> Network Map
-        </button>
-        <button
-          onClick={() => setActiveMobileTab('controls')}
-          className={`flex-1 py-2 text-xs font-mono font-bold rounded transition-colors flex items-center justify-center gap-1.5 ${
-            activeMobileTab === 'controls'
-              ? 'bg-[#C6602E] text-white shadow-sm'
-              : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
-          }`}
-        >
-          <span>⚡</span> Controls & Operations
-        </button>
-      </div>
+      {/* ═══ MOBILE VIEWPORT SWITCHER (Engineering Control Room only, small screens) ═══ */}
+      {view === 'engineering' && (
+        <div className="lg:hidden flex border-b border-[#332E29] bg-[#171513] p-1.5 gap-2 px-3 sm:px-6 shadow-md sticky top-[57px] z-40">
+          <button
+            onClick={() => setActiveMobileTab('map')}
+            className={`flex-1 py-2 text-xs font-mono font-bold rounded transition-colors flex items-center justify-center gap-1.5 ${
+              activeMobileTab === 'map'
+                ? 'bg-[#C6602E] text-white shadow-sm'
+                : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            Network Map
+          </button>
+          <button
+            onClick={() => setActiveMobileTab('controls')}
+            className={`flex-1 py-2 text-xs font-mono font-bold rounded transition-colors flex items-center justify-center gap-1.5 ${
+              activeMobileTab === 'controls'
+                ? 'bg-[#C6602E] text-white shadow-sm'
+                : 'bg-[#26221D] text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            Controls & Operations
+          </button>
+        </div>
+      )}
 
       {/* ═══ ERROR ALERT ═══ */}
       {error && (
         <div className="bg-[#3A1C18]/90 border border-[#5A2C26] text-[#E8918A] px-4 sm:px-6 py-2 text-xs font-mono flex items-center justify-between">
           <span>ERROR: {error}</span>
-          <button onClick={() => setError(null)} className="text-[#E8918A] hover:text-white font-bold ml-4">✕</button>
+          <IconButton icon={X} iconSize={12} onClick={() => setError(null)} aria-label="Dismiss error" className="ml-4 !text-[#E8918A] hover:!text-white" />
         </div>
       )}
 
-      {/* ═══ MAIN WORKSPACE (75% Map / 25% Operations) ═══ */}
+      {/* ═══ EXECUTIVE OVERVIEW ═══ */}
+      {view === 'overview' && (
+        <main className="flex-1 p-2 sm:p-4 max-w-[1400px] w-full mx-auto">
+          <ExecutiveOverview
+            scenario={scenario}
+            scenarioId={scenarioId}
+            networkMeta={networkMeta}
+            currentResult={currentResult}
+            previousResult={previousResult}
+            benchmarkData={benchmarkData}
+            incidentInfo={incidentInfo}
+            networkState={networkState}
+            loading={loading}
+            selectedVehicle={selectedVehicle}
+            selectedRoute={selectedRoute}
+            onSelectVehicle={handleSelectVehicle}
+            selectedIncidentEdge={selectedIncidentEdge}
+            weights={config.weights}
+            onOpenEngineering={() => setView('engineering')}
+          />
+        </main>
+      )}
+
+      {/* ═══ ENGINEERING CONTROL ROOM (75% Map / 25% Operations) ═══ */}
+      {view === 'engineering' && (
       <main className="flex-1 p-2 sm:p-4 grid grid-cols-1 lg:grid-cols-4 gap-4 max-w-[1920px] w-full mx-auto items-stretch">
         {/* HERO MAP */}
         <div className={`lg:col-span-3 min-h-[350px] sm:min-h-[480px] lg:min-h-[620px] h-full w-full ${
@@ -672,8 +753,10 @@ export default function App() {
           <ArchitectureSnapshot />
         </div>
       </main>
+      )}
 
-      {/* ═══ METRICS & ANALYTICS ═══ */}
+      {/* ═══ METRICS & ANALYTICS (Engineering Control Room only) ═══ */}
+      {view === 'engineering' && (
       <footer className="p-4 pt-0 space-y-4 max-w-[1920px] w-full mx-auto">
         <MetricCards result={currentResult} previousResult={previousResult} weights={config.weights} />
 
@@ -694,6 +777,7 @@ export default function App() {
           </div>
         )}
       </footer>
+      )}
     </div>
   );
 }

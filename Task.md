@@ -12,6 +12,83 @@ verified against the actual code and a full test run (`pytest backend/tests
 
 ---
 
+## Executive Overview / Engineering Control Room Split + UI Design System ✅ Done (2026-09-26)
+
+Frontend interaction & visual polish pass, plus a new Executive Overview
+view. Pure presentation-layer + one new derived view built from data
+`App.jsx` already computes — no backend/algorithm changes, no new API
+calls, no new npm dependencies.
+
+- [x] New shared UI primitives (`frontend/src/components/ui/`): `Button`,
+      `IconButton`, `SegmentedControl`, `Badge`, `Spinner`, `ControlSection`,
+      `ComparisonBars`, `VehicleLoader`, `Toast` (`ToastProvider`/`useToast`)
+      — replace what were previously one-off hand-rolled Tailwind strings
+      per button/toggle/card, duplicated across `ControlPanel.jsx`,
+      `NetworkMap.jsx`, `BenchmarkPanel.jsx`, `VehicleInspector.jsx`,
+      `ArchitectureSnapshot.jsx`, `ScalabilityPanel.jsx`.
+- [x] Toast feedback wired into `App.jsx` for the 4 actions that previously
+      had no transient success feedback at all (Generate Scenario / Load
+      Road Network, Optimize/Re-Optimize, Simulate Incident, Run Benchmark)
+      — every message is built from the real response payload already in
+      scope; nothing invented.
+- [x] Visible disabled-reason text (`Button`'s `disabledHint`) on Simulate
+      Incident / Re-Optimize / Load Real Road Network, replacing a native
+      `title` attribute that was invisible on touch and to keyboard users.
+- [x] Branded `VehicleLoader` (a white car SVG moving between a
+      Start/Destination marker) replacing the plain spinner in the 3
+      primary loading states (network loading, optimize/re-optimize,
+      benchmark). Deliberately indeterminate — confirmed the backend has no
+      intermediate-stage callback for either `/api/optimize` or
+      `/api/benchmark`, so no percentage or fake "algorithm N of 5" is
+      shown.
+- [x] `Logo.jsx` + `favicon.svg` replaced with a minimal flat white car +
+      destination-pin glyph (previously a route/quantum-node mark in the
+      brand accent color) — same glyph reused in the header, the Executive
+      Overview empty state, and the favicon's own dark backdrop.
+- [x] **New Executive Overview** (`ExecutiveOverview.jsx`), toggled via a
+      header nav ("Executive Overview" / "Engineering Control Room",
+      default: Executive Overview). The prior single dense workspace is now
+      the "Engineering Control Room" and is otherwise functionally
+      unchanged. The new view is a narrative built only from data
+      `App.jsx` already computes: scenario stat row; a primary-outcome
+      headline (a real before/after % when a previous result exists,
+      otherwise the real feasible-plan headline — never a fabricated
+      baseline); key metrics; a "What Changed" + interactive
+      Reference-vs-Optimized bar comparison sharing one metric-selection
+      state; the real `NetworkMap`/`VehicleInspector` reused as a
+      read-only route view (no disrupt-road controls, no benchmark
+      preview overlay — that stays an Engineering-only action); a factual
+      operational-insights checklist; and, once a benchmark has been run,
+      a metric-switchable algorithm comparison using the same
+      `ComparisonBars` primitive as the before/after section.
+- [x] `ControlPanel.jsx` reorganized into numbered `ControlSection`s (01
+      Scenario, 02 Conditions, 03 Operations, 04 Solver) instead of an
+      undifferentiated vertical button stack.
+- [x] Engineering Control Room's GIS/Graph toggle, per-severity
+      road-disruption buttons, and `ArchitectureSnapshot`'s
+      Prototype/Deployment toggle now use the shared primitives instead of
+      three separately hand-rolled toggle implementations.
+
+**Explicitly out of scope this round**, per the brief's own instruction not
+to invent functionality the repo doesn't have: manual boundary drawing,
+manual depot/stop placement, vehicle capacity/fleet-size/demand inputs, a
+2-opt checkbox, a multi-city benchmark race, playback/timeline controls, a
+Profile system — none of these exist in the actual app, and an initial
+audit against reference screenshots that assumed they did was corrected
+before implementation started.
+
+Build verified: `npm run build` succeeds with no errors. `npm run lint`
+could not be run — `eslint` is referenced by `package.json`'s `lint` script
+but is not actually listed in `devDependencies` (pre-existing gap, not
+introduced by this change). **Not verified live in a running browser this
+round** — an automated Playwright check was started but the interactive
+click-through was intentionally skipped per instruction; this pass was
+checked by build success and manual code review of prop wiring and handler
+preservation instead. A manual click-through is recommended before demoing.
+This branch: `frontend/ui-polish-executive-overview` (not merged to `main`).
+
+---
+
 ## Visual Identity & UI Polish Pass ✅ Done (2026-09-18)
 
 Plan: `Q-DFRO — Visual Identity & UI Polish Plan`. Pure presentation-layer
@@ -136,8 +213,13 @@ plus `test_scenario_hash_deterministic_and_distinguishing` and
 
 **Tier 3 — explicitly deferred, not started:** QPSO particle-cloud
 visualization, impact heatmap (skipped, no new mapping dependency), full
-"Proof Mode" dashboard, Executive Impact Summary freeze-frame. Do not start
-without asking first, per the plan's own build order.
+"Proof Mode" dashboard. Do not start without asking first, per the plan's
+own build order.
+
+*(Superseded 2026-09-26: "Executive Impact Summary freeze-frame" — this
+tier's fourth deferred item — is now covered by the Executive Overview view
+built in the "Executive Overview / Engineering Control Room Split + UI
+Design System" entry above.)*
 
 ---
 
