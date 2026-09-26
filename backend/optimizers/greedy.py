@@ -1,6 +1,6 @@
 import time
 import numpy as np
-from typing import List, Dict, Tuple
+from typing import List, Dict, Optional, Tuple
 from models import ProblemScenario, OptimizationConfig, OptimizationResult, VehicleRoute, Job, Vehicle
 from route_cache import get_route_matrix
 from fitness import evaluate_solution
@@ -15,11 +15,21 @@ class GreedyOptimizer(BaseOptimizer):
     def optimize(
         self,
         scenario: ProblemScenario,
-        config: OptimizationConfig
+        config: OptimizationConfig,
+        route_matrix: Optional[Tuple[np.ndarray, np.ndarray, Dict[Tuple[int, int], List[int]]]] = None,
     ) -> OptimizationResult:
+        """`route_matrix` lets a caller that already fetched
+        route_cache.get_route_matrix(scenario).as_tuple() (qpso_memetic's
+        greedy warm start) pass it straight in instead of paying a second
+        cache lookup for the same scenario. Fetched internally when omitted,
+        so every other caller (benchmark, /api/optimize, tests) is
+        unaffected."""
         start_time = time.perf_counter()
 
-        dist_matrix, time_matrix, paths_dict = get_route_matrix(scenario).as_tuple()
+        if route_matrix is not None:
+            dist_matrix, time_matrix, paths_dict = route_matrix
+        else:
+            dist_matrix, time_matrix, paths_dict = get_route_matrix(scenario).as_tuple()
         depot_id = scenario.depot_node_id
         job_map: Dict[int, Job] = {j.id: j for j in scenario.jobs}
 

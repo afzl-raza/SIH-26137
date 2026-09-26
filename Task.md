@@ -12,6 +12,68 @@ verified against the actual code and a full test run (`pytest backend/tests
 
 ---
 
+## CVRPTW — Customer Time Windows ✅ Done (2026-09-26)
+
+Turns the problem from CVRP into CVRPTW: jobs may carry a delivery window
+`[ready_time, due_time]` (minutes from shift start), opt-in and off by
+default so every pre-existing scenario/result stays byte-identical.
+
+- [x] `models.py`: `Job.ready_time`/`due_time` (+ validator), `StopTiming`,
+      `VehicleRoute.stops`/`wait_time`/`lateness`/`late_jobs`
+- [x] `schedule.py` (new): `simulate_route` — the single timing function,
+      replacing three separately-duplicated timing loops across
+      `decoder.py` and `optimizers/greedy.py` (and used by
+      `optimizers/qpso_memetic.py::_route_cost`)
+- [x] `optimizers/greedy.py`: candidate ranking is time-until-service-start
+      (`t_leg + wait`), tie-broken by earliest `due_time`, skips a candidate
+      that would arrive late when an on-time option exists — a no-op when
+      windows are off (verified byte-identical against the full pre-existing
+      suite)
+- [x] `fitness.py`: lateness penalty (normalized quadratic + a fixed
+      per-late-job term, same shape as the capacity/time terms);
+      `is_feasible` independently requires zero fleet-wide lateness
+- [x] `optimizers/qpso_memetic.py`: registered in `optimizers/benchmark.py`
+      as `"qpso_memetic"`; its local-search cost model uses the same
+      `simulate_route` and mirrors the lateness penalty exactly (its
+      capacity/time terms carry an additional fixed search-only penalty not
+      present in `fitness.py` — documented in its own docstring, never
+      affects the reported score)
+- [x] `problem_generator.py` / `realdata/osm_scenario.py`:
+      `time_windows`/`tw_width_min` params; windows drawn from an RNG seeded
+      independently of the rest of generation, so job nodes/demands/service
+      times are identical with windows on or off; `compute_scenario_hash`
+      only changes when `time_windows=True`
+- [x] `main.py`: `time_windows`/`tw_width_min` on `POST /api/problem/generate`
+      (both synthetic and OSM paths); `/api/optimize`/`/api/benchmark`
+      responses carry the new route fields with no shape change otherwise
+- [x] Frontend: `ControlPanel.jsx` toggle + 30–120 min width slider;
+      `VehicleInspector.jsx` per-stop table (arrival/window/wait/late, late
+      rows red, waits amber); `NetworkMap.jsx` job popup shows the window and
+      rings a late job's marker red; `MetricCards.jsx` "Late Deliveries" card
+- [x] `docs/mathematical_model.md`: CVRPTW formulation (states that
+      `route_travel_time` includes waiting); `docs/dynamic_conditions.md`
+      §5b: windows are absolute, and there is no simulation clock;
+      `docs/requirements_traceability.md`: new row
+- [x] 14 new tests in `backend/tests/test_time_windows.py` (timing,
+      fitness, generator RNG-isolation/hash-stability/reproducibility,
+      incident-vs-window interaction, API). Full suite: 366 total (352
+      pre-existing + 14 new), no existing test weakened. One pre-existing,
+      unrelated test — `test_scenario_store.py::test_expired_entries_are_dropped`
+      (a 50ms-TTL timing assertion) — is intermittently flaky under full-suite
+      CPU load; it passes reliably in isolation and is untouched by this
+      feature, not a regression introduced here.
+
+**Benchmark finding, reported as-is (30 jobs/6 vans and 50 jobs/10 vans,
+seed 42):** Memetic QPSO is the only algorithm besides Greedy that stays
+feasible with time windows on at both sizes, and remains the lowest-cost
+feasible algorithm throughout. GA and QPSO, at 50 jobs/10 vans with windows
+on, report actual late jobs (1 and 5 respectively) rather than just
+crossing the existing capacity/time infeasibility this default
+population/iteration budget already showed even with windows off — an
+honest new failure mode, not smoothed over.
+
+---
+
 ## Visual Identity & UI Polish Pass ✅ Done (2026-09-18)
 
 Plan: `Q-DFRO — Visual Identity & UI Polish Plan`. Pure presentation-layer

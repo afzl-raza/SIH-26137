@@ -14,14 +14,22 @@ with a simple symmetric time_matrix, the same style as test_decoder.py.
 import os
 import sys
 
+import networkx as nx
 import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from models import Job, Node, ObjectiveWeights, ProblemScenario, Vehicle, VehicleRoute
+from models import Edge, Job, Node, ObjectiveWeights, ProblemScenario, Vehicle, VehicleRoute
 from schedule import simulate_route
 from fitness import evaluate_solution
+from problem_generator import compute_route_matrix, compute_scenario_hash, generate_synthetic_scenario
+from realdata.conditions import apply_incidents
+
+from fastapi.testclient import TestClient
+import main as main_module
+
+client = TestClient(main_module.app)
 
 DEPOT = 0
 
@@ -184,3 +192,173 @@ def test_is_feasible_false_whenever_any_job_is_late():
 
     assert result.constraint_violations >= 1
     assert result.is_feasible is False
+
+
+# --------------------------------------------------------- problem_generator.py
+
+def test_generator_time_windows_rng_isolation():
+    """time_windows=True must draw ready/due from a SEPARATE RNG, so every
+    other field (node ids, demands, service times, vehicle capacity) is
+    byte-identical to the same seed with windows off - only ready_time/
+    due_time may differ."""
+    off = generate_synthetic_scenario(num_nodes=20, num_jobs=8, num_vehicles=3, seed=11)
+    on = generate_synthetic_scenario(
+        num_nodes=20, num_jobs=8, num_vehicles=3, seed=11, time_windows=True, tw_width_min=60.0
+    )
+
+    assert [n.model_dump() for n in off.nodes] == [n.model_dump() for n in on.nodes]
+    assert [e.model_dump() for e in off.edges] == [e.model_dump() for e in on.edges]
+    assert [v.model_dump() for v in off.vehicles] == [v.model_dump() for v in on.vehicles]
+
+    for job_off, job_on in zip(off.jobs, on.jobs):
+        assert job_off.id == job_on.id
+        assert job_off.node_id == job_on.node_id
+        assert job_off.demand == job_on.demand
+        assert job_off.service_time == job_on.service_time
+        assert job_off.priority == job_on.priority
+        assert job_off.ready_time is None
+        assert job_on.ready_time is not None
+        assert job_on.due_time is not None
+
+
+def test_generator_old_hash_unchanged_without_time_windows():
+    """A scenario generated with time_windows left at its default (False)
+    must hash exactly as it did before the feature existed - the TW params
+    are folded into the hash ONLY when time_windows=True, so every existing
+    scenario hash and frozen E1-E6 experiment config stays unchanged."""
+    scenario = generate_synthetic_scenario(num_nodes=20, num_jobs=8, num_vehicles=3, seed=11)
+
+    # The exact pre-time-windows formula: no `extra` suffix at all.
+    assert scenario.scenario_hash == compute_scenario_hash(20, 8, 3, 11)
+    assert scenario.scenario_hash == "f9e11d2ce8"  # pinned so a future change is caught
+
+
+def test_generator_hash_changes_when_time_windows_enabled():
+    off = generate_synthetic_scenario(num_nodes=20, num_jobs=8, num_vehicles=3, seed=11)
+    on = generate_synthetic_scenario(
+        num_nodes=20, num_jobs=8, num_vehicles=3, seed=11, time_windows=True, tw_width_min=60.0
+    )
+    assert on.scenario_hash != off.scenario_hash
+
+
+def test_generator_time_windows_reproducible_with_same_seed():
+    a = generate_synthetic_scenario(
+        num_nodes=20, num_jobs=8, num_vehicles=3, seed=11, time_windows=True, tw_width_min=60.0
+    )
+    b = generate_synthetic_scenario(
+        num_nodes=20, num_jobs=8, num_vehicles=3, seed=11, time_windows=True, tw_width_min=60.0
+    )
+    for job_a, job_b in zip(a.jobs, b.jobs):
+        assert job_a.ready_time == job_b.ready_time
+        assert job_a.due_time == job_b.due_time
+
+
+def test_generator_time_windows_are_satisfiable():
+    """Every generated window must be reachable on time by a dedicated
+    vehicle: due_time >= (depot -> job free-flow time) + service_time."""
+    scenario = generate_synthetic_scenario(
+        num_nodes=20, num_jobs=8, num_vehicles=3, seed=11, time_windows=True, tw_width_min=60.0
+    )
+    G = nx.DiGraph()
+    for e in scenario.edges:
+        G.add_edge(e.source, e.destination, weight=e.base_travel_time)
+    depot_time = nx.single_source_dijkstra_path_length(G, source=scenario.depot_node_id, weight="weight")
+
+    for job in scenario.jobs:
+        assert job.ready_time is not None and job.due_time is not None
+        assert job.ready_time <= job.due_time
+        assert job.ready_time >= 0.0
+        t0 = depot_time[job.node_id]
+        # Small tolerance: due_time was rounded to 2dp at generation time.
+        assert job.due_time >= t0 + job.service_time - 1e-2
+
+
+# --------------------------------------------------- incident + windows
+
+def test_incident_increases_lateness_while_windows_stay_unchanged():
+    """The dynamic-conditions story for CVRPTW: an incident that slows a
+    road on the route can only ever increase (or leave unchanged) a job's
+    lateness - never decrease it - while the job's own window is untouched,
+    because realdata.conditions only ever mutates Edge fields, never Job
+    fields. Windows are absolute (minutes from shift start); this is what
+    lets them survive a traffic/incident change with no extra code."""
+    nodes = [Node(id=0, name="Depot", lat=0.0, lng=0.0, is_depot=True),
+             Node(id=1, name="N1", lat=0.0, lng=0.0)]
+    edges = [
+        Edge(source=0, destination=1, distance=1.0, base_travel_time=5.0,
+             traffic_factor=1.0, current_travel_time=5.0),
+        Edge(source=1, destination=0, distance=1.0, base_travel_time=5.0,
+             traffic_factor=1.0, current_travel_time=5.0),
+    ]
+    vehicle = Vehicle(id=1, capacity=10.0, start_node=0, end_node=0, max_route_time=1000.0)
+    # due_time=6: on time at free-flow (arrival=5); a slowed edge will miss it.
+    job = Job(id=1, node_id=1, demand=1.0, service_time=0.0, due_time=6.0)
+    scenario = ProblemScenario(
+        nodes=nodes, edges=edges, vehicles=[vehicle], jobs=[job],
+        depot_node_id=0, seed=1,
+    )
+
+    _, time_before, _ = compute_route_matrix(scenario).as_tuple()
+    sched_before = simulate_route([1], vehicle, 0, time_before, {1: job})
+    assert sched_before.lateness == 0.0
+
+    # Incident: this road now takes twice as long.
+    disrupted, changed = apply_incidents(scenario, {(0, 1): 2.0})
+    assert changed == 2  # symmetric: both directions
+
+    disrupted_job = disrupted.jobs[0]
+    # The window is unchanged (a different Job object - clone_scenario copies
+    # jobs - but the same ready_time/due_time values).
+    assert disrupted_job.due_time == job.due_time
+    assert disrupted_job.ready_time == job.ready_time
+
+    _, time_after, _ = compute_route_matrix(disrupted).as_tuple()
+    sched_after = simulate_route([1], vehicle, 0, time_after, {1: disrupted_job})
+
+    assert sched_after.lateness >= sched_before.lateness
+    assert sched_after.lateness > 0.0
+
+
+# ------------------------------------------------------------------- API
+
+def test_api_generate_with_time_windows_then_optimize():
+    """POST /api/problem/generate with time_windows=True must return jobs
+    carrying ready_time/due_time, and POST /api/optimize against that
+    scenario must return routes with the new CVRPTW fields populated."""
+    gen_response = client.post("/api/problem/generate", json={
+        "source": "synthetic",
+        "num_nodes": 20,
+        "num_jobs": 8,
+        "num_vehicles": 3,
+        "seed": 42,
+        "time_windows": True,
+        "tw_width_min": 60.0,
+    })
+    assert gen_response.status_code == 200
+    gen_body = gen_response.json()
+    scenario_id = gen_body["scenario_id"]
+    jobs = gen_body["scenario"]["jobs"]
+
+    assert len(jobs) == 8
+    assert all(j["ready_time"] is not None and j["due_time"] is not None for j in jobs)
+
+    opt_response = client.post("/api/optimize", json={
+        "scenario_id": scenario_id,
+        "config": {
+            "algorithm": "greedy",
+            "population_size": 10,
+            "max_iterations": 5,
+            "seed": 42,
+        },
+    })
+    assert opt_response.status_code == 200
+    result = opt_response.json()
+
+    assert len(result["routes"]) == 3
+    for route in result["routes"]:
+        assert "stops" in route
+        assert "wait_time" in route
+        assert "lateness" in route
+        assert "late_jobs" in route
+        for stop in route["stops"]:
+            assert set(stop.keys()) >= {"job_id", "arrival", "service_start", "departure", "wait", "lateness"}

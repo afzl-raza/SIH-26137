@@ -79,6 +79,11 @@ class GenerateRequest(BaseModel):
     seed: int = 42
     num_nodes: int = 30  # synthetic only - OSM node count comes from the map
 
+    # CVRPTW, opt-in. See problem_generator.generate_time_windows for the
+    # exact rule; off by default so every existing caller is unaffected.
+    time_windows: bool = False
+    tw_width_min: float = 60.0
+
     # Location inputs, any one of which resolves to a bounded area. No city is
     # special: a place name goes through the geocoder, coordinates and boxes
     # are used directly.
@@ -187,7 +192,9 @@ def generate_problem(req: GenerateRequest):
             num_nodes=req.num_nodes,
             num_jobs=req.num_jobs,
             num_vehicles=req.num_vehicles,
-            seed=req.seed
+            seed=req.seed,
+            time_windows=req.time_windows,
+            tw_width_min=req.tw_width_min,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -270,6 +277,8 @@ def _generate_from_openstreetmap(req: GenerateRequest):
             num_jobs=req.num_jobs,
             num_vehicles=req.num_vehicles,
             seed=req.seed,
+            time_windows=req.time_windows,
+            tw_width_min=req.tw_width_min,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

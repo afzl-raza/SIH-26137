@@ -458,10 +458,10 @@ def test_benchmark_runs_all_four_on_the_same_conditioned_scenario(offline_weathe
 
 
 def test_a_benchmark_under_conditions_builds_the_matrix_once():
-    """The five-algorithm benchmark must still be one build plus five hits,
-    now that conditions are in the cache key. (Memetic QPSO fetches the
-    matrix twice per run - once for itself, once via its internal
-    GreedyOptimizer warm start - so 5 algorithms make 6 fetches total.)"""
+    """The five-algorithm benchmark must still be one build plus four hits,
+    now that conditions are in the cache key. (Memetic QPSO's greedy warm
+    start reuses the matrix it already fetched instead of fetching it again,
+    so 5 algorithms make exactly 5 fetches total.)"""
     scenario = apply_conditions(
         generate_synthetic_scenario(num_nodes=18, num_jobs=7, num_vehicles=2, seed=9),
         ConditionRequest(traffic_mode=MODE_HEAVY),
@@ -474,7 +474,7 @@ def test_a_benchmark_under_conditions_builds_the_matrix_once():
 
     stats = ROUTE_MATRIX_CACHE.stats()
     assert stats["builds"] == 1
-    assert stats["hits"] == 5
+    assert stats["hits"] == 4
 
 
 # ========================================================== 10. reproducibility

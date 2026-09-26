@@ -3,12 +3,27 @@ Memetic QPSO: QPSO + greedy warm start + bounded quantum jump + local search.
 
 Drop-in alongside optimizers/qpso.py. Uses the SAME decoder and the SAME
 fitness.evaluate_solution for the final reported result, so the benchmark
-stays fair. Local search uses a fast cost model that reproduces
+stays fair - the number shown anywhere outside this file always comes from
+fitness.py, never from the cost model below.
+
+Local search uses a fast cost model (`_route_cost`) that reproduces
 evaluate_solution's formula from the route matrix (legs + service time +
 congestion along each shortest path + normalized quadratic penalty,
 including the CVRPTW lateness term), with timing computed by the same
 schedule.simulate_route every other optimizer and fitness.py use - so this
-fast model can never silently diverge from the real evaluator's numbers.
+fast model can never silently diverge from the real evaluator's numbers on
+what a route's time/wait/lateness actually is.
+
+One deliberate difference from fitness.py: `_route_cost` adds a FIXED
+`penalty_weight * 0.05` on top of the normalized quadratic term for a
+capacity or time-window violation too (fitness.py only does this for
+lateness). This exists purely to steer the local search (2-opt/relocate/
+swap) away from small, easily-fixed violations during the search itself,
+the same reason the lateness fixed term exists - it is a search heuristic,
+not part of the objective. It never appears in a reported OptimizationResult:
+the final routes are always re-scored through the real
+fitness.evaluate_solution before being returned, so this term cannot affect
+a benchmark comparison against Greedy/PSO/GA/QPSO.
 """
 import time
 import numpy as np
@@ -184,8 +199,10 @@ class MemeticQPSOOptimizer(BaseOptimizer):
 
         n, T = config.population_size, config.max_iterations
         X = rng.random((n, m))
-        # Warm start: greedy solution (polished) injected as one particle
-        g = GreedyOptimizer().optimize(scenario, config)
+        # Warm start: greedy solution (polished) injected as one particle.
+        # route_matrix reuses the (dist_m, time_m, paths) already fetched
+        # above, so this doesn't cost a second route_cache lookup.
+        g = GreedyOptimizer().optimize(scenario, config, route_matrix=(dist_m, time_m, paths))
         g_routes = [[job_index[j] for j in r.job_ids] for r in g.routes]
         g_routes, _ = self._local_search(g_routes)
         X[0] = self._routes_to_keys(g_routes)

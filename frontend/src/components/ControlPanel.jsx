@@ -11,7 +11,8 @@ import {
   RotateCcw,
   CloudRain,
   MapPin,
-  FileText
+  FileText,
+  Clock
 } from 'lucide-react';
 import RecoveryTimeline from './RecoveryTimeline';
 import { apiFetch } from '../api';
@@ -44,6 +45,10 @@ export default function ControlPanel({
   setPlace,
   radiusM = 1200,
   setRadiusM,
+  timeWindows = false,
+  setTimeWindows,
+  twWidthMin = 60,
+  setTwWidthMin,
   networkMeta,
   manifest
 }) {
@@ -243,6 +248,56 @@ export default function ControlPanel({
               )}
             </div>
           )}
+        </div>
+
+        {/* Time windows (CVRPTW), opt-in. Sent to the next Generate New
+            Scenario call - it doesn't retroactively add windows to the
+            scenario already on screen, same as the network-source toggle
+            above. */}
+        <div className="bg-[#141210]/50 border border-[#332E29] rounded-lg p-2.5 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-gray-300 font-semibold uppercase tracking-wider text-[10px]">
+              <Clock size={12} className="text-[#E8C578]" />
+              Time Windows
+            </div>
+            <button
+              onClick={() => setTimeWindows?.(!timeWindows)}
+              disabled={loading}
+              aria-pressed={timeWindows}
+              className={`px-2 py-0.5 rounded border text-[10px] transition-colors disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-[#E8C578] ${
+                timeWindows
+                  ? 'bg-[#3A2E14] border-[#5A4A22] text-[#E8C578]'
+                  : 'bg-[#26221D] border-[#3A342E] text-gray-400'
+              }`}
+            >
+              {timeWindows ? 'Enabled' : 'Disabled'}
+            </button>
+          </div>
+
+          {timeWindows && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[10px] text-gray-400">
+                <label htmlFor="tw-width">Window width</label>
+                <span className="font-mono text-[#E8C578] tabular-nums">{twWidthMin} min</span>
+              </div>
+              <input
+                id="tw-width"
+                type="range"
+                min="30"
+                max="120"
+                step="5"
+                value={twWidthMin}
+                disabled={loading}
+                onChange={(e) => setTwWidthMin?.(Number(e.target.value))}
+                className="w-full accent-[#E8C578] disabled:opacity-40"
+              />
+            </div>
+          )}
+
+          <p className="text-[9px] text-gray-600 leading-snug">
+            Each job gets a delivery window [ready, due]. Late arrivals are a soft
+            constraint - the route continues, but lateness is penalized and reported.
+          </p>
         </div>
 
         <div className="grid grid-cols-2 gap-2">

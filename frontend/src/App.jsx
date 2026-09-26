@@ -65,6 +65,10 @@ export default function App() {
   const [networkSource, setNetworkSource] = useState('synthetic');
   const [place, setPlace] = useState('');
   const [radiusM, setRadiusM] = useState(1200);
+  // CVRPTW, opt-in. Sent to /api/problem/generate; off by default so a fresh
+  // scenario behaves exactly as it always has.
+  const [timeWindows, setTimeWindows] = useState(false);
+  const [twWidthMin, setTwWidthMin] = useState(60);
   // Provenance of the loaded network, straight from the generate response.
   const [networkMeta, setNetworkMeta] = useState(null);
   // Reproducibility manifest for the current run, read back from the server
@@ -159,7 +163,9 @@ export default function App() {
         num_nodes: 30,
         num_jobs: 15,
         num_vehicles: 3,
-        seed: config.seed
+        seed: config.seed,
+        time_windows: timeWindows,
+        tw_width_min: Number(twWidthMin) || 60
       };
       // For an OSM run the location is the input: the backend geocodes it
       // through Nominatim and pulls the real road network for the result.
@@ -653,6 +659,10 @@ export default function App() {
             setPlace={setPlace}
             radiusM={radiusM}
             setRadiusM={setRadiusM}
+            timeWindows={timeWindows}
+            setTimeWindows={setTimeWindows}
+            twWidthMin={twWidthMin}
+            setTwWidthMin={setTwWidthMin}
             networkMeta={networkMeta}
             manifest={manifest}
           />
