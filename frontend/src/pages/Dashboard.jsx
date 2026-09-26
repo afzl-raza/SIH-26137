@@ -509,11 +509,12 @@ export default function Dashboard({ onExitToLanding }) {
           {onExitToLanding && (
             <button
               onClick={onExitToLanding}
-              aria-label="Back to landing page"
+              aria-label="Back to overview"
+              title="Back to overview"
               className="hidden sm:flex items-center gap-1 text-[11px] font-mono text-gray-400 hover:text-[#E8A93A] border border-[#332E29] hover:border-[#5A3A22] rounded px-2 py-1.5 transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              Landing
+              Back to Overview
             </button>
           )}
           <div className="bg-[#1E1B18] border border-[#3A342E] p-1.5 sm:p-2 rounded-lg shadow-md">
