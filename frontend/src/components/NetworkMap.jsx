@@ -225,6 +225,19 @@ export default function NetworkMap({
   }, [nodes]);
 
   const mapControllerRef = useRef(null);
+  // react-leaflet's MapContainer mounts in two passes: its wrapping div's
+  // ref callback constructs the Leaflet map and calls setState, and only on
+  // the NEXT render/commit does it actually render children like
+  // MapViewController - so an effect declared here (NetworkMap, the
+  // PARENT) that runs during that FIRST commit will always find
+  // mapControllerRef.current still null, with nothing about the ref itself
+  // ever changing to prompt a retry. MapViewController's onReady callback
+  // (fired the moment its own useMap() first returns a real map) flips this,
+  // giving the auto-fit effect below a real dependency to react to - without
+  // it, a scenario/result that both arrive in a single render (as
+  // OverviewLiveMap.jsx does) would never get auto-fit at all, confirmed via
+  // a real render test, not assumed.
+  const [mapReady, setMapReady] = useState(false);
   // The Leaflet map only reads MapContainer's `center`/`zoom` props once, at
   // construction - so this has to be a one-time computation from whatever
   // data is available on first render, not a value that tracks later
@@ -484,7 +497,14 @@ export default function NetworkMap({
     } else {
       controller.flyToBounds(leafletBounds, { ...DEFAULT_FIT_OPTIONS, duration: 0.9 });
     }
-  }, [scenarioId, currentResult, scenarioBounds, routeBounds]);
+    // mapReady is intentionally a dependency, not just a guard read above:
+    // MapContainer's two-pass mount means this effect's FIRST relevant run
+    // (right after a scenario/result change) can catch mapControllerRef
+    // still null, and nothing about that ref changes to prompt a retry -
+    // mapReady flipping true is the one dependency that reliably re-runs
+    // this effect once the controller genuinely exists, so a fit is never
+    // silently and permanently skipped (confirmed via a real render test).
+  }, [scenarioId, currentResult, scenarioBounds, routeBounds, mapReady]);
 
   // Per-vehicle-color glow rule, applied via className (not a duplicated
   // Polyline) - avoids the zoom/pan micro-stutter a second SVG path per
@@ -782,7 +802,7 @@ export default function NetworkMap({
         {/* Renders nothing - owns the invalidateSize lifecycle and exposes
             fitToBounds/flyToBounds/setView to the plain-React buttons above
             via mapControllerRef (see MapViewController.jsx). */}
-        <MapViewController ref={mapControllerRef} />
+        <MapViewController ref={mapControllerRef} onReady={() => setMapReady(true)} />
 
         {mapView === 'gis' && (
           // Standard OSM raster tiles at full brightness - a dark CSS
