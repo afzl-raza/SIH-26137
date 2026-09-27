@@ -1,36 +1,19 @@
 import React from 'react';
-import { Info, AlertTriangle, Construction, CheckCircle2, GraduationCap } from 'lucide-react';
+import { Info, AlertTriangle, Loader2, GraduationCap } from 'lucide-react';
 
-const ALERTS = [
-  {
-    icon: AlertTriangle, tone: 'warn',
-    title: 'Slow traffic on Harbor Avenue', when: '2 min ago',
-    detail: 'A crash is adding about 8 minutes for 3 vehicles.',
-    action: 'Use Riverside detour →',
-  },
-  {
-    icon: Construction, tone: 'caution',
-    title: 'Road work begins at 2:00 PM', when: '12 min ago',
-    detail: 'One lane will close near Central Depot.',
-    action: 'Notify afternoon drivers →',
-  },
-  {
-    icon: CheckCircle2, tone: 'good',
-    title: 'Downtown traffic is easing', when: '18 min ago',
-    detail: 'Routes through Market Street are moving normally.',
-    action: 'No action needed →',
-  },
-];
+// Real alerts are derived from scenario.edges' backend-declared condition
+// state (congestion_level/has_incident - see backend/models.py Edge; using
+// the backend's own classification rather than re-deriving thresholds from
+// traffic_factor in React, per this project's "no duplicated logic" rule).
+// Overview.jsx's background run never applies a conditions layer or an
+// incident (that only happens from the Dashboard), so every edge sits at
+// free_flow here and this will normally show the empty state below - that's
+// an honest reflection of "no conditions applied to this run", not a bug.
+export default function OverviewAlerts({ scenario, result, loading, error }) {
+  const affectedEdges = (scenario?.edges || []).filter(
+    e => e.congestion_level !== 'free_flow' || e.has_incident
+  );
 
-const TONES = {
-  warn: { bg: '#462122', fg: '#FF6868' },
-  caution: { bg: '#46371D', fg: '#F5B942' },
-  good: { bg: '#173A2D', fg: '#43D493' },
-};
-
-// Same illustrative-data caveat as OverviewMetrics: this prototype has no
-// real incident feed. Static list matching the approved design's copy.
-export default function OverviewAlerts() {
   return (
     <div className="flex flex-col gap-4">
       <div className="bg-[#211E1A] border border-[#3B342A] rounded-2xl p-5">
@@ -43,26 +26,42 @@ export default function OverviewAlerts() {
         </div>
         <p className="text-[11px] text-[#817970] mb-4">What changed and what to do next.</p>
 
-        <div className="flex flex-col gap-4">
-          {ALERTS.map(a => {
-            const tone = TONES[a.tone];
-            return (
-              <div key={a.title} className="flex gap-2.5">
-                <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: tone.bg, color: tone.fg }}>
-                  <a.icon size={12} />
+        {loading && !scenario && (
+          <div className="h-[80px] flex items-center justify-center">
+            <Loader2 size={16} className="animate-spin text-[#817970]" />
+          </div>
+        )}
+
+        {error && !scenario && (
+          <p className="text-[12px] text-[#FF6868]">{error} - is the backend running?</p>
+        )}
+
+        {!loading && !error && scenario && affectedEdges.length === 0 && (
+          <p className="text-[12px] text-[#817970]">
+            No active alerts - today's scenario is running at free-flow conditions. Apply
+            traffic conditions or trigger an incident from the Dashboard to see alerts here.
+          </p>
+        )}
+
+        {affectedEdges.length > 0 && (
+          <div className="flex flex-col gap-4">
+            {affectedEdges.map(e => (
+              <div key={`${e.source}-${e.destination}`} className="flex gap-2.5">
+                <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 bg-[#462122] text-[#FF6868]">
+                  <AlertTriangle size={12} />
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-[12.5px] font-semibold text-[#FFF9F1]">{a.title}</span>
-                    <span className="text-[10px] text-[#817970] flex-shrink-0">{a.when}</span>
-                  </div>
-                  <p className="text-[11px] text-[#B9B0A5] mt-0.5">{a.detail}</p>
-                  <span className="text-[11px] font-semibold cursor-default" style={{ color: tone.fg }}>{a.action}</span>
+                  <span className="text-[12.5px] font-semibold text-[#FFF9F1]">
+                    {e.road_name || `Road ${e.source} → ${e.destination}`}
+                  </span>
+                  <p className="text-[11px] text-[#B9B0A5] mt-0.5">
+                    {e.has_incident ? 'Incident reported · ' : ''}Congestion: {e.congestion_level.replace('_', ' ')} (×{e.traffic_factor.toFixed(2)})
+                  </p>
                 </div>
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="bg-[#4A2916]/40 border border-[#5A3620] rounded-2xl p-5">
