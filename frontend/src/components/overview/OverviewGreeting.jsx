@@ -17,9 +17,10 @@ const CHECKLIST = [
   { label: 'Invite a teammate', done: false },
 ];
 
-export default function OverviewGreeting({ onEnterDashboard }) {
+export default function OverviewGreeting({ onEnterDashboard, user }) {
   const doneCount = CHECKLIST.filter(c => c.done).length;
   const pct = Math.round((doneCount / CHECKLIST.length) * 100);
+  const firstName = (user?.name?.trim().split(/\s+/)[0] || 'there').toUpperCase();
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr,340px] gap-4">
@@ -30,7 +31,7 @@ export default function OverviewGreeting({ onEnterDashboard }) {
           <div className="max-w-xl">
             <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#F5B942] mb-2">
               <span className="w-1.5 h-1.5 rounded-full bg-[#F5B942]" />
-              GOOD MORNING, ALEX
+              GOOD MORNING, {firstName}
             </div>
             <h1 className="font-display font-bold text-[28px] sm:text-[34px] text-[#FFF9F1] leading-tight mb-3">
               Move smarter, one route at a time.

@@ -4,7 +4,7 @@ import AuthPage from './pages/AuthPage';
 import Overview from './pages/Overview';
 import Dashboard from './pages/Dashboard';
 import Logo from './components/Logo';
-import { getCurrentUser } from './lib/authService';
+import { getCurrentUser, logout as logoutRequest } from './lib/authService';
 
 const AUTH_HASH = '#/auth';
 const OVERVIEW_HASH = '#/overview';
@@ -120,6 +120,20 @@ export default function App() {
     setRequestedView('overview');
   }, []);
 
+  // logoutRequest() clears the local token synchronously (before its own
+  // internal await for the server-side revoke call) - so the UI updates
+  // immediately below without waiting on that network round-trip, while the
+  // revoke still happens in the background. Lands on the login form, not
+  // the landing page - signing out should make it easy to sign back in, not
+  // force a re-read of the marketing page first.
+  const handleLogout = useCallback(() => {
+    logoutRequest();
+    setUser(null);
+    setSessionState('anonymous');
+    window.location.hash = AUTH_HASH;
+    setRequestedView('auth');
+  }, []);
+
   if (sessionState === 'checking') {
     return <AuthSplash />;
   }
@@ -127,7 +141,14 @@ export default function App() {
     return <Dashboard onExitToOverview={goToOverview} />;
   }
   if (effectiveView === 'overview') {
-    return <Overview onEnterDashboard={goToDashboard} onExitToLanding={goToLanding} />;
+    return (
+      <Overview
+        onEnterDashboard={goToDashboard}
+        onExitToLanding={goToLanding}
+        user={user}
+        onLogout={handleLogout}
+      />
+    );
   }
   if (effectiveView === 'auth') {
     return <AuthPage onAuthSuccess={handleAuthSuccess} onBackToLanding={goToLanding} />;
