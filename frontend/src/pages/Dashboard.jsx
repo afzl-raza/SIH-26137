@@ -71,15 +71,16 @@ function DashboardShell({ onExitToOverview }) {
   // The backend owns the scenario after generation; requests refer to it
   // by id instead of uploading the whole graph on every interaction.
   const [scenarioId, setScenarioId] = useState(null);
-  // Bumped on every handleGenerateScenario call, checked by both that
-  // function and handleOptimize before committing their response. An OSM
-  // generate can legitimately take 20-90s (Nominatim + Overpass); if the
-  // operator generates again (a new place, or just impatiently retries)
-  // before the first call returns, or optimizes a scenario that gets
-  // replaced mid-flight, the older response must never overwrite state a
-  // newer generate has already moved past - that would silently show a
-  // stale scenario/route (and refit the viewport to it) instead of the one
-  // actually on screen.
+  // Bumped whenever the active scenario is created or replaced -
+  // handleGenerateScenario and handleConfirmPlacement (manual placement)
+  // both bump it - and checked by those two functions plus handleOptimize
+  // before committing their response. An OSM generate can legitimately take
+  // 20-90s (Nominatim + Overpass); if the operator generates again (a new
+  // place, or just impatiently retries), confirms a manual placement, or
+  // optimizes a scenario that gets replaced mid-flight, the older response
+  // must never overwrite state a newer scenario has already moved past -
+  // that would silently show a stale scenario/route (and refit the
+  // viewport to it) instead of the one actually on screen.
   const generationTokenRef = useRef(0);
   const [currentResult, setCurrentResult] = useState(null);
   const [previousResult, setPreviousResult] = useState(null);
@@ -417,6 +418,14 @@ function DashboardShell({ onExitToOverview }) {
 
   const handleConfirmPlacement = async () => {
     if (draftDepotId === null || draftStopIds.length === 0 || !scenarioId) return;
+    // Bump the same token handleGenerateScenario uses: confirming a manual
+    // placement creates/replaces the active scenario exactly like a fresh
+    // generate does, so an optimize call already in flight against the OLD
+    // scenario must be invalidated the same way - otherwise its response
+    // could land after this and silently overwrite the newly-confirmed
+    // scenario/viewport with a route computed for a scenario that no longer
+    // exists.
+    const requestToken = ++generationTokenRef.current;
     setLoading(true);
     setActiveOperation('generate');
     setError(null);
@@ -437,6 +446,10 @@ function DashboardShell({ onExitToOverview }) {
         throw new Error(detail?.detail || 'Failed to apply manual placement');
       }
       const data = await res.json();
+      // A newer generate/confirm started (and possibly already finished)
+      // while this customize call was in flight - this response is no
+      // longer the latest and must not overwrite that newer state.
+      if (requestToken !== generationTokenRef.current) return null;
       setScenario(data.scenario);
       setScenarioId(data.scenario_id);
       setCurrentResult(null);
@@ -462,10 +475,13 @@ function DashboardShell({ onExitToOverview }) {
         detail: `${data.scenario?.jobs?.length ?? 0} stops placed. Next: Optimize Fleet.`
       });
     } catch (err) {
+      if (requestToken !== generationTokenRef.current) return null; // superseded - stay quiet
       setError(err.message);
     } finally {
-      setLoading(false);
-      setActiveOperation(null);
+      if (requestToken === generationTokenRef.current) {
+        setLoading(false);
+        setActiveOperation(null);
+      }
     }
   };
 

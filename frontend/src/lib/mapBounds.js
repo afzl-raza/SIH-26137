@@ -99,12 +99,32 @@ export function clampBoundsToAnchor(bounds, anchor, {
   const latMargin = Math.max(anchorLatSpan * maxExpansionFactor, minMarginDeg);
   const lngMargin = Math.max(anchorLngSpan * maxExpansionFactor, minMarginDeg);
 
-  return {
-    minLat: Math.max(bounds.minLat, anchor.minLat - latMargin),
-    maxLat: Math.min(bounds.maxLat, anchor.maxLat + latMargin),
-    minLng: Math.max(bounds.minLng, anchor.minLng - lngMargin),
-    maxLng: Math.min(bounds.maxLng, anchor.maxLng + lngMargin)
-  };
+  const [minLat, maxLat] = clampAxis(bounds.minLat, bounds.maxLat, anchor.minLat, anchor.maxLat, latMargin);
+  const [minLng, maxLng] = clampAxis(bounds.minLng, bounds.maxLng, anchor.minLng, anchor.maxLng, lngMargin);
+
+  return { minLat, maxLat, minLng, maxLng };
+}
+
+// Intersects [boundsMin, boundsMax] with the allowed window
+// [anchorMin - margin, anchorMax + margin] on one axis. A plain
+// Math.max(min)/Math.min(max) pair can invert (min > max) whenever bounds
+// sits entirely outside that window on this axis - e.g. a route whose
+// geometry is *all* far from the scenario on this axis, not just bulging
+// past one edge of it. That would hand fitBounds/padBoundsIfTooSmall an
+// invalid box. So when the intersection would be empty, this falls back to
+// the allowed window itself: still bounded to at most `margin` past the
+// anchor on each side, still centred on the scenario's own area, and always
+// a valid (min <= max) box, since anchorMin <= anchorMax by construction
+// and margin >= 0.
+function clampAxis(boundsMin, boundsMax, anchorMin, anchorMax, margin) {
+  const allowedMin = anchorMin - margin;
+  const allowedMax = anchorMax + margin;
+  const clampedMin = Math.max(boundsMin, allowedMin);
+  const clampedMax = Math.min(boundsMax, allowedMax);
+  if (clampedMin > clampedMax) {
+    return [allowedMin, allowedMax];
+  }
+  return [clampedMin, clampedMax];
 }
 
 // Every location in this app is real (synthetic-but-simulated, or actual
