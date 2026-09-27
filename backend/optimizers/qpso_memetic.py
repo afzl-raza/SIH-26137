@@ -88,7 +88,7 @@ class MemeticQPSOOptimizer(BaseOptimizer):
         c += self.cong[(cur, self.depot)]
 
         # Timing, including wait/lateness - the one shared timing function.
-        sched = simulate_route(route, v, self.depot, self.time_m, self.jobs_by_pos)
+        sched = simulate_route(route, v, self.depot, self.time_m, self.jobs_by_pos, include_stops=False)
         t = sched.travel_time
 
         pen = 0.0

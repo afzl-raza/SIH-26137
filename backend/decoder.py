@@ -10,7 +10,8 @@ def build_route_from_job_sequence(
     depot_id: int,
     dist_matrix: np.ndarray,
     time_matrix: np.ndarray,
-    paths_dict: Dict[Tuple[int, int], List[int]]
+    paths_dict: Dict[Tuple[int, int], List[int]],
+    include_stops: bool = True,
 ) -> VehicleRoute:
     """Builds one vehicle's VehicleRoute from an already-decided job visiting
     order. This is the per-vehicle accumulation loop `decode_random_keys`
@@ -18,7 +19,11 @@ def build_route_from_job_sequence(
     `optimizers/exact.py` can build a route from a job sequence they arrived
     at some other way (a 2-opt/or-opt move, a DP reconstruction) without
     duplicating this math - the "one shared evaluator" principle applies to
-    route construction too, not just scoring."""
+    route construction too, not just scoring.
+
+    `include_stops` forwards to `schedule.simulate_route` - see its
+    docstring. Every cost/feasibility field is unaffected; only the
+    returned route's `stops` list is empty when False."""
     job_seq = [j.id for j in job_objs]
     jobs_by_id: Dict[int, Job] = {j.id: j for j in job_objs}
 
@@ -39,7 +44,9 @@ def build_route_from_job_sequence(
     node_path.extend(return_segment[1:])
     total_dist += dist_matrix[curr_n, depot_id]
 
-    schedule = simulate_route(job_seq, vehicle, depot_id, time_matrix, jobs_by_id)
+    schedule = simulate_route(
+        job_seq, vehicle, depot_id, time_matrix, jobs_by_id, include_stops=include_stops
+    )
 
     cap_exceeded = max(0.0, total_demand - vehicle.capacity)
     time_exceeded = max(0.0, schedule.travel_time - vehicle.max_route_time)
@@ -65,7 +72,8 @@ def decode_random_keys(
     scenario: ProblemScenario,
     dist_matrix: np.ndarray,
     time_matrix: np.ndarray,
-    paths_dict: Dict[Tuple[int, int], List[int]]
+    paths_dict: Dict[Tuple[int, int], List[int]],
+    include_stops: bool = True,
 ) -> List[VehicleRoute]:
     """
     Decodes continuous random keys in [0, 1]^M into discrete multi-vehicle CVRP routes.
@@ -103,7 +111,8 @@ def decode_random_keys(
         v_job_objs = [item[1] for item in assigned]
 
         routes.append(build_route_from_job_sequence(
-            v, v_job_objs, depot_id, dist_matrix, time_matrix, paths_dict
+            v, v_job_objs, depot_id, dist_matrix, time_matrix, paths_dict,
+            include_stops=include_stops,
         ))
 
     return routes

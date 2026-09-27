@@ -87,7 +87,7 @@ def _route_raw_cost(
 
     job_seq_ids = [j.id for j in job_seq]
     jobs_by_id = {j.id: j for j in job_seq}
-    sched = simulate_route(job_seq_ids, vehicle, depot_id, time_matrix, jobs_by_id)
+    sched = simulate_route(job_seq_ids, vehicle, depot_id, time_matrix, jobs_by_id, include_stops=False)
     total_time = sched.travel_time
 
     capacity = vehicle.capacity if vehicle.capacity > 0 else 1.0

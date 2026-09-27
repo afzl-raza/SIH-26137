@@ -71,9 +71,12 @@ class QPSOOptimizer(BaseOptimizer):
         convergence_history: List[float] = []
         convergence_elapsed_ms: List[float] = []
 
-        # Initial evaluation
+        # Initial evaluation. `include_stops=False`: evaluate_solution never
+        # reads a candidate's per-stop timing, only its aggregates, and this
+        # loop runs pop_size * max_iter times - the one gbest that is
+        # actually returned gets its full stops rebuilt once, at the end.
         for i in range(pop_size):
-            routes = decode_random_keys(X[i], scenario, dist_matrix, time_matrix, paths_dict)
+            routes = decode_random_keys(X[i], scenario, dist_matrix, time_matrix, paths_dict, include_stops=False)
             res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map)
             pbest_cost[i] = res.total_cost
 
@@ -110,7 +113,7 @@ class QPSOOptimizer(BaseOptimizer):
 
             # 3. Fitness Evaluation & Best State Updates
             for i in range(pop_size):
-                routes = decode_random_keys(X[i], scenario, dist_matrix, time_matrix, paths_dict)
+                routes = decode_random_keys(X[i], scenario, dist_matrix, time_matrix, paths_dict, include_stops=False)
                 res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map)
 
                 if res.total_cost < pbest_cost[i]:
@@ -176,6 +179,12 @@ class QPSOOptimizer(BaseOptimizer):
 
             convergence_history.append(gbest_cost)
             convergence_elapsed_ms.append((time.perf_counter() - start_time) * 1000.0)
+
+        # The search above only ever needed cost aggregates, so every
+        # gbest_routes assigned inside the loop was decoded with
+        # include_stops=False (empty per-stop timing). Rebuild the winning
+        # position once, in full, for the result actually returned/rendered.
+        gbest_routes = decode_random_keys(gbest_pos, scenario, dist_matrix, time_matrix, paths_dict)
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 

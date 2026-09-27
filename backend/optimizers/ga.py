@@ -48,9 +48,12 @@ class GAOptimizer(BaseOptimizer):
         convergence_history: List[float] = []
         convergence_elapsed_ms: List[float] = []
 
-        # Evaluate initial population
+        # Evaluate initial population. include_stops=False: evaluate_solution
+        # only reads cost aggregates, never per-stop timing, and this loop
+        # runs pop_size * max_iter times - the winning chromosome gets its
+        # full stops rebuilt once at the end.
         for i in range(pop_size):
-            routes = decode_random_keys(population[i], scenario, dist_matrix, time_matrix, paths_dict)
+            routes = decode_random_keys(population[i], scenario, dist_matrix, time_matrix, paths_dict, include_stops=False)
             res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map)
             fitness_costs[i] = res.total_cost
 
@@ -94,7 +97,7 @@ class GAOptimizer(BaseOptimizer):
 
             # Evaluate new generation
             for i in range(pop_size):
-                routes = decode_random_keys(population[i], scenario, dist_matrix, time_matrix, paths_dict)
+                routes = decode_random_keys(population[i], scenario, dist_matrix, time_matrix, paths_dict, include_stops=False)
                 res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map)
                 fitness_costs[i] = res.total_cost
 
@@ -105,6 +108,11 @@ class GAOptimizer(BaseOptimizer):
 
             convergence_history.append(best_cost)
             convergence_elapsed_ms.append((time.perf_counter() - start_time) * 1000.0)
+
+        # The search above only used cost aggregates, so best_routes was
+        # decoded with include_stops=False. Rebuild the winning chromosome
+        # once, in full, for the result actually returned/rendered.
+        best_routes = decode_random_keys(best_chrom, scenario, dist_matrix, time_matrix, paths_dict)
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
