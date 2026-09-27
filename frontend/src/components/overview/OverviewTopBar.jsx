@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Search, HelpCircle, Bell, LogOut, ChevronDown } from 'lucide-react';
+import { Search, HelpCircle, Bell, LogOut, LogIn, ChevronDown } from 'lucide-react';
 
 // Search/help/notifications are static decoration this round - approved:
 // this prototype has one operator and no real notification stream, so these
@@ -16,14 +16,14 @@ function initialsFor(name, email) {
   return localPart ? localPart.slice(0, 2).toUpperCase() : '?';
 }
 
-export default function OverviewTopBar({ user, onLogout }) {
+export default function OverviewTopBar({ user, isGuest, onLogout }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const buttonRef = useRef(null);
 
-  const displayName = user?.name?.trim() || user?.email || 'Fleet operator';
-  const displayPosition = user?.position || 'Fleet operator';
-  const initials = initialsFor(user?.name, user?.email);
+  const displayName = isGuest ? 'Guest User' : (user?.name?.trim() || user?.email || 'Fleet operator');
+  const displayPosition = isGuest ? 'Explore Q-DFRO' : (user?.position || 'Fleet operator');
+  const initials = isGuest ? 'G' : initialsFor(user?.name, user?.email);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -77,11 +77,22 @@ export default function OverviewTopBar({ user, onLogout }) {
           aria-label={`Account menu for ${displayName}`}
           className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 hover:bg-[#211E1A] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#FF7A1A] focus-visible:outline-offset-2"
         >
-          <div className="w-8 h-8 rounded-full bg-[#2E2742] flex items-center justify-center text-[11px] font-bold text-[#A98AFF] flex-shrink-0">
+          <div
+            className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${
+              isGuest ? 'bg-[#312B24] text-[#B9B0A5]' : 'bg-[#2E2742] text-[#A98AFF]'
+            }`}
+          >
             {initials}
           </div>
           <div className="leading-tight hidden sm:block text-left">
-            <div className="text-[12px] text-[#FFF9F1] font-semibold truncate max-w-[140px]">{displayName}</div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[12px] text-[#FFF9F1] font-semibold truncate max-w-[140px]">{displayName}</span>
+              {isGuest && (
+                <span className="text-[9px] font-bold uppercase tracking-wider text-[#B9B0A5] bg-[#312B24] border border-[#3B342A] rounded px-1 py-[1px] flex-shrink-0">
+                  Guest
+                </span>
+              )}
+            </div>
             <div className="text-[10px] text-[#817970] truncate max-w-[140px]">{displayPosition}</div>
           </div>
           <ChevronDown size={14} className="text-[#817970] hidden sm:block flex-shrink-0" />
@@ -96,23 +107,35 @@ export default function OverviewTopBar({ user, onLogout }) {
           >
             <div className="px-3.5 pb-2 mb-1 border-b border-[#3B342A]">
               <div className="text-[10px] font-bold uppercase tracking-wider text-[#817970] mb-1.5">
-                Account
+                {isGuest ? 'Guest Mode' : 'Account'}
               </div>
               <div className="text-[13px] text-[#FFF9F1] font-semibold truncate">{displayName}</div>
-              {user?.email && (
+              {!isGuest && user?.email && (
                 <div className="text-[11px] text-[#B9B0A5] truncate mt-0.5">{user.email}</div>
               )}
               <div className="text-[11px] text-[#817970] truncate mt-0.5">{displayPosition}</div>
             </div>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => { setMenuOpen(false); onLogout?.(); }}
-              className="w-full flex items-center gap-2 px-3.5 py-2 text-[13px] text-[#E8918A] hover:bg-[#3A1C18]/60 transition-colors text-left"
-            >
-              <LogOut size={14} />
-              Sign out
-            </button>
+            {isGuest ? (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setMenuOpen(false); onLogout?.(); }}
+                className="w-full flex items-center gap-2 px-3.5 py-2 text-[13px] text-[#F5B942] hover:bg-[#3A2E14]/60 transition-colors text-left"
+              >
+                <LogIn size={14} />
+                Sign in / Create account
+              </button>
+            ) : (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => { setMenuOpen(false); onLogout?.(); }}
+                className="w-full flex items-center gap-2 px-3.5 py-2 text-[13px] text-[#E8918A] hover:bg-[#3A1C18]/60 transition-colors text-left"
+              >
+                <LogOut size={14} />
+                Sign out
+              </button>
+            )}
           </div>
         )}
       </div>

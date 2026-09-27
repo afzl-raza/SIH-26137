@@ -17,10 +17,10 @@ const CHECKLIST = [
   { label: 'Invite a teammate', done: false },
 ];
 
-export default function OverviewGreeting({ onEnterDashboard, user }) {
+export default function OverviewGreeting({ onEnterDashboard, user, isGuest }) {
   const doneCount = CHECKLIST.filter(c => c.done).length;
   const pct = Math.round((doneCount / CHECKLIST.length) * 100);
-  const firstName = (user?.name?.trim().split(/\s+/)[0] || 'there').toUpperCase();
+  const firstName = (isGuest ? 'Guest' : user?.name?.trim().split(/\s+/)[0] || 'there').toUpperCase();
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr,340px] gap-4">

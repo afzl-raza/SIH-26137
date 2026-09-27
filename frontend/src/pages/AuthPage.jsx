@@ -46,7 +46,7 @@ function initialResetToken() {
 // authentication" means for the rest of the app (it stores the returned
 // user and moves into the dashboard). This component only orchestrates
 // which auth form is showing.
-export default function AuthPage({ onAuthSuccess, onBackToLanding }) {
+export default function AuthPage({ onAuthSuccess, onBackToLanding, onContinueAsGuest }) {
   const [resetToken] = useState(initialResetToken);
   const [mode, setMode] = useState(resetToken ? 'reset' : 'login');
   const [continuedResetToken, setContinuedResetToken] = useState(resetToken);
@@ -119,11 +119,32 @@ export default function AuthPage({ onAuthSuccess, onBackToLanding }) {
             )}
 
             {mode === 'login' && (
-              <LoginForm
-                onSuccess={onAuthSuccess}
-                onSwitchToRegister={() => { setNotice(null); setMode('register'); }}
-                onForgotPassword={() => { setNotice(null); setMode('forgot'); }}
-              />
+              <>
+                <LoginForm
+                  onSuccess={onAuthSuccess}
+                  onSwitchToRegister={() => { setNotice(null); setMode('register'); }}
+                  onForgotPassword={() => { setNotice(null); setMode('forgot'); }}
+                />
+                {onContinueAsGuest && (
+                  <div className="mt-5">
+                    <div className="flex items-center gap-3">
+                      <div className="h-px flex-1 bg-[#3A342E]" />
+                      <span className="text-[11px] font-semibold text-gray-500 tracking-wide">OR</span>
+                      <div className="h-px flex-1 bg-[#3A342E]" />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onContinueAsGuest}
+                      className="mt-4 w-full py-2.5 border border-[#3A342E] hover:border-[#5A5049] text-gray-300 hover:text-gray-100 rounded-lg text-sm font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-[#C6602E] focus-visible:ring-offset-2 focus-visible:ring-offset-[#1E1B18]"
+                    >
+                      Continue as Guest
+                    </button>
+                    <p className="mt-2 text-center text-[11px] text-gray-500">
+                      Explore Q-DFRO without creating an account.
+                    </p>
+                  </div>
+                )}
+              </>
             )}
             {mode === 'register' && (
               <RegisterForm
