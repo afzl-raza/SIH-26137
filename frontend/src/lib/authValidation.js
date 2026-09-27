@@ -24,6 +24,17 @@ export function validatePassword(value) {
   return null;
 }
 
+// Login only checks that a password was typed at all - the minimum-length
+// rule is a account-creation policy (see validatePassword above), not a
+// login-attempt one. The backend is the sole authority on whether a given
+// password is correct (or, in DEMO_AUTH mode, on whether it's even checked
+// at all) - the client must never reject a login attempt for a reason the
+// backend itself doesn't enforce.
+export function validateLoginPassword(value) {
+  if (!value) return 'Password is required.';
+  return null;
+}
+
 export function validateRequired(value, label) {
   if (!value || !value.trim()) return `${label} is required.`;
   return null;
