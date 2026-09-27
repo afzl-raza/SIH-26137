@@ -18,7 +18,7 @@ import { apiFetch } from '../api';
 // switcher, onboarding checklist, alerts/recent-routes/activity feeds)
 // stays decorative, since there is no real multi-user or run-history
 // backend behind this prototype.
-export default function Overview({ onEnterDashboard, onExitToLanding }) {
+export default function Overview({ onEnterDashboard, onExitToLanding, user, onLogout }) {
   const [scenario, setScenario] = useState(null);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -66,7 +66,7 @@ export default function Overview({ onEnterDashboard, onExitToLanding }) {
       <OverviewSidebar />
 
       <div className="flex-1 flex flex-col min-w-0">
-        <OverviewTopBar />
+        <OverviewTopBar user={user} onLogout={onLogout} />
 
         <main className="flex-1 p-6 flex flex-col gap-5 max-w-[1600px] w-full mx-auto">
           {onExitToLanding && (
@@ -78,7 +78,7 @@ export default function Overview({ onEnterDashboard, onExitToLanding }) {
             </button>
           )}
 
-          <OverviewGreeting onEnterDashboard={onEnterDashboard} />
+          <OverviewGreeting onEnterDashboard={onEnterDashboard} user={user} />
           <OverviewMetrics scenario={scenario} result={result} loading={loading} error={error} />
 
           <div className="grid grid-cols-1 xl:grid-cols-[1fr,340px] gap-5">
