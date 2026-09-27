@@ -368,9 +368,21 @@ function DashboardShell({ onExitToOverview }) {
 
   // First click sets the depot; clicking the depot again clears it so it can
   // be re-picked; every other click toggles that node as a delivery stop.
+  //
+  // A node promoted to depot must also be removed from the draft stop list:
+  // without this, clearing the depot (click depot -> null) and then
+  // re-clicking a node that was already a draft stop set BOTH draftDepotId
+  // and draftStopIds to that same node id. Confirm Placement would then send
+  // depot_node_id === one of job_node_ids, which the backend's
+  // customize_scenario correctly rejects with "depot_node_id cannot also be
+  // a delivery stop" - so the map still showed the pick as a depot marker
+  // (isDraftDepot is checked first in NetworkMap) while Confirm silently
+  // failed. Stripping the id out of draftStopIds when it becomes the depot
+  // keeps draft depot/stop membership mutually exclusive at all times.
   const handlePlaceNode = (nodeId) => {
     if (draftDepotId === null) {
       setDraftDepotId(nodeId);
+      setDraftStopIds(prev => (prev.includes(nodeId) ? prev.filter(id => id !== nodeId) : prev));
       return;
     }
     if (nodeId === draftDepotId) {
