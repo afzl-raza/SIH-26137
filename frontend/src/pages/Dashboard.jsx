@@ -151,8 +151,8 @@ function DashboardShell({ onExitToOverview }) {
     max_iterations: 100,
     seed: 42,
     weights: {
-      alpha: 1.0,
-      beta: 0.5,
+      travel_time_weight: 1.0,
+      distance_weight: 0.5,
       gamma: 1.0,
       penalty_weight: 1000.0
     }
@@ -444,7 +444,11 @@ function DashboardShell({ onExitToOverview }) {
     const params = new URLSearchParams({
       algorithm: cfg.algorithm,
       population_size: String(cfg.population_size),
-      max_iterations: String(cfg.max_iterations)
+      max_iterations: String(cfg.max_iterations),
+      // Distinct from the scenario's own generation seed (already stored
+      // server-side as scenario.seed) - this is the solver's RNG seed for
+      // this specific run, which the backend does not otherwise retain.
+      solver_seed: String(cfg.seed)
     });
     try {
       const res = await apiFetch(`/api/scenario/${id}/manifest?${params}`);

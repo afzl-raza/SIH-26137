@@ -37,9 +37,14 @@ class QPSOOptimizer(BaseOptimizer):
         # scenarios, since it scales with the road network's edge count.
         edge_map = build_edge_map(scenario)
 
-        # Contraction-Expansion coefficient limits
-        alpha_start = 1.0
-        alpha_end = 0.4
+        # Contraction-Expansion coefficient limits (same quantity
+        # optimizers/qpso_memetic.py calls `ce_coef`; the standalone
+        # qdfro_graph/solver.py::QPSOSolver calls it `ce_coef` too - all
+        # three used to use different Greek-letter names for this one
+        # quantity, which collided with the unrelated `alpha`/`beta`
+        # fitness weights and BPR coefficients elsewhere in this codebase.)
+        ce_coef_start = 1.0
+        ce_coef_end = 0.4
 
         # Cap on the ln(1/u) quantum-jump excursion term. Uncapped, a
         # vanilla QPSO's jump grows without bound as u -> 0, and in
@@ -81,8 +86,8 @@ class QPSOOptimizer(BaseOptimizer):
         convergence_elapsed_ms.append((time.perf_counter() - start_time) * 1000.0)
 
         for iteration in range(1, max_iter):
-            # Linearly decreasing contraction-expansion coefficient alpha
-            alpha = alpha_start - (alpha_start - alpha_end) * (iteration / max_iter)
+            # Linearly decreasing contraction-expansion coefficient
+            ce_coef = ce_coef_start - (ce_coef_start - ce_coef_end) * (iteration / max_iter)
 
             # 1. Compute Mean Best Position (mbest)
             mbest = np.mean(pbest_pos, axis=0)
@@ -100,7 +105,7 @@ class QPSOOptimizer(BaseOptimizer):
             signs = np.random.choice([-1.0, 1.0], size=(pop_size, num_jobs))
 
             # Quantum Position Update
-            X = p + signs * alpha * np.abs(mbest - X) * ln_u_inv
+            X = p + signs * ce_coef * np.abs(mbest - X) * ln_u_inv
             X = np.clip(X, 0.0, 1.0)
 
             # 3. Fitness Evaluation & Best State Updates

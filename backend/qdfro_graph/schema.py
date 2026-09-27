@@ -33,8 +33,14 @@ class EdgeAttrs:
     length_m: float
     free_flow_speed_m_s: float
     capacity_vph: float
-    alpha: float = 0.15
-    beta: float = 4.0
+    # BPR (Bureau of Public Roads) congestion-function coefficients:
+    # t(v) = t0 * (1 + bpr_alpha * (v/c)^bpr_beta). Named `bpr_*` to match
+    # the BPR_ALPHA/BPR_BETA constants in realdata/traffic_model.py and to
+    # avoid colliding with the unrelated fitness-weight `alpha`/`beta` in
+    # models.ObjectiveWeights and the QPSO contraction-expansion
+    # coefficient, which used to share these same two names.
+    bpr_alpha: float = 0.15
+    bpr_beta: float = 4.0
     road_class: str = "arterial"     # freeway, arterial, collector, local
     lane_count: int = 2
     is_blocked: bool = False
@@ -56,8 +62,12 @@ class EdgeAttrs:
             "length_m": self.length_m,
             "free_flow_speed_m_s": self.free_flow_speed_m_s,
             "capacity_vph": self.capacity_vph,
-            "alpha": self.alpha,
-            "beta": self.beta,
+            # Wire format unchanged (still "alpha"/"beta") even though the
+            # backing attributes are now `bpr_alpha`/`bpr_beta` internally -
+            # nothing external keys off these fields by name, but keeping
+            # the JSON contract identical avoids an unnecessary API change.
+            "alpha": self.bpr_alpha,
+            "beta": self.bpr_beta,
             "road_class": self.road_class,
             "lane_count": self.lane_count,
             "is_blocked": self.is_blocked,

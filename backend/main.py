@@ -455,6 +455,26 @@ def generate_problem(req: GenerateRequest):
     if req.demand_min > req.demand_max:
         raise HTTPException(status_code=400, detail="demand_min cannot exceed demand_max")
 
+    # Same "reject before calling the generator" convention as the check
+    # above. Each of these is reachable today only as an opaque 500 rather
+    # than this clean 400 - reproduced directly: num_vehicles=0 raises a
+    # bare ZeroDivisionError inside generate_synthetic_scenario (vehicle
+    # capacity is derived by dividing total demand across vehicles);
+    # negative num_jobs/num_nodes raise ValueError from random.sample
+    # ("Sample larger than population or is negative"); tw_width_min <= 0
+    # produces a job with ready_time > due_time, which the existing
+    # Job validator rejects deep inside generation. None of these are a
+    # supported contract - unlike num_jobs=0, which is deliberately
+    # supported (see test_exact_optimizer.py) and left untouched here.
+    if req.num_vehicles < 1:
+        raise HTTPException(status_code=400, detail="num_vehicles must be at least 1")
+    if req.num_jobs < 0:
+        raise HTTPException(status_code=400, detail="num_jobs cannot be negative")
+    if req.num_nodes < 1:
+        raise HTTPException(status_code=400, detail="num_nodes must be at least 1")
+    if req.time_windows and req.tw_width_min <= 0:
+        raise HTTPException(status_code=400, detail="tw_width_min must be positive when time_windows is enabled")
+
     try:
         scenario = generate_synthetic_scenario(
             num_nodes=req.num_nodes,
@@ -619,6 +639,9 @@ def optimize_route(payload: OptimizePayload):
         algo = payload.config.algorithm.lower()
         if "exact" in algo:
             optimizer = ExactOptimizer()
+        elif "memetic" in algo:
+            from optimizers.qpso_memetic import MemeticQPSOOptimizer
+            optimizer = MemeticQPSOOptimizer()
         elif "qpso" in algo:
             optimizer = QPSOOptimizer()
         elif "pso" in algo:
@@ -831,6 +854,16 @@ def get_scenario_manifest(
     algorithm: Optional[str] = None,
     population_size: Optional[int] = None,
     max_iterations: Optional[int] = None,
+    # Distinct from the scenario's own generation seed (`scenario.seed`,
+    # returned as the top-level "seed" field below) - this is the solver's
+    # RNG seed for the specific run being reported. The two happen to match
+    # whenever a client generates and immediately optimizes with one shared
+    # seed value (the current UI's only flow), but they are not the same
+    # thing and can diverge (e.g. the seed field is changed after
+    # generating, before re-optimizing) - named `solver_seed` rather than
+    # a second bare `seed` so the manifest can report both without either
+    # shadowing the other.
+    solver_seed: Optional[int] = None,
 ):
     """Everything needed to reproduce a run, read back from the server.
 
@@ -872,6 +905,7 @@ def get_scenario_manifest(
             "algorithm": algorithm,
             "population_size": population_size,
             "max_iterations": max_iterations,
+            "seed": solver_seed,
         },
         "conditions": {
             "applied": conditions is not None,

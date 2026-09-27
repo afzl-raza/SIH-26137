@@ -10,7 +10,11 @@ class QPSOSolver:
     """
     Quantum-behaved Particle Swarm Optimization (QPSO) core solver for Vehicle Routing.
     Implements delta-potential wave function position updates with mean best (M),
-    personal best (P_i), global best (G), and contraction-expansion coefficient (beta).
+    personal best (P_i), global best (G), and contraction-expansion coefficient
+    (`ce_coef` below - the same quantity optimizers/qpso.py and
+    optimizers/qpso_memetic.py call `ce_coef`; this module used to call it
+    `beta`, colliding in name only, not meaning, with the unrelated fitness
+    weight and BPR coefficient also called `beta` elsewhere in this codebase).
     """
 
     def __init__(
@@ -29,8 +33,8 @@ class QPSOSolver:
         self,
         job_nodes: List[Tuple[str, float]],  # List of (node_id, demand)
         vehicles: List[Tuple[str, str, str, float]], # List of (veh_id, start_node, end_node, capacity)
-        beta_start: float = 1.0,
-        beta_end: float = 0.5
+        ce_coef_start: float = 1.0,
+        ce_coef_end: float = 0.5
     ) -> Dict[str, VehicleRoute]:
         """
         Runs QPSO swarm search over continuous random keys to find minimum cost vehicle routes.
@@ -66,8 +70,8 @@ class QPSOSolver:
 
         # 2. QPSO Main Iteration Loop
         for it in range(self.max_iterations):
-            # Linearly decay contraction-expansion coefficient beta
-            beta = beta_start - (beta_start - beta_end) * (it / max(1, self.max_iterations - 1))
+            # Linearly decay contraction-expansion coefficient
+            ce_coef = ce_coef_start - (ce_coef_start - ce_coef_end) * (it / max(1, self.max_iterations - 1))
 
             # Compute mean best position M = (1/N) * sum(P_i)
             mbest = np.mean(pbest_positions, axis=0)
@@ -83,7 +87,7 @@ class QPSOSolver:
                         u = 0.0001
 
                     # Quantum delta-potential wave function position update
-                    L = beta * abs(mbest[j] - positions[i, j]) * math.log(1.0 / u)
+                    L = ce_coef * abs(mbest[j] - positions[i, j]) * math.log(1.0 / u)
 
                     if random.random() < 0.5:
                         positions[i, j] = p_ij + L

@@ -47,7 +47,7 @@ export default function MetricCards({ result, previousResult, weights, manifest,
   const isWorse = costChange < 0;
 
   const weightsFormula = weights
-    ? `Cost = ${weights.alpha} · Time + ${weights.beta} · Distance + ${weights.gamma} · Congestion${weights.penalty_weight ? ` (penalty ${weights.penalty_weight})` : ''}`
+    ? `Cost = ${weights.travel_time_weight} · Time + ${weights.distance_weight} · Distance + ${weights.gamma} · Congestion${weights.penalty_weight ? ` (penalty ${weights.penalty_weight})` : ''}`
     : null;
 
   return (
@@ -223,9 +223,15 @@ export default function MetricCards({ result, previousResult, weights, manifest,
             <span className="text-gray-300">{manifest.scenario_hash}</span>
           </span>
           <span>
-            <span className="text-gray-600">seed</span>{' '}
+            <span className="text-gray-600">scenario seed</span>{' '}
             <span className="text-gray-300">{manifest.seed}</span>
           </span>
+          {manifest.solver?.seed != null && manifest.solver.seed !== manifest.seed && (
+            <span>
+              <span className="text-gray-600">solver seed</span>{' '}
+              <span className="text-gray-300">{manifest.solver.seed}</span>
+            </span>
+          )}
           {manifest.solver?.algorithm && (
             <span>
               <span className="text-gray-600">algorithm</span>{' '}

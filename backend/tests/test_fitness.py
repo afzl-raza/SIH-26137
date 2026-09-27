@@ -22,7 +22,7 @@ def _minimal_scenario(edges=None):
 
 def test_capacity_violation_penalty():
     scenario = _minimal_scenario()
-    weights = ObjectiveWeights(alpha=1.0, beta=1.0, gamma=1.0, penalty_weight=100.0)
+    weights = ObjectiveWeights(travel_time_weight=1.0, distance_weight=1.0, gamma=1.0, penalty_weight=100.0)
     route = VehicleRoute(
         vehicle_id=1, job_ids=[1], node_path=[0, 1, 0],
         route_distance=5.0, route_travel_time=10.0, total_demand=8.0,
@@ -40,7 +40,7 @@ def test_capacity_violation_penalty():
 
 def test_time_violation_penalty():
     scenario = _minimal_scenario()
-    weights = ObjectiveWeights(alpha=1.0, beta=1.0, gamma=1.0, penalty_weight=50.0)
+    weights = ObjectiveWeights(travel_time_weight=1.0, distance_weight=1.0, gamma=1.0, penalty_weight=50.0)
     route = VehicleRoute(
         vehicle_id=1, job_ids=[1], node_path=[0, 1, 0],
         route_distance=4.0, route_travel_time=6.0, total_demand=1.0,
@@ -64,7 +64,7 @@ def test_capacity_penalty_normalized_by_vehicle_capacity():
     overages (single digits to tens of units) and time overages (tens to
     hundreds of minutes) were squared on completely different absolute
     scales."""
-    weights = ObjectiveWeights(alpha=0.0, beta=0.0, gamma=0.0, penalty_weight=100.0)
+    weights = ObjectiveWeights(travel_time_weight=0.0, distance_weight=0.0, gamma=0.0, penalty_weight=100.0)
 
     def scenario_with_capacity(capacity):
         return ProblemScenario(
@@ -116,7 +116,7 @@ def test_per_vehicle_congestion_sums_to_total():
         depot_node_id=0,
         seed=1
     )
-    weights = ObjectiveWeights(alpha=1.0, beta=1.0, gamma=1.0, penalty_weight=1000.0)
+    weights = ObjectiveWeights(travel_time_weight=1.0, distance_weight=1.0, gamma=1.0, penalty_weight=1000.0)
     route_congested = VehicleRoute(
         vehicle_id=1, job_ids=[1], node_path=[0, 1, 0],
         route_distance=2.0, route_travel_time=10.0, total_demand=1.0
@@ -131,7 +131,7 @@ def test_per_vehicle_congestion_sums_to_total():
     assert route_congested.congestion_delay == pytest.approx(5.0)
     assert route_normal.congestion_delay == 0.0
     total_from_routes = route_congested.congestion_delay + route_normal.congestion_delay
-    # total_cost = alpha*travel_time + beta*distance + gamma*congestion (no penalty)
+    # total_cost = travel_time_weight*travel_time + distance_weight*distance + gamma*congestion (no penalty)
     # => congestion contribution = total_cost - travel_time - distance
     congestion_in_cost = result.total_cost - result.total_travel_time - result.total_distance
     assert total_from_routes == pytest.approx(congestion_in_cost)
@@ -141,7 +141,7 @@ def test_congestion_cost_matches_formula():
     edge = Edge(source=0, destination=1, distance=2.0, base_travel_time=5.0,
                 traffic_factor=2.0, current_travel_time=10.0)
     scenario = _minimal_scenario(edges=[edge])
-    weights = ObjectiveWeights(alpha=1.0, beta=0.5, gamma=2.0, penalty_weight=1000.0)
+    weights = ObjectiveWeights(travel_time_weight=1.0, distance_weight=0.5, gamma=2.0, penalty_weight=1000.0)
     route = VehicleRoute(
         vehicle_id=1, job_ids=[1], node_path=[0, 1, 0],
         route_distance=2.0, route_travel_time=10.0, total_demand=1.0,
@@ -151,7 +151,35 @@ def test_congestion_cost_matches_formula():
     result = evaluate_solution([route], scenario, weights)
 
     # congestion delay = (traffic_factor - 1) * base_travel_time = (2-1)*5 = 5
-    # total_cost = alpha*10 + beta*2 + gamma*5 = 10 + 1 + 10 = 21, no penalty
+    # total_cost = travel_time_weight*10 + distance_weight*2 + gamma*5 = 10 + 1 + 10 = 21, no penalty
     assert result.constraint_violations == 0
     assert result.is_feasible is True
     assert result.total_cost == pytest.approx(21.0)
+
+
+def test_objective_weights_accepts_legacy_alpha_beta_keys():
+    """The fitness-weight fields were renamed alpha->travel_time_weight and
+    beta->distance_weight for clarity (they collided in name, not meaning,
+    with the unrelated BPR/QPSO alpha/beta elsewhere in this codebase). Any
+    existing saved config or API caller still using the old {"alpha":..,
+    "beta":..} keys must keep working unchanged - this is the compatibility
+    contract, not just an implementation detail."""
+    legacy = ObjectiveWeights.model_validate(
+        {"alpha": 2.0, "beta": 0.1, "gamma": 3.0, "penalty_weight": 500.0}
+    )
+    current = ObjectiveWeights(
+        travel_time_weight=2.0, distance_weight=0.1, gamma=3.0, penalty_weight=500.0
+    )
+    assert legacy == current
+
+    # Output always uses the new canonical field names, regardless of which
+    # input key was used to construct the object - the new name is the one
+    # true schema going forward.
+    dumped = legacy.model_dump()
+    assert dumped == {
+        "travel_time_weight": 2.0,
+        "distance_weight": 0.1,
+        "gamma": 3.0,
+        "penalty_weight": 500.0,
+    }
+    assert "alpha" not in dumped and "beta" not in dumped

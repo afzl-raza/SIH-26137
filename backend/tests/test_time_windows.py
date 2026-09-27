@@ -147,7 +147,7 @@ def _route_with_lateness(lateness, late_jobs):
 
 def test_fitness_lateness_penalty_grows_with_lateness():
     scenario = _lateness_scenario()
-    weights = ObjectiveWeights(alpha=0.0, beta=0.0, gamma=0.0, penalty_weight=100.0)
+    weights = ObjectiveWeights(travel_time_weight=0.0, distance_weight=0.0, gamma=0.0, penalty_weight=100.0)
 
     small = evaluate_solution([_route_with_lateness(2.0, 1)], scenario, weights)
     large = evaluate_solution([_route_with_lateness(20.0, 1)], scenario, weights)
@@ -167,7 +167,7 @@ def test_fitness_feasible_plan_beats_plan_with_small_lateness_violation():
     per-late-job penalty exists exactly so a small violation can't win by
     virtue of the quadratic term alone being tiny."""
     scenario = _lateness_scenario()
-    weights = ObjectiveWeights(alpha=1.0, beta=1.0, gamma=1.0, penalty_weight=100.0)
+    weights = ObjectiveWeights(travel_time_weight=1.0, distance_weight=1.0, gamma=1.0, penalty_weight=100.0)
 
     on_time_route = VehicleRoute(
         vehicle_id=1, job_ids=[1], node_path=[0, 1, 0],
@@ -186,7 +186,7 @@ def test_fitness_feasible_plan_beats_plan_with_small_lateness_violation():
 
 def test_is_feasible_false_whenever_any_job_is_late():
     scenario = _lateness_scenario()
-    weights = ObjectiveWeights(alpha=1.0, beta=1.0, gamma=1.0, penalty_weight=1000.0)
+    weights = ObjectiveWeights(travel_time_weight=1.0, distance_weight=1.0, gamma=1.0, penalty_weight=1000.0)
 
     result = evaluate_solution([_route_with_lateness(3.0, 1)], scenario, weights)
 

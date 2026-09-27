@@ -120,6 +120,14 @@ class GAOptimizer(BaseOptimizer):
         )
 
     def _tournament_select(self, costs: np.ndarray, k: int = 3) -> int:
+        # Clamp k to the actual population size: np.random.choice(...,
+        # replace=False) raises ValueError if asked for more samples than
+        # exist (reproduced crash: population_size < 3, e.g. 2, with the
+        # default k=3). Population sizes this small are a poor search
+        # config, not an invalid one, so this degrades gracefully (a
+        # smaller tournament, or population_size==1 trivially returning
+        # the only individual) rather than raising.
+        k = min(k, len(costs))
         candidates = np.random.choice(len(costs), size=k, replace=False)
         best_idx = candidates[0]
         for idx in candidates[1:]:
@@ -128,6 +136,16 @@ class GAOptimizer(BaseOptimizer):
         return best_idx
 
     def _crossover(self, p1: np.ndarray, p2: np.ndarray):
+        # A single-gene chromosome (num_jobs == 1) has no interior cut
+        # point: np.random.randint(1, len(p1)) is randint(1, 1), which
+        # raises ValueError (reproduced crash on any 1-job scenario with
+        # GA selected, since crossover_rate=0.85 makes this near-certain
+        # within a few generations). One job has nothing to recombine
+        # anyway, so skipping crossover and returning both parents
+        # unchanged is the correct behaviour, not just a crash-avoidance
+        # patch - mutation still applies to each afterward as normal.
+        if len(p1) < 2:
+            return np.copy(p1), np.copy(p2)
         cut = np.random.randint(1, len(p1))
         c1 = np.concatenate([p1[:cut], p2[cut:]])
         c2 = np.concatenate([p2[:cut], p1[cut:]])

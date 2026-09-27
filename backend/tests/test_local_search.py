@@ -15,7 +15,7 @@ from optimizers.greedy import GreedyOptimizer
 
 
 def _weights():
-    return ObjectiveWeights(alpha=1.0, beta=0.5, gamma=1.0, penalty_weight=1000.0)
+    return ObjectiveWeights(travel_time_weight=1.0, distance_weight=0.5, gamma=1.0, penalty_weight=1000.0)
 
 
 def test_route_raw_cost_matches_canonical_evaluator():
@@ -43,6 +43,82 @@ def test_route_raw_cost_matches_canonical_evaluator():
                 assert raw == pytest.approx(canonical, abs=0.01), (
                     f"seed={seed} vehicle={vehicle.id} jobs={[j.id for j in job_seq]}"
                 )
+
+
+def test_route_raw_cost_matches_canonical_evaluator_with_time_windows():
+    """Same parity check as test_route_raw_cost_matches_canonical_evaluator
+    above, but with CVRPTW time windows enabled - regression test for a
+    real bug: _route_raw_cost used to sum time_matrix legs by hand and
+    never accounted for ready_time/due_time/lateness at all, so it silently
+    disagreed with the canonical evaluator (which does include a lateness
+    penalty) whenever a candidate route was actually late. That let
+    two_opt_pass/or_opt_pass accept or reject moves based on a cost that
+    didn't reflect the true objective when time windows were on. Fixed by
+    routing _route_raw_cost through schedule.simulate_route, the same
+    authoritative timing engine fitness.py and decoder.py already use."""
+    for seed in (1, 2, 3):
+        scenario = generate_synthetic_scenario(
+            num_nodes=20, num_jobs=9, num_vehicles=3, seed=seed,
+            time_windows=True, tw_width_min=30.0,
+        )
+        dist_matrix, time_matrix, paths_dict = get_route_matrix(scenario).as_tuple()
+        edge_map = build_edge_map(scenario)
+        weights = _weights()
+        depot_id = scenario.depot_node_id
+
+        for v_idx, vehicle in enumerate(scenario.vehicles):
+            for job_count in (0, 1, 3, 6):
+                job_seq = scenario.jobs[:job_count]
+                raw = _route_raw_cost(vehicle, job_seq, depot_id, dist_matrix, time_matrix, paths_dict, edge_map, weights)
+                canonical = evaluate_solution(
+                    [build_route_from_job_sequence(vehicle, job_seq, depot_id, dist_matrix, time_matrix, paths_dict)],
+                    scenario, weights, edge_map=edge_map
+                ).total_cost
+                assert raw == pytest.approx(canonical, abs=0.01), (
+                    f"seed={seed} vehicle={vehicle.id} jobs={[j.id for j in job_seq]}"
+                )
+
+
+def test_route_raw_cost_penalizes_lateness_directly():
+    """_route_raw_cost must itself carry a lateness penalty (not just the
+    canonical evaluator downstream) so 2-opt/or-opt can actually tell a
+    late candidate from an on-time one during the search, not only after
+    it. Two tight due_times force one order to be late and a swapped order
+    to be on-time; the on-time order must score strictly lower even though
+    both orders have identical total distance/travel-time."""
+    from models import Job, Vehicle
+    import numpy as np
+
+    depot_id = 0
+    # Two jobs at nodes 1 and 2, symmetric distances - reordering them
+    # doesn't change total distance or travel time at all, only which one
+    # is served first and therefore which one (if either) misses its window.
+    dist_matrix = np.array([
+        [0.0, 1.0, 1.0],
+        [1.0, 0.0, 1.0],
+        [1.0, 1.0, 0.0],
+    ])
+    time_matrix = dist_matrix.copy()
+    paths_dict = {}
+    edge_map = {}
+    weights = _weights()
+    vehicle = Vehicle(id=1, start_node=depot_id, end_node=depot_id, capacity=100.0, max_route_time=1000.0)
+
+    # due_time=1.0 at node 1 is only met if it's visited FIRST (arrival=1);
+    # visited second (arrival=2) it is late. Node 2 has no deadline.
+    job_tight = Job(id=1, node_id=1, demand=1.0, service_time=0.0, due_time=1.0)
+    job_open = Job(id=2, node_id=2, demand=1.0, service_time=0.0)
+
+    on_time_order = [job_tight, job_open]   # tight job visited first: on time
+    late_order = [job_open, job_tight]      # tight job visited second: late
+
+    cost_on_time = _route_raw_cost(vehicle, on_time_order, depot_id, dist_matrix, time_matrix, paths_dict, edge_map, weights)
+    cost_late = _route_raw_cost(vehicle, late_order, depot_id, dist_matrix, time_matrix, paths_dict, edge_map, weights)
+
+    assert cost_late > cost_on_time + 1e-6, (
+        "a route that makes a due_time late must score strictly worse than "
+        "the reordering that meets it, even with identical distance/travel time"
+    )
 
 
 def test_two_opt_untangles_an_obvious_crossing():

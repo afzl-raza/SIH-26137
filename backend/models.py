@@ -1,5 +1,5 @@
 from typing import List, Dict, Optional
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, AliasChoices
 
 
 class Node(BaseModel):
@@ -208,8 +208,19 @@ def clone_scenario(scenario: ProblemScenario) -> ProblemScenario:
 
 
 class ObjectiveWeights(BaseModel):
-    alpha: float = 1.0  # weight for travel time
-    beta: float = 0.5   # weight for distance
+    # Renamed from `alpha`/`beta` for clarity (they collided in name, not
+    # meaning, with the unrelated BPR congestion coefficients and the QPSO
+    # contraction-expansion coefficient elsewhere in this codebase). Both
+    # old and new request keys are accepted via validation_alias so any
+    # existing saved config or API caller using {"alpha":..,"beta":..} still
+    # works unchanged; responses/serialization always use the new canonical
+    # name (travel_time_weight/distance_weight), matching the frontend.
+    travel_time_weight: float = Field(
+        1.0, validation_alias=AliasChoices("travel_time_weight", "alpha")
+    )  # weight for travel time (formerly `alpha`)
+    distance_weight: float = Field(
+        0.5, validation_alias=AliasChoices("distance_weight", "beta")
+    )  # weight for distance (formerly `beta`)
     gamma: float = 1.0  # weight for congestion cost
     penalty_weight: float = 1000.0  # penalty multiplier for constraint violations
 
