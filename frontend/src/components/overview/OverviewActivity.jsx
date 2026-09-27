@@ -1,15 +1,13 @@
 import React from 'react';
-import { Info, Zap, UserPlus, Navigation, CheckCircle2, Leaf } from 'lucide-react';
+import { Info, Truck, Loader2 } from 'lucide-react';
 
-const EVENTS = [
-  { icon: Zap, tone: '#5D7A9E', title: 'Airport Loop was optimized', when: 'Saved 34 minutes · 4 min ago' },
-  { icon: UserPlus, tone: '#A98AFF', title: 'Priya joined Metro operations', when: 'New dispatcher · 18 min ago' },
-  { icon: Navigation, tone: '#FF7A1A', title: 'V-014 accepted a detour', when: 'Harbor Avenue · 24 min ago' },
-  { icon: CheckCircle2, tone: '#43D493', title: 'Westside Deliveries completed', when: '12 stops · 42 min ago' },
-];
+// Each entry is one vehicle's real route from the last /api/optimize result
+// Overview.jsx fetched - no teammate/join/detour events or CO2 figures exist
+// anywhere in the backend, so those (previously static) items are gone
+// rather than replaced with a different invented substitute.
+export default function OverviewActivity({ scenario, result, loading, error }) {
+  const routes = result?.routes || [];
 
-// Same illustrative-data caveat as the rest of this page.
-export default function OverviewActivity() {
   return (
     <div className="bg-[#211E1A] border border-[#3B342A] rounded-2xl p-5">
       <div className="flex items-center justify-between mb-1">
@@ -19,31 +17,47 @@ export default function OverviewActivity() {
         </div>
         <button className="text-[11px] text-[#FF7A1A] font-semibold cursor-default">See all</button>
       </div>
-      <p className="text-[11px] text-[#817970] mb-4">Recent updates from routes and teammates.</p>
+      <p className="text-[11px] text-[#817970] mb-4">Today's route results, per vehicle.</p>
 
-      <div className="flex flex-col gap-3.5">
-        {EVENTS.map(e => (
-          <div key={e.title} className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${e.tone}22`, color: e.tone }}>
-              <e.icon size={13} />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[12px] text-[#FFF9F1]">{e.title}</div>
-              <div className="text-[10px] text-[#817970]">{e.when}</div>
-            </div>
-          </div>
-        ))}
-      </div>
+      {loading && routes.length === 0 && (
+        <div className="h-[104px] flex items-center justify-center">
+          <Loader2 size={16} className="animate-spin text-[#817970]" />
+        </div>
+      )}
 
-      <div className="mt-4 pt-4 border-t border-[#2A2620] flex items-center gap-2.5">
-        <div className="w-7 h-7 rounded-lg bg-[#173A2D] text-[#43D493] flex items-center justify-center flex-shrink-0">
-          <Leaf size={13} />
+      {error && routes.length === 0 && (
+        <p className="text-[12px] text-[#FF6868]">{error} - is the backend running?</p>
+      )}
+
+      {!loading && !error && routes.length === 0 && (
+        <p className="text-[12px] text-[#817970]">No activity yet - trigger Optimize from the Dashboard.</p>
+      )}
+
+      {routes.length > 0 && (
+        <div className="flex flex-col gap-3.5">
+          {routes.map(r => {
+            const needsReview = r.capacity_exceeded > 0 || r.time_exceeded > 0 || r.late_jobs > 0;
+            return (
+              <div key={r.vehicle_id} className="flex items-center gap-2.5">
+                <div
+                  className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                  style={{ backgroundColor: needsReview ? '#46212233' : '#43D49322', color: needsReview ? '#FF6868' : '#43D493' }}
+                >
+                  <Truck size={13} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[12px] text-[#FFF9F1]">
+                    Vehicle {r.vehicle_id} route {needsReview ? 'needs review' : 'optimized'}
+                  </div>
+                  <div className="text-[10px] text-[#817970]">
+                    {r.job_ids.length} stops · {r.route_distance.toFixed(1)} km · {r.route_travel_time.toFixed(0)} min
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
-        <div>
-          <div className="text-[12px] text-[#43D493] font-semibold">12.6 kg CO₂ avoided today</div>
-          <div className="text-[10px] text-[#817970]">Estimated from shorter, smoother routes</div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

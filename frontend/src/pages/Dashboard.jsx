@@ -10,6 +10,10 @@ import QPSOExplainability from '../components/QPSOExplainability';
 import ArchitectureSnapshot from '../components/ArchitectureSnapshot';
 import ScalabilityPanel from '../components/ScalabilityPanel';
 import ReproducibilityPanel from '../components/ReproducibilityPanel';
+import ExperimentE1Panel from '../components/ExperimentE1Panel';
+import ExperimentE2Panel from '../components/ExperimentE2Panel';
+import ExperimentE4Panel from '../components/ExperimentE4Panel';
+import ExperimentE5Panel from '../components/ExperimentE5Panel';
 import SiouxFallsPanel from '../components/SiouxFallsPanel';
 import Logo from '../components/Logo';
 import Badge from '../components/ui/Badge';
@@ -1015,6 +1019,10 @@ function DashboardShell({ onExitToOverview }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <ScalabilityPanel />
             <ReproducibilityPanel />
+            <ExperimentE1Panel />
+            <ExperimentE2Panel />
+            <ExperimentE4Panel />
+            <ExperimentE5Panel />
           </div>
         )}
 

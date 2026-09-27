@@ -83,12 +83,12 @@ export default function Overview({ onEnterDashboard, onExitToLanding, user, isGu
 
           <div className="grid grid-cols-1 xl:grid-cols-[1fr,340px] gap-5">
             <OverviewLiveMap scenario={scenario} result={result} loading={loading} error={error} />
-            <OverviewAlerts />
+            <OverviewAlerts scenario={scenario} result={result} loading={loading} error={error} />
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-[1fr,340px] gap-5">
-            <OverviewRecentRoutes />
-            <OverviewActivity />
+            <OverviewRecentRoutes scenario={scenario} result={result} loading={loading} error={error} />
+            <OverviewActivity scenario={scenario} result={result} loading={loading} error={error} />
           </div>
         </main>
       </div>
