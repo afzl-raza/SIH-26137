@@ -53,7 +53,7 @@ def _brute_force_optimum(scenario, config):
 def _small_config():
     return OptimizationConfig(
         algorithm="exact",
-        weights=ObjectiveWeights(alpha=1.0, beta=0.5, gamma=1.0, penalty_weight=1000.0)
+        weights=ObjectiveWeights(travel_time_weight=1.0, distance_weight=0.5, gamma=1.0, penalty_weight=1000.0)
     )
 
 

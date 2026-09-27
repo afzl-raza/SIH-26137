@@ -86,8 +86,8 @@ def build_sioux_falls_real() -> TrafficGraph:
             length_m=float(length),
             free_flow_speed_m_s=speed,
             capacity_vph=float(cap),
-            alpha=0.15,
-            beta=4.0,
+            bpr_alpha=0.15,
+            bpr_beta=4.0,
             road_class="arterial",
             lane_count=2
         ))

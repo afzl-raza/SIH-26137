@@ -31,6 +31,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from models import ProblemScenario, Vehicle, Job, ObjectiveWeights, VehicleRoute, Edge
 from decoder import build_route_from_job_sequence
 from fitness import evaluate_solution, build_edge_map
+from schedule import simulate_route
 
 Seqs = List[List[Job]]
 
@@ -46,11 +47,22 @@ def _route_raw_cost(
     weights: ObjectiveWeights,
 ) -> float:
     """This route's exact contribution to evaluate_solution's total cost -
-    alpha*time + beta*distance + gamma*congestion + this route's own
-    capacity/time penalty - computed with no Pydantic object construction.
-    See the module docstring for why this exists and how it's kept honest."""
+    travel_time_weight*time + distance_weight*distance + gamma*congestion +
+    this route's own capacity/time/lateness penalty - computed with no
+    Pydantic object construction. See the module docstring for why this
+    exists and how it's kept honest.
+
+    Uses schedule.simulate_route for timing/lateness (the same authoritative
+    engine fitness.py, decoder.py and optimizers/qpso_memetic.py all use)
+    rather than a hand-summed time_matrix loop, so a candidate move is
+    scored on the true objective even when CVRPTW time windows are active -
+    a route that becomes more late is not accepted just because it looks
+    shorter on travel time alone. With no ready_time/due_time set on any
+    job (the pre-time-windows default), simulate_route's travel_time is
+    numerically identical to the old hand-summed loop and lateness is
+    always 0, so this is a no-op for every existing non-time-window
+    scenario (verified by test_route_raw_cost_matches_canonical_evaluator)."""
     total_dist = 0.0
-    total_time = 0.0
     total_demand = 0.0
     congestion = 0.0
     curr_n = depot_id
@@ -59,7 +71,6 @@ def _route_raw_cost(
         jn = j.node_id
         total_demand += j.demand
         total_dist += dist_matrix[curr_n, jn]
-        total_time += time_matrix[curr_n, jn] + j.service_time
         segment = paths_dict.get((curr_n, jn), (curr_n, jn))
         for u, v in zip(segment[:-1], segment[1:]):
             edge = edge_map.get((u, v))
@@ -68,12 +79,16 @@ def _route_raw_cost(
         curr_n = jn
 
     total_dist += dist_matrix[curr_n, depot_id]
-    total_time += time_matrix[curr_n, depot_id]
     return_segment = paths_dict.get((curr_n, depot_id), (curr_n, depot_id))
     for u, v in zip(return_segment[:-1], return_segment[1:]):
         edge = edge_map.get((u, v))
         if edge is not None and edge.traffic_factor > 1.0:
             congestion += (edge.traffic_factor - 1.0) * edge.base_travel_time
+
+    job_seq_ids = [j.id for j in job_seq]
+    jobs_by_id = {j.id: j for j in job_seq}
+    sched = simulate_route(job_seq_ids, vehicle, depot_id, time_matrix, jobs_by_id)
+    total_time = sched.travel_time
 
     capacity = vehicle.capacity if vehicle.capacity > 0 else 1.0
     max_route_time = vehicle.max_route_time if vehicle.max_route_time > 0 else 1.0
@@ -84,8 +99,13 @@ def _route_raw_cost(
         penalty += weights.penalty_weight * (cap_exceeded / capacity) ** 2
     if time_exceeded > 0:
         penalty += weights.penalty_weight * (time_exceeded / max_route_time) ** 2
+    # Lateness penalty - same shape as fitness.py's, so a candidate that
+    # trades travel-time/distance for lateness is never silently preferred.
+    if sched.lateness > 0:
+        penalty += weights.penalty_weight * (sched.lateness / max_route_time) ** 2
+        penalty += weights.penalty_weight * 0.05 * sched.late_jobs
 
-    return weights.alpha * total_time + weights.beta * total_dist + weights.gamma * congestion + penalty
+    return weights.travel_time_weight * total_time + weights.distance_weight * total_dist + weights.gamma * congestion + penalty
 
 
 def two_opt_pass(

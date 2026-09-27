@@ -76,7 +76,7 @@ def composite_edge_weight(
     # 2. BPR link travel time in seconds
     t0 = edge.free_flow_travel_time_s
     cap = edge.capacity_vph
-    t_bpr = bpr_travel_time(t0, vol, cap, alpha=edge.alpha, beta=edge.beta)
+    t_bpr = bpr_travel_time(t0, vol, cap, alpha=edge.bpr_alpha, beta=edge.bpr_beta)
 
     # 3. Webster signal delay if target node is signalized
     t_signal = 0.0

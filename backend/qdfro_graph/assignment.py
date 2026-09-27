@@ -24,7 +24,7 @@ def msa_assignment(
         G_k = nx.DiGraph()
         for edge in graph.edges():
             t0 = edge.free_flow_travel_time_s
-            t_bpr = bpr_travel_time(t0, edge.volume_vph, edge.capacity_vph, alpha=edge.alpha, beta=edge.beta)
+            t_bpr = bpr_travel_time(t0, edge.volume_vph, edge.capacity_vph, alpha=edge.bpr_alpha, beta=edge.bpr_beta)
             G_k.add_edge(edge.source, edge.target, weight=t_bpr)
 
         # 2. All-Or-Nothing (AON) assignment step
