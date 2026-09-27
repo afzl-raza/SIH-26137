@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import FormField from './FormField';
 import PasswordField from './PasswordField';
-import { validateEmail, validatePassword } from '../../lib/authValidation';
+import { validateEmail, validateLoginPassword } from '../../lib/authValidation';
 import { login } from '../../lib/authService';
 
 export default function LoginForm({ onSuccess, onSwitchToRegister, onForgotPassword }) {
@@ -15,7 +15,7 @@ export default function LoginForm({ onSuccess, onSwitchToRegister, onForgotPassw
   const validate = () => {
     const next = {
       email: validateEmail(email),
-      password: validatePassword(password)
+      password: validateLoginPassword(password)
     };
     setErrors(next);
     return !next.email && !next.password;

@@ -245,3 +245,12 @@ def test_reset_password_rejects_short_new_password():
     token = client.post("/api/auth/forgot-password", json={"email": "test@example.com"}).json()["dev_reset_token"]
     res = client.post("/api/auth/reset-password", json={"token": token, "new_password": "short"})
     assert res.status_code == 400
+
+
+# ==================================================================== demo mode
+
+def test_demo_auth_is_off_by_default():
+    """DEMO_AUTH (see main.py) must default to off so every real-auth test
+    above runs unchanged unless a deployment explicitly opts in. See
+    test_demo_auth.py for the demo-mode behavior itself."""
+    assert main_module.DEMO_AUTH is False
