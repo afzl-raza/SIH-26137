@@ -1,91 +1,423 @@
-# Q-DFRO — Quantum-Inspired Dynamic Fleet Route Optimizer
+# 🚦 Q-DFRO
 
-**SIH26137** — Quantum-Inspired Intelligent Traffic Route Optimization in
-Transportation Systems Using Metaheuristic Optimization.
-**Organization:** Egreen Quanta · **Team:** Byte Brain
+### Quantum-Inspired Dynamic Fleet Route Optimizer
 
-A concept prototype that generates an urban road network, runs multiple vehicles
-against delivery jobs under simulated traffic, optimizes fleet routes with a
-Quantum-behaved Particle Swarm Optimization (QPSO) engine, and benchmarks it
-against Greedy, classical PSO and GA baselines — all through one shared evaluator
-so the comparison is fair. It demonstrates the full loop:
+**SIH26137 · Egreen Quanta · Byte Brain 2.0**
 
-```
-Generate network → Optimize routes → Trigger traffic incident
-   → Re-optimize → Compare QPSO vs classical algorithms
-```
-
-This is a prototype, not the final production system — see
-[`Engineering.md`](Engineering.md) §13 for what's deliberately out of scope.
+> **Plan → Disrupt → Adapt → Compare**
 
 ---
 
-## Documentation map
+## 🚀 Live Demo
 
-| Doc | What it's for |
-|---|---|
-| [`Engineering.md`](Engineering.md) | Canonical architecture, math formulation, algorithm and API spec |
-| [`Task.md`](Task.md) | Phased task tracker — what's done vs outstanding |
-| [`Agent.md`](Agent.md) | Rules for any AI coding agent working in this repo |
-| [`CLAUDE.md`](CLAUDE.md) | Claude-Code-specific project instructions |
-| [`Documnetation.md`](Documnetation.md) | Dated change log of past implementation decisions |
+### [Open Q-DFRO](https://sih-26137-six.vercel.app/)
 
-## Prerequisites
+---
 
-- Python 3.10+
-- Node.js v18+
+# 🌍 What does Q-DFRO do?
 
-## Backend setup
+### A visual simulation of how a fleet adapts when traffic conditions change.
 
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+```text
+        🗺️ PLAN
+           │
+           ▼
+     🚚 Fleet Routes
+           │
+           ▼
+       🚧 DISRUPT
+     Traffic Incident
+           │
+           ▼
+        🔄 ADAPT
+     Re-route Fleet
+           │
+           ▼
+       📊 COMPARE
+   Evaluate Algorithms
 ```
 
-Health check: `GET http://localhost:8000/api/health`
+---
 
-## Frontend setup
+# ⚡ The Entire Project at a Glance
 
-```bash
-cd frontend
-npm install
-npm run dev
+```text
+┌──────────────┐     ┌──────────────┐
+│ 🗺️ ROAD      │     │ 🚚 FLEET     │
+│    NETWORK   │     │    + JOBS    │
+└──────┬───────┘     └──────┬───────┘
+       └──────────┬──────────┘
+                  ▼
+          ┌───────────────┐
+          │ 🧠 OPTIMIZE   │
+          │    ROUTES     │
+          └───────┬───────┘
+                  ▼
+          ┌───────────────┐
+          │ 🚧 INCIDENT  │
+          │    OCCURS     │
+          └───────┬───────┘
+                  ▼
+          ┌───────────────┐
+          │ 🔄 RE-ROUTE   │
+          │     FLEET     │
+          └───────┬───────┘
+                  ▼
+          ┌───────────────┐
+          │ 📊 BENCHMARK  │
+          │  GREEDY PSO   │
+          │   GA   QPSO   │
+          └───────────────┘
 ```
 
-Opens at `http://localhost:3000` (Vite proxies `/api` to `localhost:8000`, see
-`frontend/vite.config.js`).
+---
 
-## Running the backend tests
+# 🎯 Why?
 
-```bash
-cd backend
-python -m pytest tests/ -q
+```text
+STATIC ROUTING
+      │
+      ▼
+Route is created
+      │
+      ▼
+🚧 Conditions change
+      │
+      ▼
+❌ Original route may no longer be efficient
 ```
 
-## Two views
+### Q-DFRO
 
-The frontend opens on the **Executive Overview** — a narrative summary (real
-scenario stats, primary outcome, key metrics, before/after comparison, the
-route map, operational insights, and a benchmark comparison once one has been
-run) meant to be readable at a glance, with no solver internals on it. The
-header's **Engineering Control Room** toggle switches to the full operator
-workspace — network map, scenario/conditions/operations/solver controls,
-vehicle inspector, and the benchmark/scalability/reproducibility panels. Both
-views read the same live application state; nothing is duplicated data, and
-switching between them never re-runs anything.
+```text
+ROUTE
+  ↓
+🚧 CHANGE
+  ↓
+🔍 DETECT
+  ↓
+🔄 ADAPT
+  ↓
+✅ UPDATED ROUTE
+```
 
-## Demo flow
+---
 
-1. Generate a scenario (auto-generated on load, or click **Generate New Scenario**
-   in the Engineering Control Room).
-2. Click **Optimize Fleet** — QPSO produces fleet routes, metrics update.
-3. Click **Simulate Incident** — a road on an active route gets congested.
-4. Click **Re-Optimize** — routes recalculate around the disruption; before/after
-   metrics are shown.
-5. Click **Run Benchmark** — Greedy, PSO, GA and QPSO are run on the identical
-   scenario and compared side by side.
-6. Switch to **Executive Overview** at any point to see the same run summarized
-   for a non-technical audience.
+# 🖥️ Two Views · One System
 
-See `Task.md`'s "Immediate Next" section for what's actively being worked on.
+```text
+                 Q-DFRO
+                   │
+        ┌──────────┴──────────┐
+        │                     │
+        ▼                     ▼
+ 👔 EXECUTIVE            🧑‍💻 ENGINEERING
+   OVERVIEW               CONTROL ROOM
+        │                     │
+        ▼                     ▼
+   WHAT HAPPENED?        HOW IT WORKS?
+        │                     │
+        ▼                     ▼
+ 📊 Metrics              ⚙️ Controls
+ 🗺️ Routes              🗺️ Network
+ 🚧 Impact               🧠 Solvers
+ 📈 Results              📊 Benchmark
+ 💡 Insights             🔍 Inspection
+```
+
+---
+
+# 📊 Executive Overview
+
+### Everything important — visually condensed.
+
+```text
+┌─────────────────────────────────────────────────────┐
+│                 FLEET OVERVIEW                      │
+├──────────┬──────────┬──────────┬───────────────────┤
+│ 🚚 FLEET │ 📦 JOBS  │ 🚧 ALERT │ 🔄 STATUS        │
+│    —     │    —     │    —     │     —             │
+├──────────┴──────────┴──────────┴───────────────────┤
+│                                                     │
+│                  🗺️ ROUTE MAP                       │
+│                                                     │
+│       🚚 ───────────────→ 🚚                       │
+│             ╲                                         │
+│              ╲ 🚧 INCIDENT                          │
+│               ╲                                       │
+│                ─────────→ 🔄 NEW ROUTE              │
+│                                                     │
+├───────────────────────┬─────────────────────────────┤
+│   BEFORE → AFTER      │      ALGORITHM BENCHMARK   │
+│                       │                             │
+│ Distance    ↕         │ Greedy  ████               │
+│ Time        ↕         │ PSO     █████              │
+│ Cost        ↕         │ GA      █████              │
+│ Deliveries  ✓         │ QPSO    ██████             │
+├───────────────────────┴─────────────────────────────┤
+│ 💡 INSIGHT                                          │
+│ Traffic disruption detected → fleet re-routed      │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+# 📈 What We Measure
+
+| 🚚 Fleet | 📦 Delivery | 🛣️ Route | 🚧 Impact |
+|---|---|---|---|
+| Utilization | Completion | Distance | Before/After |
+| Vehicle status | Job coverage | Travel time | Affected routes |
+| Route assignment | Feasibility | Route cost | Re-optimization |
+
+---
+
+# 🧠 Optimization Engine
+
+### Same scenario. Same evaluation.
+
+```text
+                    SAME SCENARIO
+                         │
+        ┌────────────────┼────────────────┐
+        ▼                ▼                ▼
+     🟦 GREEDY         🟨 PSO           🟩 GA
+        │                │                │
+        └────────────────┼────────────────┘
+                         ▼
+                       🟪 QPSO
+                         │
+                         ▼
+                  SHARED EVALUATOR
+                         │
+              ┌──────────┼──────────┐
+              ▼          ▼          ▼
+           Distance     Time       Cost
+              │          │          │
+              └──────────┼──────────┘
+                         ▼
+                  📊 RESULTS
+```
+
+---
+
+# 🚧 Dynamic Routing
+
+```text
+🗺️ INITIAL
+    │
+    ▼
+🚚 ROUTES
+    │
+    ▼
+🚧 TRAFFIC INCIDENT
+    │
+    ▼
+⚠️ AFFECTED VEHICLE
+    │
+    ▼
+🧠 RE-OPTIMIZATION
+    │
+    ▼
+🔄 NEW ROUTE
+    │
+    ▼
+✅ UPDATED FLEET
+```
+
+---
+
+# 🏗️ System Architecture
+
+```text
+┌──────────────────────────────┐
+│          FRONTEND            │
+│                              │
+│ Executive ↔ Engineering      │
+└──────────────┬───────────────┘
+               │
+             REST
+               │
+               ▼
+┌──────────────────────────────┐
+│           FASTAPI            │
+│                              │
+│ Scenario │ Fleet │ Jobs      │
+│ Optimize │ Incident │ Bench  │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│      OPTIMIZATION ENGINE     │
+│                              │
+│   Greedy │ PSO │ GA │ QPSO  │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│       SHARED EVALUATOR       │
+│                              │
+│ Distance │ Time │ Cost       │
+│ Feasibility │ Fleet Metrics │
+└──────────────────────────────┘
+```
+
+---
+
+# 🧪 Demo Flow
+
+### One scenario. Six simple steps.
+
+```text
+① GENERATE
+   🗺️ Network + 🚚 Fleet + 📦 Jobs
+
+          ↓
+
+② OPTIMIZE
+   🧠 Generate initial routes
+
+          ↓
+
+③ DISRUPT
+   🚧 Introduce traffic incident
+
+          ↓
+
+④ ADAPT
+   🔄 Re-optimize affected routes
+
+          ↓
+
+⑤ COMPARE
+   📊 Greedy vs PSO vs GA vs QPSO
+
+          ↓
+
+⑥ EXPLAIN
+   👔 View Executive Overview
+```
+
+---
+
+# 🛠️ Technology
+
+```text
+FRONTEND              BACKEND
+React                  Python
+Vite                   FastAPI
+JavaScript             Uvicorn
+Interactive Maps       Pytest
+
+             +
+
+       OPTIMIZATION
+       ─────────────
+       Greedy
+       PSO
+       GA
+       QPSO
+```
+
+---
+
+# 🌱 Current Scope
+
+```text
+                 Q-DFRO
+                    │
+     ┌──────────────┼──────────────┐
+     ▼              ▼              ▼
+  🗺️ Network      🚚 Fleet       📦 Jobs
+     │              │              │
+     └──────────────┼──────────────┘
+                    ▼
+              🚧 Disruption
+                    │
+                    ▼
+             🔄 Re-routing
+                    │
+                    ▼
+              📊 Benchmark
+```
+
+---
+
+# 🚀 Future Direction
+
+```text
+CURRENT
+Simulation Prototype
+       │
+       ▼
+      + 🛰️ Live Traffic
+       │
+      + 📍 GPS Telemetry
+       │
+      + 🗺️ Real Roads
+       │
+      + ⏰ Delivery Windows
+       │
+      + 🚚 Vehicle Constraints
+       │
+      + 🚧 Real-time Incidents
+       │
+       ▼
+FUTURE INTELLIGENT FLEET SYSTEM
+```
+
+---
+
+# 🚫 Current Limitations
+
+Q-DFRO is a **concept prototype**.
+
+It is currently not:
+
+❌ A production traffic-management system  
+❌ A navigation replacement  
+❌ A live traffic prediction service  
+❌ A city-scale deployment  
+❌ A guaranteed globally optimal routing system  
+
+---
+
+# ⭐ The Idea in One Picture
+
+```text
+                  🚚 FLEET
+                     │
+                     ▼
+                🧠 PLAN ROUTES
+                     │
+                     ▼
+                🛣️ CITY NETWORK
+                     │
+                     ▼
+                🚧 SOMETHING
+                 CHANGES
+                     │
+                     ▼
+                🔍 DETECT IMPACT
+                     │
+                     ▼
+                🔄 RE-OPTIMIZE
+                     │
+                     ▼
+                🚚 NEW ROUTES
+                     │
+                     ▼
+                📊 COMPARE
+                     │
+                     ▼
+              💡 UNDERSTAND
+                 THE IMPACT
+```
+
+> ## 🚦 Q-DFRO
+> ### **Plan → Disrupt → Adapt → Compare**
+
+**Live Demo:**  
+https://sih-26137-six.vercel.app/
+
+**SIH26137 · Egreen Quanta · Byte Brain 2.0**

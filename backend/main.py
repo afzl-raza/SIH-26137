@@ -111,6 +111,18 @@ _EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 QDFRO_ENVIRONMENT = os.environ.get("QDFRO_ENVIRONMENT", "development").strip().lower()
 IS_PRODUCTION = QDFRO_ENVIRONMENT == "production"
 
+# Hackathon/demo mode: accepts ANY non-empty email + non-empty password on
+# both /login and /register, no matching account or correct password
+# required. Off by default so the real credential-checking auth implemented
+# below (and every test in test_auth_api.py/test_auth_security.py covering
+# it) is exactly what runs unless this is explicitly turned on - set
+# DEMO_AUTH=true in the environment to enable it for a demo/showcase
+# deployment. This never touches password hashing, session tokens, or the
+# /me and /logout endpoints - only whether register/login require a real
+# password match, so a demo session behaves identically to a real one for
+# everything downstream (refresh, logout, direct-dashboard-access rules).
+DEMO_AUTH = os.environ.get("DEMO_AUTH", "false").strip().lower() in ("1", "true", "yes", "on")
+
 
 class RegisterRequest(BaseModel):
     name: str
@@ -167,6 +179,26 @@ def _extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
     return token.strip()
 
 
+def _get_or_create_demo_user(*, email: str, name: str, position: str, company: str, password: str):
+    """DEMO_AUTH only: returns the existing user for this email, or creates
+    one on the spot. The password is hashed and stored like any other user
+    (so the record shape stays identical to a real account) but is never
+    checked again - a demo login with a different password on the same
+    email still succeeds, by design (see the DEMO_AUTH docstring above)."""
+    existing = USER_STORE.get_by_email(email)
+    if existing is not None:
+        return existing
+    try:
+        return USER_STORE.create(
+            name=name, position=position, company=company, email=email, password=password
+        )
+    except EmailAlreadyRegisteredError:
+        # Lost a race with a concurrent demo login/register for the same
+        # email between the get and create above - the store guarantees a
+        # user now exists under it either way.
+        return USER_STORE.get_by_email(email)
+
+
 def _current_user(authorization: Optional[str] = Header(None)):
     """FastAPI dependency: resolves the bearer token to a stored user, or
     raises 401. Never falls back to "any token works" or "no token works" -
@@ -185,8 +217,19 @@ def register(payload: RegisterRequest):
     position = _require_non_empty(payload.position, "Position")
     company = _require_non_empty(payload.company, "Company name")
     email = _require_valid_email(payload.email)
-    _require_valid_password(payload.password)
 
+    if DEMO_AUTH:
+        # No password policy, no duplicate-email rejection - creating an
+        # account is optional in demo mode, so it must never block the user
+        # with a 409 for reusing an email they already tried.
+        _require_non_empty(payload.password, "Password")
+        user = _get_or_create_demo_user(
+            email=email, name=name, position=position, company=company, password=payload.password
+        )
+        session = SESSION_STORE.create(user.id)
+        return {"token": session.token, "user": user.public()}
+
+    _require_valid_password(payload.password)
     try:
         user = USER_STORE.create(
             name=name, position=position, company=company, email=email, password=payload.password
@@ -204,8 +247,24 @@ def register(payload: RegisterRequest):
 @app.post("/api/auth/login")
 def login(payload: LoginRequest):
     email = _require_valid_email(payload.email)
-    _require_valid_password(payload.password)
 
+    if DEMO_AUTH:
+        # Any non-empty password succeeds, for any email (existing or not) -
+        # no account lookup failure, no password-mismatch failure. A second
+        # demo login to the same email with a different password still
+        # succeeds, since nothing here re-checks what was stored before.
+        _require_non_empty(payload.password, "Password")
+        user = _get_or_create_demo_user(
+            email=email,
+            name="Demo User",
+            position="Fleet Manager",
+            company="Demo Fleet Co.",
+            password=payload.password,
+        )
+        session = SESSION_STORE.create(user.id)
+        return {"token": session.token, "user": user.public()}
+
+    _require_valid_password(payload.password)
     user = USER_STORE.get_by_email(email)
     if user is None:
         raise HTTPException(
@@ -375,6 +434,7 @@ def health_check():
     return {
         "status": "ok",
         "app": "Q-DFRO Backend",
+        "demo_auth": DEMO_AUTH,
         "stored_scenarios": len(SCENARIO_STORE),
         "route_matrix_cache": ROUTE_MATRIX_CACHE.stats(),
     }
@@ -394,6 +454,26 @@ def generate_problem(req: GenerateRequest):
 
     if req.demand_min > req.demand_max:
         raise HTTPException(status_code=400, detail="demand_min cannot exceed demand_max")
+
+    # Same "reject before calling the generator" convention as the check
+    # above. Each of these is reachable today only as an opaque 500 rather
+    # than this clean 400 - reproduced directly: num_vehicles=0 raises a
+    # bare ZeroDivisionError inside generate_synthetic_scenario (vehicle
+    # capacity is derived by dividing total demand across vehicles);
+    # negative num_jobs/num_nodes raise ValueError from random.sample
+    # ("Sample larger than population or is negative"); tw_width_min <= 0
+    # produces a job with ready_time > due_time, which the existing
+    # Job validator rejects deep inside generation. None of these are a
+    # supported contract - unlike num_jobs=0, which is deliberately
+    # supported (see test_exact_optimizer.py) and left untouched here.
+    if req.num_vehicles < 1:
+        raise HTTPException(status_code=400, detail="num_vehicles must be at least 1")
+    if req.num_jobs < 0:
+        raise HTTPException(status_code=400, detail="num_jobs cannot be negative")
+    if req.num_nodes < 1:
+        raise HTTPException(status_code=400, detail="num_nodes must be at least 1")
+    if req.time_windows and req.tw_width_min <= 0:
+        raise HTTPException(status_code=400, detail="tw_width_min must be positive when time_windows is enabled")
 
     try:
         scenario = generate_synthetic_scenario(
@@ -559,6 +639,9 @@ def optimize_route(payload: OptimizePayload):
         algo = payload.config.algorithm.lower()
         if "exact" in algo:
             optimizer = ExactOptimizer()
+        elif "memetic" in algo:
+            from optimizers.qpso_memetic import MemeticQPSOOptimizer
+            optimizer = MemeticQPSOOptimizer()
         elif "qpso" in algo:
             optimizer = QPSOOptimizer()
         elif "pso" in algo:
@@ -771,6 +854,16 @@ def get_scenario_manifest(
     algorithm: Optional[str] = None,
     population_size: Optional[int] = None,
     max_iterations: Optional[int] = None,
+    # Distinct from the scenario's own generation seed (`scenario.seed`,
+    # returned as the top-level "seed" field below) - this is the solver's
+    # RNG seed for the specific run being reported. The two happen to match
+    # whenever a client generates and immediately optimizes with one shared
+    # seed value (the current UI's only flow), but they are not the same
+    # thing and can diverge (e.g. the seed field is changed after
+    # generating, before re-optimizing) - named `solver_seed` rather than
+    # a second bare `seed` so the manifest can report both without either
+    # shadowing the other.
+    solver_seed: Optional[int] = None,
 ):
     """Everything needed to reproduce a run, read back from the server.
 
@@ -812,6 +905,7 @@ def get_scenario_manifest(
             "algorithm": algorithm,
             "population_size": population_size,
             "max_iterations": max_iterations,
+            "seed": solver_seed,
         },
         "conditions": {
             "applied": conditions is not None,

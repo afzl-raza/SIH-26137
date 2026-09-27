@@ -67,12 +67,30 @@
 
 /* Graph View background - faint dot-grid tinted with the brand accent,
    fixed CSS layer (not per-zoom redraw) so it never moirés when zooming.
+   Smaller cells (20 px) + lower dot opacity = more refined engineering-grid
+   feel without competing with the route lines for visual weight.
    !important + later source order needed to win over .leaflet-container's
    own !important background shorthand above. */
 .graph-view-grid .leaflet-container {
   background-color: #0D0C0B !important;
-  background-image: radial-gradient(rgba(198, 96, 46, 0.15) 1px, transparent 0) !important;
-  background-size: 24px 24px !important;
+  background-image: radial-gradient(rgba(198, 96, 46, 0.12) 1px, transparent 0) !important;
+  background-size: 20px 20px !important;
+}
+
+/* Promote the Leaflet SVG renderer to its own compositor layer so that
+   zoom/pan transforms are handled by the GPU and do not trigger a full
+   repaint of every polyline. */
+.leaflet-overlay-pane svg,
+.leaflet-zoom-animated {
+  will-change: transform;
+}
+
+/* In graph view, lift the base road contrast so free-flow links are
+   legible against the dark background without washing out the congested
+   or route colours above them. */
+.graph-view-grid .leaflet-interactive {
+  /* Applies to all SVG paths; route lines override this with inline styles. */
+  vector-effect: non-scaling-stroke;
 }
 
 /* Route glow classes are generated per-vehicle-color at runtime in
@@ -82,18 +100,35 @@
 
 /* Custom HTML Leaflet Markers (class names must match NetworkMap.jsx's
    createDepotMarkerIcon/createJobMarkerIcon/createVehicleMarkerIcon) */
-.custom-leaflet-depot, .custom-leaflet-job, .custom-leaflet-vehicle {
+.custom-leaflet-depot,
+.custom-leaflet-job,
+.custom-leaflet-vehicle,
+.custom-leaflet-draft-depot,
+.custom-leaflet-draft-stop {
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: transform 0.2s ease;
+  /* Use transform for hover so the browser doesn't need to repaint
+     surrounding elements; GPU-composited transition only. */
+  transition: transform 0.15s ease;
+  /* Prevent label text from blurring on non-integer pixel positions. */
+  backface-visibility: hidden;
 }
 
-.custom-leaflet-depot:hover, .custom-leaflet-job:hover, .custom-leaflet-vehicle:hover {
-  transform: scale(1.15);
+.custom-leaflet-depot:hover,
+.custom-leaflet-job:hover,
+.custom-leaflet-vehicle:hover,
+.custom-leaflet-draft-depot:hover,
+.custom-leaflet-draft-stop:hover {
+  transform: scale(1.18);
   z-index: 1000 !important;
 }
+
+/* Depot gets the highest z-order; vehicles above jobs; jobs above nodes. */
+.custom-leaflet-depot   { z-index: 700 !important; }
+.custom-leaflet-vehicle { z-index: 600 !important; }
+.custom-leaflet-job     { z-index: 500 !important; }
 
 /* ═══════════════════════════════════════════
    Incident Road Pulse Animation
@@ -163,26 +198,38 @@
 .workflow-stage-icon {
   background: #1E1B18;
   border: 1px solid #3A342E;
-  color: #6B6259;
+  color: #857C71;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   transition: all 0.25s ease;
+  overflow: hidden;
+}
+
+/* Subtle inner highlight, top-left, for a premium glassy feel */
+.workflow-stage-icon::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 32% 26%, rgba(255, 255, 255, 0.10), transparent 55%);
+  pointer-events: none;
 }
 
 .workflow-stage-icon--active {
-  background: rgba(198, 96, 46, 0.16);
+  background: radial-gradient(circle at 50% 35%, rgba(198, 96, 46, 0.32), rgba(198, 96, 46, 0.12));
   border-color: #C6602E;
-  color: #C6602E;
-  box-shadow: 0 0 0 3px rgba(198, 96, 46, 0.1), 0 0 10px -2px rgba(198, 96, 46, 0.6);
+  color: #FFC199;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 0 3px rgba(198, 96, 46, 0.12), 0 0 12px -2px rgba(198, 96, 46, 0.55);
 }
 
 .workflow-stage-icon--completed {
-  background: rgba(107, 154, 87, 0.12);
+  background: rgba(107, 154, 87, 0.14);
   border-color: #6B9A57;
-  color: #6B9A57;
-  box-shadow: 0 0 0 2px rgba(107, 154, 87, 0.08);
+  color: #9ED184;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 2px rgba(107, 154, 87, 0.08);
 }
 
 .workflow-stage-title--active {
-  color: #C6602E;
+  color: #E88A54;
 }
 
 .workflow-stage-title--completed {
@@ -191,18 +238,6 @@
 
 .workflow-stage-title--upcoming {
   color: #8A8378;
-}
-
-.workflow-stage-desc {
-  color: #6B6259;
-}
-
-.workflow-stage--active .workflow-stage-desc {
-  color: #A8A29B;
-}
-
-.workflow-stage--completed .workflow-stage-desc {
-  color: #7C8A73;
 }
 
 .workflow-arrow {

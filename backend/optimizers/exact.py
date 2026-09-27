@@ -9,7 +9,7 @@ Two-stage bitmask dynamic program:
 
 Stage 1 (Held-Karp per subset): for every subset of jobs, finds the
 minimum-cost depot-to-depot path visiting exactly that subset, where the
-per-edge cost is `alpha*edge_time + beta*edge_distance + gamma*edge_congestion`
+per-edge cost is `travel_time_weight*edge_time + distance_weight*edge_distance + gamma*edge_congestion`
 - the same three terms `fitness.evaluate_solution` sums along a route,
 computed per-edge here so the two are consistent by construction rather than
 being two different scoring systems being compared.
@@ -82,8 +82,8 @@ class ExactOptimizer(BaseOptimizer):
             )
 
         def edge_cost(u: int, v: int) -> float:
-            """alpha*time + beta*distance + gamma*congestion for one hop -
-            the same per-edge accounting evaluate_solution sums along a
+            """travel_time_weight*time + distance_weight*distance + gamma*congestion
+            for one hop - the same per-edge accounting evaluate_solution sums along a
             completed route, so a route's stage-1 cost equals what
             evaluate_solution would compute for its (time, distance,
             congestion) terms before penalty."""
@@ -93,7 +93,7 @@ class ExactOptimizer(BaseOptimizer):
             congestion = 0.0
             if edge is not None and edge.traffic_factor > 1.0:
                 congestion = (edge.traffic_factor - 1.0) * edge.base_travel_time
-            return weights.alpha * t + weights.beta * d + weights.gamma * congestion
+            return weights.travel_time_weight * t + weights.distance_weight * d + weights.gamma * congestion
 
         full_mask = (1 << n) - 1
 

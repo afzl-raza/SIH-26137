@@ -47,6 +47,7 @@ def simulate_route(
     depot: int,
     time_matrix,
     jobs_by_id: Dict[int, Job],
+    include_stops: bool = True,
 ) -> RouteSchedule:
     """Simulates one vehicle visiting `job_seq` (a list of job ids, in visit
     order) starting and ending at `depot`.
@@ -68,6 +69,16 @@ def simulate_route(
     identical to the pre-time-windows sum of `time_matrix` legs plus service
     time - this is what keeps existing (non-time-window) scenarios producing
     byte-identical results.
+
+    `include_stops=False` skips building the per-stop `StopTiming` list
+    (Pydantic construction plus five `round()` calls per stop) while still
+    computing every aggregate (`travel_time`, `wait_time`, `lateness`,
+    `late_jobs`) exactly as before. A population-based optimizer's search
+    loop calls this thousands of times per run and only ever reads those
+    aggregates for every candidate but the one it finally returns - profiling
+    an OSM-scale scenario showed `round()` inside this per-stop loop as the
+    single largest cost in QPSO's runtime, ~45% of it, entirely spent on
+    stops that were immediately discarded.
     """
     stops: List[StopTiming] = []
     total_wait = 0.0
@@ -87,14 +98,15 @@ def simulate_route(
         lateness = 0.0 if job.due_time is None else max(0.0, service_start - job.due_time)
         departure = service_start + job.service_time
 
-        stops.append(StopTiming(
-            job_id=job_id,
-            arrival=round(arrival, 4),
-            service_start=round(service_start, 4),
-            departure=round(departure, 4),
-            wait=round(wait, 4),
-            lateness=round(lateness, 4),
-        ))
+        if include_stops:
+            stops.append(StopTiming(
+                job_id=job_id,
+                arrival=round(arrival, 4),
+                service_start=round(service_start, 4),
+                departure=round(departure, 4),
+                wait=round(wait, 4),
+                lateness=round(lateness, 4),
+            ))
 
         total_wait += wait
         total_lateness += lateness

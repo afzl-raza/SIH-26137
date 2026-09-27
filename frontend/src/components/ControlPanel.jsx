@@ -751,22 +751,22 @@ export default function ControlPanel({
               )}
               <div className="grid grid-cols-2 gap-2">
                 <div className="flex items-center gap-1">
-                  <label htmlFor="weight-alpha" className="text-[10px] text-gray-500 w-4">α</label>
+                  <label htmlFor="weight-travel-time" className="text-[10px] text-gray-500 w-4" title="Travel time weight">α</label>
                   <input
-                    id="weight-alpha"
+                    id="weight-travel-time"
                     type="number" step="0.1"
-                    value={config.weights?.alpha || 1.0}
-                    onChange={(e) => handleWeightChange('alpha', Number(e.target.value))}
+                    value={config.weights?.travel_time_weight || 1.0}
+                    onChange={(e) => handleWeightChange('travel_time_weight', Number(e.target.value))}
                     className="w-full bg-[#26221D] border border-[#3A342E] text-gray-200 rounded px-1.5 py-0.5 outline-none focus:border-[#C6602E] focus-visible:ring-2 focus-visible:ring-[#C6602E] font-mono text-[10px]"
                   />
                 </div>
                 <div className="flex items-center gap-1">
-                  <label htmlFor="weight-beta" className="text-[10px] text-gray-500 w-4">β</label>
+                  <label htmlFor="weight-distance" className="text-[10px] text-gray-500 w-4" title="Distance weight">β</label>
                   <input
-                    id="weight-beta"
+                    id="weight-distance"
                     type="number" step="0.1"
-                    value={config.weights?.beta || 1.0}
-                    onChange={(e) => handleWeightChange('beta', Number(e.target.value))}
+                    value={config.weights?.distance_weight || 1.0}
+                    onChange={(e) => handleWeightChange('distance_weight', Number(e.target.value))}
                     className="w-full bg-[#26221D] border border-[#3A342E] text-gray-200 rounded px-1.5 py-0.5 outline-none focus:border-[#C6602E] focus-visible:ring-2 focus-visible:ring-[#C6602E] font-mono text-[10px]"
                   />
                 </div>

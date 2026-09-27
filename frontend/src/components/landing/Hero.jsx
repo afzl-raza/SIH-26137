@@ -2,6 +2,14 @@ import React from 'react';
 import { ArrowRight, Sparkles } from 'lucide-react';
 import FleetVisual from './FleetVisual';
 
+// Scrolls in-page instead of setting window.location.hash - same reasoning
+// as LandingNavbar's handleNavClick: App.jsx uses the URL hash for view
+// routing, so an in-page anchor here is kept out of that mechanism.
+function scrollToSection(event, href) {
+  event.preventDefault();
+  document.querySelector(href)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 export default function Hero({ onEnterApp }) {
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-14 sm:pt-20 pb-16 sm:pb-24 grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-12 items-center">
@@ -33,7 +41,8 @@ export default function Hero({ onEnterApp }) {
             <ArrowRight className="w-4 h-4" />
           </button>
           <a
-            href="#technology"
+            href="#how-it-works"
+            onClick={(e) => scrollToSection(e, '#how-it-works')}
             className="inline-flex items-center justify-center gap-2 border border-[#3A342E] hover:border-[#5A5049] text-gray-200 text-sm font-semibold px-5 py-3 rounded-lg transition-colors"
           >
             See How It Works

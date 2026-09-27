@@ -27,7 +27,7 @@ def evaluate_solution(
 ) -> OptimizationResult:
     """
     Evaluates a candidate route set using the single centralized objective function:
-    Cost = alpha * TravelTime + beta * Distance + gamma * Congestion + Penalty
+    Cost = travel_time_weight * TravelTime + distance_weight * Distance + gamma * Congestion + Penalty
 
     Penalty includes capacity, route-time and (CVRPTW) lateness violations,
     all normalized and quadratic - see the per-term comments below.
@@ -104,8 +104,8 @@ def evaluate_solution(
     total_lateness = sum(r.lateness for r in routes)
 
     raw_cost = (
-        weights.alpha * total_travel_time +
-        weights.beta * total_distance +
+        weights.travel_time_weight * total_travel_time +
+        weights.distance_weight * total_distance +
         weights.gamma * total_congestion_delay
     )
     total_cost = raw_cost + penalty

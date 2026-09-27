@@ -1,5 +1,5 @@
-import React from 'react';
-import { Route, Map, Truck, FlaskConical, BarChart3, LayoutGrid, ChevronsUpDown, Lightbulb } from 'lucide-react';
+import React, { useState } from 'react';
+import { Route, Map, Truck, FlaskConical, BarChart3, LayoutGrid, ChevronsUpDown, Lightbulb, ChevronLeft, ChevronRight } from 'lucide-react';
 
 // Nav copy and structure pulled directly from the approved Figma frame
 // ("Q-DFRO operations dashboard", node 4:3537 "Destinations"). Only
@@ -15,7 +15,23 @@ const DESTINATIONS = [
   { id: 'reports', label: 'Reports', icon: BarChart3 },
 ];
 
+// Static operator tips, unrelated to live traffic conditions (those are
+// OverviewAlerts.jsx's job, driven by the real scenario/edges data - this
+// panel never touches that). The "N of 3" counter previously had only one
+// tip behind it and no way to move to the other two, so it always read
+// "Tip 1 of 3" no matter what - fixed here by actually carrying all three
+// tips and letting the operator step through them.
+const OPERATOR_TIPS = [
+  'Start with one vehicle and one destination. You can add stops after the first route is ready.',
+  'Simulate a traffic incident from the Dashboard to see how re-optimization reroutes a live fleet.',
+  'Compare algorithms from the Benchmark panel to see which one fits your network best.',
+];
+
 export default function OverviewSidebar() {
+  const [tipIndex, setTipIndex] = useState(0);
+  const showPrevTip = () => setTipIndex(i => (i - 1 + OPERATOR_TIPS.length) % OPERATOR_TIPS.length);
+  const showNextTip = () => setTipIndex(i => (i + 1) % OPERATOR_TIPS.length);
+
   return (
     <aside className="w-[240px] flex-shrink-0 bg-[#100F0D] border-r border-[#3B342A] flex flex-col p-4 gap-6 font-sans">
       {/* Brand */}
@@ -73,12 +89,32 @@ export default function OverviewSidebar() {
 
       {/* Operator tip */}
       <div className="bg-[#4A2916]/40 border border-[#5A3620] rounded-lg p-3 space-y-1.5">
-        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#F5B942]">
-          <Lightbulb size={12} />
-          Tip 1 of 3
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[#F5B942]">
+            <Lightbulb size={12} />
+            Tip {tipIndex + 1} of {OPERATOR_TIPS.length}
+          </div>
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={showPrevTip}
+              aria-label="Previous tip"
+              className="p-0.5 rounded text-[#B9B0A5] hover:text-[#F5B942] hover:bg-[#5A3620]/40 transition-colors"
+            >
+              <ChevronLeft size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={showNextTip}
+              aria-label="Next tip"
+              className="p-0.5 rounded text-[#B9B0A5] hover:text-[#F5B942] hover:bg-[#5A3620]/40 transition-colors"
+            >
+              <ChevronRight size={12} />
+            </button>
+          </div>
         </div>
         <p className="text-[11px] text-[#B9B0A5] leading-snug">
-          Start with one vehicle and one destination. You can add stops after the first route is ready.
+          {OPERATOR_TIPS[tipIndex]}
         </p>
       </div>
 

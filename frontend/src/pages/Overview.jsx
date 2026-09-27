@@ -18,13 +18,13 @@ const BASELINE_CONFIG = { algorithm: 'greedy', seed: 42 };
 
 // The operator's home screen - a gate in front of the real algorithm
 // workflow (Dashboard.jsx), not a replacement of it. "Today at a glance",
-// the live map, and the disrupt-a-road interaction are all backed by real
-// /api/problem/generate + /api/optimize + /api/traffic/update calls - the
-// same endpoints Dashboard.jsx uses - not fabricated numbers. The
-// SaaS-shell chrome around them (workspace switcher, onboarding checklist,
-// alerts/recent-routes/activity feeds) stays decorative, since there is no
-// real multi-user or run-history backend behind this prototype.
-export default function Overview({ onEnterDashboard, onExitToLanding }) {
+// the live map, the disrupt-a-road interaction, and the alerts/recent-routes
+// feeds are all backed by real /api/problem/generate + /api/optimize +
+// /api/traffic/update calls - the same endpoints Dashboard.jsx uses - not
+// fabricated numbers. Only the workspace switcher and onboarding checklist
+// stay decorative, since there is no real multi-user or run-history backend
+// behind this prototype beyond the real auth session.
+export default function Overview({ onEnterDashboard, onExitToLanding, user, isGuest, onLogout }) {
   const [scenarioId, setScenarioId] = useState(null);
   const [scenario, setScenario] = useState(null);
   const [result, setResult] = useState(null);
@@ -124,7 +124,7 @@ export default function Overview({ onEnterDashboard, onExitToLanding }) {
       <OverviewSidebar />
 
       <div className="flex-1 flex flex-col min-w-0">
-        <OverviewTopBar />
+        <OverviewTopBar user={user} isGuest={isGuest} onLogout={onLogout} />
 
         <main className="flex-1 p-6 flex flex-col gap-5 max-w-[1600px] w-full mx-auto">
           {onExitToLanding && (
@@ -136,7 +136,7 @@ export default function Overview({ onEnterDashboard, onExitToLanding }) {
             </button>
           )}
 
-          <OverviewGreeting onEnterDashboard={onEnterDashboard} />
+          <OverviewGreeting onEnterDashboard={onEnterDashboard} user={user} isGuest={isGuest} />
           <OverviewMetrics scenario={scenario} result={result} baseline={baseline} loading={loading} error={error} />
 
           <div className="grid grid-cols-1 xl:grid-cols-[1fr,340px] gap-5">
@@ -149,12 +149,12 @@ export default function Overview({ onEnterDashboard, onExitToLanding }) {
               error={error}
               onDisruptEdge={handleDisruptEdge}
             />
-            <OverviewAlerts />
+            <OverviewAlerts scenario={scenario} result={result} loading={loading} error={error} />
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-[1fr,340px] gap-5">
-            <OverviewRecentRoutes />
-            <OverviewActivity />
+            <OverviewRecentRoutes scenario={scenario} result={result} loading={loading} error={error} />
+            <OverviewActivity scenario={scenario} result={result} loading={loading} error={error} />
           </div>
         </main>
       </div>

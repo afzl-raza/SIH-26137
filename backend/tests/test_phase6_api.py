@@ -492,14 +492,14 @@ def test_manifest_reports_the_run_configuration_it_was_given():
     scenario_id = body["scenario_id"]
     _optimize(scenario_id)
 
-    manifest = _manifest(scenario_id)
+    manifest = _manifest(scenario_id, solver_seed=42)
     assert manifest["scenario_id"] == scenario_id
     assert manifest["scenario_hash"] == body["scenario_hash"]
     assert manifest["seed"] == 42
     assert manifest["data_source"] == "synthetic"
     assert manifest["geometry_source"] == "straight-line"
     assert manifest["solver"] == {
-        "algorithm": "qpso", "population_size": 12, "max_iterations": 12,
+        "algorithm": "qpso", "population_size": 12, "max_iterations": 12, "seed": 42,
     }
     assert manifest["network"]["job_count"] == 8
     assert manifest["network"]["vehicle_count"] == 3
@@ -529,8 +529,27 @@ def test_manifest_reports_unset_solver_settings_as_null_rather_than_defaults():
     response = client.get(f"/api/scenario/{scenario_id}/manifest")
     assert response.status_code == 200
     assert response.json()["solver"] == {
-        "algorithm": None, "population_size": None, "max_iterations": None,
+        "algorithm": None, "population_size": None, "max_iterations": None, "seed": None,
     }
+
+
+def test_manifest_distinguishes_scenario_seed_from_solver_seed():
+    """The scenario's generation seed (top-level `seed`, from
+    scenario.seed) and the solver's RNG seed for one particular run
+    (`solver.seed`, echoed from the caller) are different things and can
+    diverge - e.g. a user changes the seed field after generating a
+    scenario but before re-optimizing it. The manifest must report both
+    distinctly rather than only ever exposing the scenario's seed under a
+    bare `seed` key, which would silently misrepresent the run to anyone
+    reading the manifest for reproducibility."""
+    body = _generate_synthetic()  # generated with seed=42 (SOLVER default)
+    scenario_id = body["scenario_id"]
+
+    manifest = _manifest(scenario_id, solver_seed=99)
+
+    assert manifest["seed"] == 42  # scenario's own generation seed, unchanged
+    assert manifest["solver"]["seed"] == 99  # this run's solver seed, distinct
+    assert manifest["seed"] != manifest["solver"]["seed"]
 
 
 def test_manifest_tracks_the_condition_configuration(offline_weather):

@@ -48,9 +48,12 @@ class GAOptimizer(BaseOptimizer):
         convergence_history: List[float] = []
         convergence_elapsed_ms: List[float] = []
 
-        # Evaluate initial population
+        # Evaluate initial population. include_stops=False: evaluate_solution
+        # only reads cost aggregates, never per-stop timing, and this loop
+        # runs pop_size * max_iter times - the winning chromosome gets its
+        # full stops rebuilt once at the end.
         for i in range(pop_size):
-            routes = decode_random_keys(population[i], scenario, dist_matrix, time_matrix, paths_dict)
+            routes = decode_random_keys(population[i], scenario, dist_matrix, time_matrix, paths_dict, include_stops=False)
             res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map)
             fitness_costs[i] = res.total_cost
 
@@ -94,7 +97,7 @@ class GAOptimizer(BaseOptimizer):
 
             # Evaluate new generation
             for i in range(pop_size):
-                routes = decode_random_keys(population[i], scenario, dist_matrix, time_matrix, paths_dict)
+                routes = decode_random_keys(population[i], scenario, dist_matrix, time_matrix, paths_dict, include_stops=False)
                 res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map)
                 fitness_costs[i] = res.total_cost
 
@@ -105,6 +108,11 @@ class GAOptimizer(BaseOptimizer):
 
             convergence_history.append(best_cost)
             convergence_elapsed_ms.append((time.perf_counter() - start_time) * 1000.0)
+
+        # The search above only used cost aggregates, so best_routes was
+        # decoded with include_stops=False. Rebuild the winning chromosome
+        # once, in full, for the result actually returned/rendered.
+        best_routes = decode_random_keys(best_chrom, scenario, dist_matrix, time_matrix, paths_dict)
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
@@ -120,6 +128,14 @@ class GAOptimizer(BaseOptimizer):
         )
 
     def _tournament_select(self, costs: np.ndarray, k: int = 3) -> int:
+        # Clamp k to the actual population size: np.random.choice(...,
+        # replace=False) raises ValueError if asked for more samples than
+        # exist (reproduced crash: population_size < 3, e.g. 2, with the
+        # default k=3). Population sizes this small are a poor search
+        # config, not an invalid one, so this degrades gracefully (a
+        # smaller tournament, or population_size==1 trivially returning
+        # the only individual) rather than raising.
+        k = min(k, len(costs))
         candidates = np.random.choice(len(costs), size=k, replace=False)
         best_idx = candidates[0]
         for idx in candidates[1:]:
@@ -128,6 +144,16 @@ class GAOptimizer(BaseOptimizer):
         return best_idx
 
     def _crossover(self, p1: np.ndarray, p2: np.ndarray):
+        # A single-gene chromosome (num_jobs == 1) has no interior cut
+        # point: np.random.randint(1, len(p1)) is randint(1, 1), which
+        # raises ValueError (reproduced crash on any 1-job scenario with
+        # GA selected, since crossover_rate=0.85 makes this near-certain
+        # within a few generations). One job has nothing to recombine
+        # anyway, so skipping crossover and returning both parents
+        # unchanged is the correct behaviour, not just a crash-avoidance
+        # patch - mutation still applies to each afterward as normal.
+        if len(p1) < 2:
+            return np.copy(p1), np.copy(p2)
         cut = np.random.randint(1, len(p1))
         c1 = np.concatenate([p1[:cut], p2[cut:]])
         c2 = np.concatenate([p2[:cut], p1[cut:]])

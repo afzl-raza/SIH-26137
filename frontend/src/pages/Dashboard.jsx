@@ -10,6 +10,11 @@ import QPSOExplainability from '../components/QPSOExplainability';
 import ArchitectureSnapshot from '../components/ArchitectureSnapshot';
 import ScalabilityPanel from '../components/ScalabilityPanel';
 import ReproducibilityPanel from '../components/ReproducibilityPanel';
+import ExperimentE1Panel from '../components/ExperimentE1Panel';
+import ExperimentE2Panel from '../components/ExperimentE2Panel';
+import ExperimentE4Panel from '../components/ExperimentE4Panel';
+import ExperimentE5Panel from '../components/ExperimentE5Panel';
+import SiouxFallsPanel from '../components/SiouxFallsPanel';
 import Logo from '../components/Logo';
 import Badge from '../components/ui/Badge';
 import IconButton from '../components/ui/IconButton';
@@ -150,8 +155,8 @@ function DashboardShell({ onExitToOverview }) {
     max_iterations: 100,
     seed: 42,
     weights: {
-      alpha: 1.0,
-      beta: 0.5,
+      travel_time_weight: 1.0,
+      distance_weight: 0.5,
       gamma: 1.0,
       penalty_weight: 1000.0
     }
@@ -363,9 +368,21 @@ function DashboardShell({ onExitToOverview }) {
 
   // First click sets the depot; clicking the depot again clears it so it can
   // be re-picked; every other click toggles that node as a delivery stop.
+  //
+  // A node promoted to depot must also be removed from the draft stop list:
+  // without this, clearing the depot (click depot -> null) and then
+  // re-clicking a node that was already a draft stop set BOTH draftDepotId
+  // and draftStopIds to that same node id. Confirm Placement would then send
+  // depot_node_id === one of job_node_ids, which the backend's
+  // customize_scenario correctly rejects with "depot_node_id cannot also be
+  // a delivery stop" - so the map still showed the pick as a depot marker
+  // (isDraftDepot is checked first in NetworkMap) while Confirm silently
+  // failed. Stripping the id out of draftStopIds when it becomes the depot
+  // keeps draft depot/stop membership mutually exclusive at all times.
   const handlePlaceNode = (nodeId) => {
     if (draftDepotId === null) {
       setDraftDepotId(nodeId);
+      setDraftStopIds(prev => (prev.includes(nodeId) ? prev.filter(id => id !== nodeId) : prev));
       return;
     }
     if (nodeId === draftDepotId) {
@@ -443,7 +460,11 @@ function DashboardShell({ onExitToOverview }) {
     const params = new URLSearchParams({
       algorithm: cfg.algorithm,
       population_size: String(cfg.population_size),
-      max_iterations: String(cfg.max_iterations)
+      max_iterations: String(cfg.max_iterations),
+      // Distinct from the scenario's own generation seed (already stored
+      // server-side as scenario.seed) - this is the solver's RNG seed for
+      // this specific run, which the backend does not otherwise retain.
+      solver_seed: String(cfg.seed)
     });
     try {
       const res = await apiFetch(`/api/scenario/${id}/manifest?${params}`);
@@ -773,7 +794,12 @@ function DashboardShell({ onExitToOverview }) {
   // ═══════════════════════════════════════════
   return (
     <div className="min-h-screen bg-[#0D0C0B] text-gray-100 flex flex-col font-sans selection:bg-[#C6602E] selection:text-white">
-      {loading && activeOperation && <OperationOverlay operation={activeOperation} />}
+      {/* Suppressed during the silent auto-bootstrap generate+optimize chain
+          (see "Auto-bootstrap on startup" below) - that run populates the
+          Executive Overview on first load and isn't a user-initiated
+          operation, so it must not show the same full-screen overlay a real
+          Optimize/Re-optimize/Benchmark click does. */}
+      {loading && activeOperation && autoBootstrapStage === 'done' && <OperationOverlay operation={activeOperation} />}
 
       {/* ═══ HEADER ═══ */}
       {/* z-[1200]: must sit above Leaflet's internal panes/controls (400-1000),
@@ -1005,10 +1031,16 @@ function DashboardShell({ onExitToOverview }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <ScalabilityPanel />
             <ReproducibilityPanel />
+            <ExperimentE1Panel />
+            <ExperimentE2Panel />
+            <ExperimentE4Panel />
+            <ExperimentE5Panel />
           </div>
         )}
 
         <ArchetypeBenchmarkPanel config={config} />
+
+        <SiouxFallsPanel />
       </footer>
     </div>
   );

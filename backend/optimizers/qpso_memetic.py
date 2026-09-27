@@ -88,7 +88,7 @@ class MemeticQPSOOptimizer(BaseOptimizer):
         c += self.cong[(cur, self.depot)]
 
         # Timing, including wait/lateness - the one shared timing function.
-        sched = simulate_route(route, v, self.depot, self.time_m, self.jobs_by_pos)
+        sched = simulate_route(route, v, self.depot, self.time_m, self.jobs_by_pos, include_stops=False)
         t = sched.travel_time
 
         pen = 0.0
@@ -104,7 +104,7 @@ class MemeticQPSOOptimizer(BaseOptimizer):
         if sched.lateness > 0:
             pen += pw * (sched.lateness / max(v.max_route_time, 1e-9)) ** 2
             pen += pw * 0.05 * sched.late_jobs
-        return w.alpha * t + w.beta * d + w.gamma * c + pen
+        return w.travel_time_weight * t + w.distance_weight * d + w.gamma * c + pen
 
     # ---------- keys <-> routes ----------
     def _keys_to_routes(self, keys):
@@ -215,14 +215,17 @@ class MemeticQPSOOptimizer(BaseOptimizer):
         jump_cap = max(0.3, 3.0 / (1 + m / 20.0))  # bounded ln(1/u)
 
         for it in range(1, T):
-            alpha = 1.0 - 0.6 * it / T
+            # Linearly decreasing contraction-expansion coefficient (same
+            # quantity optimizers/qpso.py calls `ce_coef`; kept under one
+            # name across both live QPSO variants).
+            ce_coef = 1.0 - 0.6 * it / T
             mbest = pbest.mean(axis=0)
             phi = rng.random((n, m))
             p = phi * pbest + (1 - phi) * gbest
             u = np.clip(rng.random((n, m)), 1e-10, 1 - 1e-10)
             jump = np.minimum(np.log(1 / u), jump_cap)
             sign = np.where(rng.random((n, m)) < 0.5, -1.0, 1.0)
-            X = np.clip(p + sign * alpha * np.abs(mbest - X) * jump, 0.0, 1 - 1e-9)
+            X = np.clip(p + sign * ce_coef * np.abs(mbest - X) * jump, 0.0, 1 - 1e-9)
             for i in range(n):
                 c = fit(X[i])
                 if c < pcost[i]:

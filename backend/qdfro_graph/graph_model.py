@@ -4,10 +4,10 @@ from .schema import NodeAttrs, EdgeAttrs, VehicleRoute
 
 
 ROAD_CLASS_DEFAULTS = {
-    "freeway": {"speed_m_s": 30.0, "cap_per_lane": 2000.0, "alpha": 0.15, "beta": 4.0},
-    "arterial": {"speed_m_s": 16.67, "cap_per_lane": 1200.0, "alpha": 0.15, "beta": 4.0},
-    "collector": {"speed_m_s": 11.11, "cap_per_lane": 800.0, "alpha": 0.15, "beta": 4.0},
-    "local": {"speed_m_s": 8.33, "cap_per_lane": 500.0, "alpha": 0.15, "beta": 4.0},
+    "freeway": {"speed_m_s": 30.0, "cap_per_lane": 2000.0, "bpr_alpha": 0.15, "bpr_beta": 4.0},
+    "arterial": {"speed_m_s": 16.67, "cap_per_lane": 1200.0, "bpr_alpha": 0.15, "bpr_beta": 4.0},
+    "collector": {"speed_m_s": 11.11, "cap_per_lane": 800.0, "bpr_alpha": 0.15, "bpr_beta": 4.0},
+    "local": {"speed_m_s": 8.33, "cap_per_lane": 500.0, "bpr_alpha": 0.15, "bpr_beta": 4.0},
 }
 
 

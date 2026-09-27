@@ -209,6 +209,64 @@ def test_generate_rejects_demand_min_above_demand_max():
     assert response.status_code == 400
 
 
+def test_generate_rejects_zero_vehicles():
+    """num_vehicles=0 must be a clean 400, not the bare ZeroDivisionError
+    generate_synthetic_scenario currently raises (vehicle capacity is
+    derived by dividing total demand across vehicles)."""
+    response = client.post("/api/problem/generate", json={
+        "num_nodes": 15, "num_jobs": 6, "num_vehicles": 0, "seed": 3,
+    })
+    assert response.status_code == 400
+    assert "num_vehicles" in response.json()["detail"]
+
+
+def test_generate_rejects_negative_num_jobs():
+    response = client.post("/api/problem/generate", json={
+        "num_nodes": 15, "num_jobs": -1, "num_vehicles": 2, "seed": 3,
+    })
+    assert response.status_code == 400
+    assert "num_jobs" in response.json()["detail"]
+
+
+def test_generate_still_allows_zero_jobs():
+    """num_jobs=0 is a deliberately supported contract (see
+    test_exact_optimizer.py) and must not be rejected by the new
+    num_jobs < 0 check."""
+    response = client.post("/api/problem/generate", json={
+        "num_nodes": 15, "num_jobs": 0, "num_vehicles": 2, "seed": 3,
+    })
+    assert response.status_code == 200
+    assert response.json()["job_count"] == 0
+
+
+def test_generate_rejects_zero_num_nodes():
+    response = client.post("/api/problem/generate", json={
+        "num_nodes": 0, "num_jobs": 6, "num_vehicles": 2, "seed": 3,
+    })
+    assert response.status_code == 400
+    assert "num_nodes" in response.json()["detail"]
+
+
+def test_generate_rejects_non_positive_tw_width_when_time_windows_enabled():
+    response = client.post("/api/problem/generate", json={
+        "num_nodes": 15, "num_jobs": 6, "num_vehicles": 2, "seed": 3,
+        "time_windows": True, "tw_width_min": -30.0,
+    })
+    assert response.status_code == 400
+    assert "tw_width_min" in response.json()["detail"]
+
+
+def test_generate_ignores_tw_width_validation_when_time_windows_disabled():
+    """The tw_width_min check only applies when time_windows is actually
+    requested - a caller who leaves time_windows off (the default) should
+    not be blocked by an irrelevant, unused parameter."""
+    response = client.post("/api/problem/generate", json={
+        "num_nodes": 15, "num_jobs": 6, "num_vehicles": 2, "seed": 3,
+        "time_windows": False, "tw_width_min": -30.0,
+    })
+    assert response.status_code == 200
+
+
 def test_generate_applies_demand_range_and_capacity_override():
     body = _generate(demand_min=9.0, demand_max=9.0, vehicle_capacity_override=42.0)
     scenario = body["scenario"]
@@ -298,7 +356,7 @@ def test_benchmark_and_evaluate_accept_scenario_id():
     ev = client.post("/api/evaluate", json={
         "scenario_id": scenario_id,
         "routes": routes,
-        "weights": {"alpha": 2.0, "beta": 0.1, "gamma": 3.0, "penalty_weight": 500.0},
+        "weights": {"travel_time_weight": 2.0, "distance_weight": 0.1, "gamma": 3.0, "penalty_weight": 500.0},
     })
     assert ev.status_code == 200
     assert ev.json()["total_cost"] > 0
@@ -340,7 +398,7 @@ def test_legacy_inline_scenario_still_works_for_every_endpoint():
     ev = client.post("/api/evaluate", json={
         "scenario": dumped,
         "routes": [r.model_dump() for r in result.routes],
-        "weights": {"alpha": 1.0, "beta": 0.5, "gamma": 1.0, "penalty_weight": 1000.0},
+        "weights": {"travel_time_weight": 1.0, "distance_weight": 0.5, "gamma": 1.0, "penalty_weight": 1000.0},
     })
     assert ev.status_code == 200
 

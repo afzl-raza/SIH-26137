@@ -55,8 +55,11 @@ class PSOOptimizer(BaseOptimizer):
         convergence_history: List[float] = []
         convergence_elapsed_ms: List[float] = []
 
+        # include_stops=False: evaluate_solution only reads cost aggregates,
+        # never per-stop timing, and this loop runs pop_size * max_iter times
+        # - the winning position gets its full stops rebuilt once at the end.
         for i in range(pop_size):
-            routes = decode_random_keys(X[i], scenario, dist_matrix, time_matrix, paths_dict)
+            routes = decode_random_keys(X[i], scenario, dist_matrix, time_matrix, paths_dict, include_stops=False)
             res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map)
             pbest_cost[i] = res.total_cost
             pbest_routes[i] = routes
@@ -82,7 +85,7 @@ class PSOOptimizer(BaseOptimizer):
 
             # Evaluate new positions
             for i in range(pop_size):
-                routes = decode_random_keys(X[i], scenario, dist_matrix, time_matrix, paths_dict)
+                routes = decode_random_keys(X[i], scenario, dist_matrix, time_matrix, paths_dict, include_stops=False)
                 res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map)
 
                 if res.total_cost < pbest_cost[i]:
@@ -97,6 +100,11 @@ class PSOOptimizer(BaseOptimizer):
 
             convergence_history.append(gbest_cost)
             convergence_elapsed_ms.append((time.perf_counter() - start_time) * 1000.0)
+
+        # The search above only used cost aggregates, so gbest_routes was
+        # decoded with include_stops=False. Rebuild the winning position
+        # once, in full, for the result actually returned/rendered.
+        gbest_routes = decode_random_keys(gbest_pos, scenario, dist_matrix, time_matrix, paths_dict)
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
