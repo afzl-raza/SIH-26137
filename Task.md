@@ -47,6 +47,15 @@ untouched, 421/421 passing.
 Not done this pass (flagged, not forgotten): a mobile-responsive pass on
 Overview.jsx itself - untested below desktop width.
 
+**Merged with `origin/main` immediately after** (guest access, demo auth,
+landing page rework, real Overview alerts/recent-routes/activity data, map
+view controls, Sioux Falls + experiment panels) - one real conflict in
+`Overview.jsx` (both sides touched the same prop-passing block), resolved
+by taking the union of props. Verified live on a fresh tab: guest login ->
+Overview -> disrupted a road -> the disruption correctly showed up as a
+real alert in the teammate's new `OverviewAlerts.jsx`, an emergent synergy
+neither side built for the other. 454/454 backend tests passing.
+
 ---
 
 ## Overview screen + benchmark visual upgrade ✅ Done (2026-09-26)
