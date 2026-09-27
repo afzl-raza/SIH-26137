@@ -3,6 +3,7 @@ import { Menu, X } from 'lucide-react';
 import Logo from '../Logo';
 
 const NAV_LINKS = [
+  { href: '#how-it-works', label: 'How It Works' },
   { href: '#technology', label: 'Technology' },
   { href: '#platform', label: 'Platform' }
 ];
