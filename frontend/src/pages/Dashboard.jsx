@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import NetworkMap from '../components/NetworkMap';
 import ControlPanel from '../components/ControlPanel';
 import VehicleInspector from '../components/VehicleInspector';
@@ -71,6 +71,16 @@ function DashboardShell({ onExitToOverview }) {
   // The backend owns the scenario after generation; requests refer to it
   // by id instead of uploading the whole graph on every interaction.
   const [scenarioId, setScenarioId] = useState(null);
+  // Bumped on every handleGenerateScenario call, checked by both that
+  // function and handleOptimize before committing their response. An OSM
+  // generate can legitimately take 20-90s (Nominatim + Overpass); if the
+  // operator generates again (a new place, or just impatiently retries)
+  // before the first call returns, or optimizes a scenario that gets
+  // replaced mid-flight, the older response must never overwrite state a
+  // newer generate has already moved past - that would silently show a
+  // stale scenario/route (and refit the viewport to it) instead of the one
+  // actually on screen.
+  const generationTokenRef = useRef(0);
   const [currentResult, setCurrentResult] = useState(null);
   const [previousResult, setPreviousResult] = useState(null);
   const [benchmarkData, setBenchmarkData] = useState(null);
@@ -254,6 +264,7 @@ function DashboardShell({ onExitToOverview }) {
   // and generate in one action without waiting for a state update to land.
   const handleGenerateScenario = async (sourceOverride) => {
     const source = (typeof sourceOverride === 'string') ? sourceOverride : networkSource;
+    const requestToken = ++generationTokenRef.current;
     setLoading(true);
     setActiveOperation('generate');
     setError(null);
@@ -296,6 +307,10 @@ function DashboardShell({ onExitToOverview }) {
         throw new Error(detail?.detail || 'Failed to generate network scenario');
       }
       const data = await res.json();
+      // A newer generate call started (a place retried, or the source
+      // switched) and this response is no longer the latest - it must not
+      // overwrite whatever the operator is now looking at.
+      if (requestToken !== generationTokenRef.current) return null;
       setScenario(data.scenario);
       setScenarioId(data.scenario_id);
       setCurrentResult(null);
@@ -341,11 +356,17 @@ function DashboardShell({ onExitToOverview }) {
 
       return data;
     } catch (err) {
+      if (requestToken !== generationTokenRef.current) return null; // superseded - stay quiet
       setError(err.message);
       return null;
     } finally {
-      setLoading(false);
-      setActiveOperation(null);
+      // Only the latest request owns the shared loading/activeOperation
+      // state - a superseded one finishing late must not clear it out from
+      // under whichever generate call is now actually in flight.
+      if (requestToken === generationTokenRef.current) {
+        setLoading(false);
+        setActiveOperation(null);
+      }
     }
   };
 
@@ -489,6 +510,10 @@ function DashboardShell({ onExitToOverview }) {
       : scenarioId;
     if (!activeScenarioId) return;
     const activeConfig = configOverride || config;
+    // If a newer scenario is generated (or manual placement confirmed)
+    // before this optimize call returns, its result must not land on top of
+    // that newer scenario - see generationTokenRef above.
+    const tokenAtStart = generationTokenRef.current;
     setLoading(true);
     setError(null);
     const isReopt = networkState === 'DISRUPTED';
@@ -507,6 +532,7 @@ function DashboardShell({ onExitToOverview }) {
         throw new Error(detail?.detail || 'Optimization failed');
       }
       const data = await res.json();
+      if (tokenAtStart !== generationTokenRef.current) return; // superseded scenario - discard
 
       if (currentResult) {
         setPreviousResult(currentResult);
@@ -538,11 +564,14 @@ function DashboardShell({ onExitToOverview }) {
         action: { label: 'View results', onClick: scrollToResults }
       });
     } catch (err) {
+      if (tokenAtStart !== generationTokenRef.current) return; // superseded - stay quiet
       setError(err.message);
       setStatusState('ERROR');
     } finally {
-      setLoading(false);
-      setActiveOperation(null);
+      if (tokenAtStart === generationTokenRef.current) {
+        setLoading(false);
+        setActiveOperation(null);
+      }
     }
   };
 

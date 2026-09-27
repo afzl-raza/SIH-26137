@@ -62,6 +62,51 @@ export function mergeBounds(...boxes) {
   }));
 }
 
+// A route's real OSM geometry is drawn straight from each edge's own way
+// shape (see route_geometry.py), which is a lookup, not a computation - it
+// legitimately reflects the actual road. But a way that only clips the
+// corner of the network's query area is still returned by Overpass with its
+// COMPLETE geometry, endpoint to endpoint, however far outside that area
+// the rest of the way runs (a long highway is the common case). If the
+// optimizer's route ever uses such a hop, that one edge's geometry can carry
+// the auto-fit viewport out to wherever the real road happens to keep
+// going - up to a national-highway's whole length away from the depot and
+// every delivery stop - even though the scenario's own nodes are all
+// tightly clustered.
+//
+// So route/edge geometry is allowed to expand the viewport past the
+// scenario's own node bounds (`anchor` - depot + delivery stops, the actual
+// selected area) only up to a bounded multiple of the anchor's own size,
+// plus a small fixed floor so a genuinely tiny anchor (a dense micro-cluster
+// a few metres across) still gets enough room to show a real road's normal
+// curve. A road's ordinary bulge is always far under this; only the
+// pathological "way exits the requested area entirely" case ever hits the
+// cap. Nothing here depends on where the anchor actually is - the same
+// factor and floor apply regardless of scenario location.
+const ROUTE_BULGE_MAX_FACTOR = 3; // route/edge geometry may extend the
+                                   // anchor's own span by up to 3x on a side
+const ROUTE_BULGE_MIN_MARGIN_DEG = 0.02; // ~2km floor for a very small anchor
+
+export function clampBoundsToAnchor(bounds, anchor, {
+  maxExpansionFactor = ROUTE_BULGE_MAX_FACTOR,
+  minMarginDeg = ROUTE_BULGE_MIN_MARGIN_DEG
+} = {}) {
+  if (!bounds) return null;
+  if (!anchor) return bounds; // nothing to clamp against - let it through
+
+  const anchorLatSpan = anchor.maxLat - anchor.minLat;
+  const anchorLngSpan = anchor.maxLng - anchor.minLng;
+  const latMargin = Math.max(anchorLatSpan * maxExpansionFactor, minMarginDeg);
+  const lngMargin = Math.max(anchorLngSpan * maxExpansionFactor, minMarginDeg);
+
+  return {
+    minLat: Math.max(bounds.minLat, anchor.minLat - latMargin),
+    maxLat: Math.min(bounds.maxLat, anchor.maxLat + latMargin),
+    minLng: Math.max(bounds.minLng, anchor.minLng - lngMargin),
+    maxLng: Math.min(bounds.maxLng, anchor.maxLng + lngMargin)
+  };
+}
+
 // Every location in this app is real (synthetic-but-simulated, or actual
 // OpenStreetMap data) - never literally on top of one another down to the
 // centimetre unless the scenario really does put a stop at the depot. But

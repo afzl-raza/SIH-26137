@@ -12,6 +12,7 @@ import {
   isValidLatLng,
   computeBounds,
   mergeBounds,
+  clampBoundsToAnchor,
   padBoundsIfTooSmall,
   estimateInitialZoom,
   boundsCenter,
@@ -467,7 +468,14 @@ export default function NetworkMap({
     if (!isNewScenario && !isNewResult) return;
     lastFitRef.current = { scenarioId, result: currentResult };
 
-    const target = mergeBounds(scenarioBounds, currentResult ? routeBounds : null);
+    // scenarioBounds (depot + delivery stops) is the actual selected area;
+    // routeBounds is clamped to it so one real-but-far-clipping OSM way
+    // can't drag the viewport out to wherever that road happens to keep
+    // going (see clampBoundsToAnchor) - a normal route's own bulge is always
+    // well inside the clamp, so this only ever affects the pathological case.
+    const rawRouteExtent = currentResult ? routeBounds : null;
+    const clampedRouteExtent = clampBoundsToAnchor(rawRouteExtent, scenarioBounds);
+    const target = mergeBounds(scenarioBounds, clampedRouteExtent);
     const leafletBounds = toLeafletBounds(padBoundsIfTooSmall(target));
     if (!leafletBounds) return; // no valid coordinates yet - nothing to fit to
 
@@ -570,7 +578,8 @@ export default function NetworkMap({
   const handleFitAllStops = () => {
     const controller = mapControllerRef.current;
     if (!controller) return;
-    const leafletBounds = toLeafletBounds(padBoundsIfTooSmall(mergeBounds(scenarioBounds, routeBounds)));
+    const clampedRouteExtent = clampBoundsToAnchor(routeBounds, scenarioBounds);
+    const leafletBounds = toLeafletBounds(padBoundsIfTooSmall(mergeBounds(scenarioBounds, clampedRouteExtent)));
     if (leafletBounds) controller.flyToBounds(leafletBounds, { ...DEFAULT_FIT_OPTIONS, duration: 0.8 });
   };
 
