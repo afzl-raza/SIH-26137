@@ -246,20 +246,35 @@ export default function NetworkMap({
     return map;
   }, [jobs]);
 
-  // Groups job-carrying nodes that sit at (or within ~11m of) the same real
-  // coordinate, so they render as one marker with a count instead of
-  // silently-stacked, unclickable duplicates. A node's own coordinate is
-  // never altered by this - grouping only changes which marker(s) get drawn
-  // for it, never where it actually is. Groups of size 1 (the overwhelming
-  // common case) render exactly as a single job always has.
-  const JOB_GROUP_EPS_DEG = 0.0001; // ~11m at these latitudes
+  // Groups job-carrying nodes that sit at the exact same real coordinate
+  // (e.g. several consignees recorded against the same building/node), so
+  // they render as one marker with a count instead of silently-stacked,
+  // unclickable duplicates. Grouping key is the node's own [lat, lng] -
+  // nothing else - which is what keeps the invariant below actually true.
+  //
+  // This used to bucket by a rounded ~11m epsilon instead of exact
+  // equality, so two job nodes that were merely NEAR each other (not at the
+  // same coordinate) landed in the same bucket and were drawn as ONE marker
+  // at whichever node's coordinate happened to be inserted first. Every
+  // other job in that bucket then had its visible marker sitting at a
+  // coordinate that was not its own - while activeRouteLines (built straight
+  // from nodeMap/node_path, see above) still drew that job's route ending at
+  // its own true node. The marker and the route endpoint disagreed by up to
+  // the epsilon radius for any job that wasn't first into its bucket.
+  // Grouping strictly by the literal coordinate value removes that
+  // possibility: a group's rendered position is then, by construction, the
+  // exact coordinate of every job in it, not an approximation of some of
+  // them. A node's own coordinate is never altered by this - grouping only
+  // changes which marker(s) get drawn for it, never where it actually is.
+  // Groups of size 1 (the overwhelming common case) render exactly as a
+  // single job always has.
   const jobNodeGroups = useMemo(() => {
     const groups = new Map();
     nodes.forEach(n => {
       if (n.is_depot) return;
       const jobObj = jobMap.get(n.id);
       if (!jobObj || !isValidLatLng(n.lat, n.lng)) return;
-      const key = `${Math.round(n.lat / JOB_GROUP_EPS_DEG)}:${Math.round(n.lng / JOB_GROUP_EPS_DEG)}`;
+      const key = `${n.lat}:${n.lng}`;
       if (!groups.has(key)) groups.set(key, { lat: n.lat, lng: n.lng, entries: [] });
       groups.get(key).entries.push({ node: n, job: jobObj });
     });
