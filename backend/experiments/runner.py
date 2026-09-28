@@ -46,14 +46,39 @@ def _resolve_output_dir(output_root: Optional[Path], name: str) -> Path:
     return out_dir
 
 
+def _normalize_solver_weights(cfg: dict) -> dict:
+    """Normalizes legacy weight aliases (alpha/beta -> travel_time_weight/distance_weight)
+    so frozen config comparison matches semantics rather than field name evolution."""
+    if not isinstance(cfg, dict):
+        return cfg
+    cfg_copy = dict(cfg)
+    if "solver" in cfg_copy and isinstance(cfg_copy["solver"], dict):
+        solver_copy = dict(cfg_copy["solver"])
+        if "weights" in solver_copy and isinstance(solver_copy["weights"], dict):
+            w = dict(solver_copy["weights"])
+            if "alpha" in w and "travel_time_weight" not in w:
+                w["travel_time_weight"] = w.pop("alpha")
+            elif "alpha" in w:
+                w.pop("alpha")
+            if "beta" in w and "distance_weight" not in w:
+                w["distance_weight"] = w.pop("beta")
+            elif "beta" in w:
+                w.pop("beta")
+            solver_copy["weights"] = w
+        cfg_copy["solver"] = solver_copy
+    return cfg_copy
+
+
 def _write_frozen_config(out_dir: Path, config_dict: dict) -> None:
     """Writes config.json on first run. On a later run into the same folder,
     raises if the configuration differs - protects experiment evidence from
     being silently overwritten by a differently-configured run."""
     config_path = out_dir / "config.json"
+    normalized_new = _normalize_solver_weights(config_dict)
     if config_path.exists():
         existing = json.loads(config_path.read_text())
-        if existing != config_dict:
+        normalized_existing = _normalize_solver_weights(existing)
+        if normalized_existing != normalized_new:
             raise RuntimeError(
                 f"'{out_dir.name}' already has a frozen config.json with "
                 f"different parameters. Delete {out_dir} first if you intend "
@@ -61,6 +86,7 @@ def _write_frozen_config(out_dir: Path, config_dict: dict) -> None:
             )
     else:
         config_path.write_text(json.dumps(config_dict, indent=2))
+
 
 
 def run_e1_algorithm_comparison(
