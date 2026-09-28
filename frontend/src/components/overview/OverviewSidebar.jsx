@@ -1,21 +1,32 @@
 import React, { useState } from 'react';
-import { Route, Map, Truck, FlaskConical, BarChart3, LayoutGrid, ChevronsUpDown, Lightbulb, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Route, Atom, Truck, FlaskConical, BarChart3, LayoutGrid, ChevronsUpDown, Lightbulb, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useToast } from '../ui/Toast';
+import { setPendingScrollTarget } from '../../lib/dashboardScrollTarget';
 
-// Nav copy and structure pulled directly from the approved Figma frame
-// ("Q-DFRO operations dashboard", node 4:3537 "Destinations"). Only
-// "Overview" is a real, active view this round - the rest have nothing
-// built behind them yet, but every one of their real capabilities already
-// exists in the Dashboard workflow, so clicking one doesn't just say "not
-// built" - it explains where the real thing lives and offers a one-click
-// way there instead of a dead end.
-const DESTINATIONS = [
-  { id: 'overview', label: 'Overview', icon: LayoutGrid, active: true },
-  { id: 'plan', label: 'Plan a route', icon: Route, note: "This dedicated view isn't built yet - the real route planner is one click away." },
-  { id: 'traffic', label: 'Live traffic', icon: Map, note: "This dedicated view isn't built yet - simulate real traffic conditions from the Dashboard now." },
-  { id: 'fleet', label: 'Fleet', icon: Truck, note: "Fleet management isn't built yet - vehicles are visible and selectable on the Dashboard's map today." },
-  { id: 'simulations', label: 'Simulations', icon: FlaskConical, note: "This dedicated view isn't built yet - Run Benchmark on the Dashboard compares algorithms for real, right now." },
-  { id: 'reports', label: 'Reports', icon: BarChart3, note: "Saved reports aren't built yet - the real evidence panels (E1-E6) are on the Dashboard after Run Benchmark." },
+// Regrouped around what genuinely exists in Dashboard.jsx, each pointing at
+// a real DOM section id there (see dashboardScrollTarget.js for how that
+// crosses the Overview/Dashboard view boundary) - not a placeholder
+// destination with a "coming soon" toast. A destination only appears here
+// if there is a real, always-rendered section behind it; anything without
+// one (a saved-reports page, per-user settings) was left out entirely
+// rather than kept as a disabled link.
+const NAV_GROUPS = [
+  {
+    label: 'Main',
+    items: [
+      { id: 'overview', label: 'Overview', icon: LayoutGrid, active: true },
+      { id: 'route-optimizer', label: 'Route Optimizer', icon: Route, target: 'network-map-section' },
+    ]
+  },
+  {
+    label: 'Analysis',
+    items: [
+      { id: 'benchmarks', label: 'Benchmarks', icon: BarChart3, target: 'benchmark-section' },
+      { id: 'qpso-explainability', label: 'QPSO Explainability', icon: Atom, target: 'qpso-explainability-section' },
+      { id: 'fleet', label: 'Fleet', icon: Truck, target: 'vehicle-inspector-section' },
+      { id: 'experiments', label: 'Experiments', icon: FlaskConical, target: 'experiments-section' },
+    ]
+  }
 ];
 
 // Static operator tips, unrelated to live traffic conditions (those are
@@ -44,11 +55,9 @@ export default function OverviewSidebar({ open, onClose, onEnterDashboard }) {
   };
 
   const handleDestinationClick = (d) => {
-    toast(`${d.label} isn't built yet`, {
-      tone: 'error',
-      detail: d.note,
-      action: onEnterDashboard ? { label: 'Open Dashboard', onClick: onEnterDashboard } : undefined
-    });
+    if (!onEnterDashboard) return;
+    setPendingScrollTarget(d.target);
+    onEnterDashboard();
   };
 
   return (
@@ -103,29 +112,35 @@ export default function OverviewSidebar({ open, onClose, onEnterDashboard }) {
           <ChevronsUpDown size={14} className="text-[#817970] flex-shrink-0" />
         </button>
 
-        {/* Destinations */}
-        <nav className="flex-1 flex flex-col gap-1">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-[#817970] px-2 mb-1">
-            Operations
-          </div>
-          {DESTINATIONS.map(d => {
-            const Icon = d.icon;
-            return (
-              <button
-                key={d.id}
-                type="button"
-                onClick={d.active ? undefined : () => handleDestinationClick(d)}
-                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] transition-colors text-left ${
-                  d.active
-                    ? 'bg-[#FF7A1A]/15 text-[#FFF9F1] font-semibold cursor-default'
-                    : 'text-[#817970] hover:text-[#B9B0A5] hover:bg-[#211E1A]'
-                }`}
-              >
-                <Icon size={16} className={d.active ? 'text-[#FF7A1A]' : 'text-[#817970]'} />
-                {d.label}
-              </button>
-            );
-          })}
+        {/* Destinations - grouped, every non-active item is a real anchor
+            into Dashboard.jsx (see NAV_GROUPS above), not a dead end. */}
+        <nav className="flex-1 flex flex-col gap-3 overflow-y-auto">
+          {NAV_GROUPS.map(group => (
+            <div key={group.label} className="flex flex-col gap-1">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#817970] px-2 mb-1">
+                {group.label}
+              </div>
+              {group.items.map(d => {
+                const Icon = d.icon;
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={d.active ? undefined : () => handleDestinationClick(d)}
+                    title={d.active ? undefined : `Jump to the real ${d.label} section in the Dashboard`}
+                    className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] transition-colors text-left ${
+                      d.active
+                        ? 'bg-[#FF7A1A]/15 text-[#FFF9F1] font-semibold cursor-default'
+                        : 'text-[#817970] hover:text-[#B9B0A5] hover:bg-[#211E1A]'
+                    }`}
+                  >
+                    <Icon size={16} className={d.active ? 'text-[#FF7A1A]' : 'text-[#817970]'} />
+                    {d.label}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         {/* Operator tip */}

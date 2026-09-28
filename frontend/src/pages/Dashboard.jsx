@@ -17,12 +17,14 @@ import ExperimentE5Panel from '../components/ExperimentE5Panel';
 import SiouxFallsPanel from '../components/SiouxFallsPanel';
 import Logo from '../components/Logo';
 import Badge from '../components/ui/Badge';
+import Button from '../components/ui/Button';
 import IconButton from '../components/ui/IconButton';
 import { ToastProvider, useToast } from '../components/ui/Toast';
 import OperationOverlay from '../components/ui/OperationOverlay';
 import { apiFetch } from '../api';
 import { DEFAULT_POPULATION_SIZE, DEFAULT_MAX_ITERATIONS } from '../lib/solverDefaults';
-import { Activity, ArrowLeft, X } from 'lucide-react';
+import { consumePendingScrollTarget } from '../lib/dashboardScrollTarget';
+import { Activity, AlertTriangle, ArrowLeft, RefreshCw, X } from 'lucide-react';
 
 // Pulls the condition-provenance envelope out of any scenario-carrying
 // response. Pure field selection - no value is derived or invented here; the
@@ -227,6 +229,35 @@ function DashboardShell({ onExitToOverview }) {
   useEffect(() => {
     handleGenerateScenario().then(() => setAutoBootstrapStage('generated'));
   }, []);
+
+  // Real anchor-link navigation from Overview's sidebar (see
+  // OverviewSidebar.jsx + lib/dashboardScrollTarget.js): Overview and
+  // Dashboard are separate top-level views (App.jsx's hash switch unmounts
+  // one and mounts the other), so a plain in-page scroll ref can't cross
+  // that boundary - the target section id travels via sessionStorage
+  // instead. Reads the pending target once on mount (so a later normal
+  // render of this same effect - e.g. autoBootstrapStage moving to
+  // 'generated' - doesn't re-consume an already-cleared key), but only
+  // actually scrolls once autoBootstrapStage reaches 'done': the real
+  // generate+optimize call this page always makes on load is what gives
+  // results-section (and everything below it) its real height - scrolling
+  // any earlier lands short, on a page that's about to grow taller under
+  // the viewport.
+  const [pendingScrollTarget] = useState(consumePendingScrollTarget);
+  useEffect(() => {
+    if (!pendingScrollTarget || autoBootstrapStage !== 'done') return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        // benchmark-section only exists once a benchmark has actually been
+        // run this session - results-section (always present once the
+        // auto-bootstrap optimize completes) is the honest fallback rather
+        // than silently doing nothing.
+        const el = document.getElementById(pendingScrollTarget)
+          || (pendingScrollTarget === 'benchmark-section' ? document.getElementById('results-section') : null);
+        el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  }, [pendingScrollTarget, autoBootstrapStage]);
 
   useEffect(() => {
     if (autoBootstrapStage === 'generated' && scenarioId) {
@@ -703,6 +734,20 @@ function DashboardShell({ onExitToOverview }) {
       } else {
         setStatusState('INCIDENT');
         setNetworkState('DISRUPTED');
+        // Real severity label, from the backend's own congestion_level
+        // classification on the now-updated edge (realdata/conditions.py's
+        // CONGESTION_BANDS) - not a threshold re-derived here from
+        // congestionFactor, per this project's no-duplicated-logic rule.
+        const updatedEdge = data.scenario.edges.find(
+          e => (e.source === targetSource && e.destination === targetDest) ||
+               (e.source === targetDest && e.destination === targetSource)
+        );
+        if (updatedEdge) {
+          setIncidentInfo(prev => prev && {
+            ...prev,
+            congestionLevel: updatedEdge.congestion_level
+          });
+        }
       }
       refreshManifest(scenarioId);
       if (benchmarkData) setBenchmarkStale(true);
@@ -902,6 +947,50 @@ function DashboardShell({ onExitToOverview }) {
       {/* ═══ WORKFLOW INDICATOR ═══ */}
       <WorkflowIndicator currentStage={demoStage} narrativeText={narrativeText} />
 
+      {/* ═══ TRAFFIC INCIDENT BANNER ═══
+          The same real incidentInfo ControlPanel's sidebar already shows
+          (road, congestion factor, affected vehicles), promoted to a
+          full-width can't-miss banner for the moment this project's dynamic
+          re-optimization story actually happens - not a separate mocked-up
+          alert. congestionLevel is the backend's own real classification
+          (set once the traffic update response comes back - see
+          applyIncident), so this only shows a severity word the backend
+          actually assigned, never a value invented on the frontend. No
+          "expected delay" figure here on purpose: that number doesn't exist
+          until the real re-optimize runs and produces an actual before/after
+          travel-time difference (see MetricCards' headline stat), so it
+          isn't guessed at ahead of time. */}
+      {incidentInfo && networkState === 'DISRUPTED' && (
+        <div className="bg-[#3A1C18] border-b-2 border-[#C1443B] px-3 sm:px-6 py-3 flex flex-col sm:flex-row items-center gap-3">
+          <div className="flex items-center gap-2 text-[#E8918A] font-bold text-sm flex-shrink-0">
+            <AlertTriangle size={18} className="animate-pulse" />
+            TRAFFIC INCIDENT
+          </div>
+          <div className="flex-1 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[12px] text-[#E8C5C0]">
+            <span className="font-semibold text-white">{incidentInfo.roadName}</span>
+            {incidentInfo.congestionLevel && (
+              <span className="uppercase tracking-wider text-[#E8A93A] font-bold">
+                {incidentInfo.congestionLevel.replace('_', ' ')}
+              </span>
+            )}
+            <span className="text-[#B96B63]">×{incidentInfo.congestionFactor} congestion</span>
+            <span className="text-[#B96B63]">
+              {incidentInfo.affectedVehicleIds?.length || 0} vehicle(s) affected
+            </span>
+          </div>
+          <Button
+            variant="warning"
+            size="sm"
+            icon={RefreshCw}
+            onClick={handleReOptimize}
+            disabled={loading}
+            className="flex-shrink-0"
+          >
+            Re-Optimize
+          </Button>
+        </div>
+      )}
+
       {/* ═══ MOBILE VIEWPORT SWITCHER (small screens) ═══ */}
       <div className="lg:hidden flex border-b border-[#332E29] bg-[#171513] p-1.5 gap-2 px-3 sm:px-6 shadow-md">
           <button
@@ -947,7 +1036,9 @@ function DashboardShell({ onExitToOverview }) {
             appear to do nothing (the camera moved, just off-screen below
             the fold). Below lg, the grid is single-column so this stretching
             never happens and h-full is unaffected. */}
-        <div className={`lg:col-span-3 min-h-[350px] sm:min-h-[480px] lg:min-h-[480px] h-full lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] w-full ${
+        <div
+          id="network-map-section"
+          className={`lg:col-span-3 min-h-[350px] sm:min-h-[480px] lg:min-h-[480px] h-full lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] w-full scroll-mt-4 ${
           activeMobileTab === 'map' ? 'block' : 'hidden lg:block'
         }`}>
           <NetworkMap
@@ -1030,17 +1121,21 @@ function DashboardShell({ onExitToOverview }) {
             onConfirmPlacement={handleConfirmPlacement}
           />
 
-          <VehicleInspector
-            vehicle={selectedVehicle}
-            route={selectedRoute}
-            scenario={scenario}
-            onDeselect={() => {
-              setSelectedVehicle(null);
-              setSelectedRoute(null);
-            }}
-          />
+          <div id="vehicle-inspector-section" className="scroll-mt-4">
+            <VehicleInspector
+              vehicle={selectedVehicle}
+              route={selectedRoute}
+              scenario={scenario}
+              onDeselect={() => {
+                setSelectedVehicle(null);
+                setSelectedRoute(null);
+              }}
+            />
+          </div>
 
-          <QPSOExplainability config={config} scenario={scenario} />
+          <div id="qpso-explainability-section" className="scroll-mt-4">
+            <QPSOExplainability config={config} scenario={scenario} />
+          </div>
 
           <ArchitectureSnapshot />
         </div>
@@ -1077,7 +1172,7 @@ function DashboardShell({ onExitToOverview }) {
                 visitor has no way to know these are real, independently-run
                 experiments (not decoration), or what "Run Now" does versus
                 the "Pre-computed evidence" label some panels show instead. */}
-            <div className="clean-card p-3.5 rounded-xl border border-[#3A342E] text-xs text-gray-400 leading-relaxed">
+            <div id="experiments-section" className="clean-card p-3.5 rounded-xl border border-[#3A342E] text-xs text-gray-400 leading-relaxed scroll-mt-4">
               <span className="font-semibold text-gray-300">What is this section? </span>
               Each card below is a real, independent experiment (E1–E6) that tests a specific claim about the
               solver — which algorithm finds the cheapest routes, whether it actually converges, whether it

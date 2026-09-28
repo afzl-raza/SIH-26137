@@ -1,6 +1,33 @@
 import React from 'react';
 import { Truck, Clock, Gauge, CheckCircle2, XCircle, Loader2, Sparkles } from 'lucide-react';
 
+// A small inline sparkline from the real QPSO convergence_history the
+// optimize call already returned (see Overview.jsx's OPTIMIZE_CONFIG run) -
+// no extra API call and no charting dependency for something this small.
+// Only ever plots values the solver actually recorded; returns null (no
+// curve drawn) for anything with fewer than 2 points, same honesty rule
+// BenchmarkPanel's full-size chart already follows for Greedy's single-pass
+// result.
+function ConvergenceSparkline({ history }) {
+  if (!Array.isArray(history) || history.length < 2) return null;
+  const min = Math.min(...history);
+  const max = Math.max(...history);
+  const span = max - min || 1;
+  const w = 100;
+  const h = 28;
+  const points = history.map((v, i) => {
+    const x = (i / (history.length - 1)) * w;
+    const y = h - ((v - min) / span) * h;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-7" preserveAspectRatio="none" aria-hidden="true">
+      <polyline points={points} fill="none" stroke="#10b981" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 // Every value here comes from a real /api/problem/generate + /api/optimize
 // run (see Overview.jsx) - the same endpoints and the same OptimizationResult
 // shape Dashboard.jsx uses, plus a real Greedy (nearest-stop) run on the
@@ -32,9 +59,14 @@ export default function OverviewMetrics({ scenario, result, baseline, loading, e
           detail: `${result.total_distance.toFixed(1)} km driven, whole fleet combined`,
         },
         {
-          icon: Gauge, accent: '#F5B942', label: 'Efficiency score',
+          icon: Gauge, accent: '#10b981', label: 'Efficiency score',
           value: result.total_cost.toFixed(1),
           detail: `Lower is better - time, distance & traffic combined · solved in ${(result.runtime_ms / 1000).toFixed(2)}s`,
+          hero: true,
+          chart: <ConvergenceSparkline history={result.convergence_history} />,
+          chartCaption: Array.isArray(result.convergence_history) && result.convergence_history.length > 1
+            ? `Real convergence · ${result.convergence_history.length} recorded iterations`
+            : null,
         },
         {
           icon: result.is_feasible ? CheckCircle2 : XCircle,
@@ -64,10 +96,16 @@ export default function OverviewMetrics({ scenario, result, baseline, loading, e
             </p>
           </div>
           {hasRealImprovement && (
-            <div className="flex items-center gap-2 bg-[#FF7A1A]/10 border border-[#FF7A1A]/30 rounded-xl px-3.5 py-2 flex-shrink-0">
+            <div
+              className="flex items-center gap-2 bg-[#FF7A1A]/10 border border-[#FF7A1A]/30 rounded-xl px-3.5 py-2 flex-shrink-0"
+              style={{ boxShadow: '0 0 28px -10px rgba(255,122,26,0.55)' }}
+            >
               <Sparkles size={16} className="text-[#FF7A1A]" />
               <div>
-                <div className="font-display font-bold text-[18px] text-[#FF7A1A] leading-none">
+                <div
+                  className="font-display font-bold text-[22px] text-[#FF7A1A] leading-none"
+                  style={{ textShadow: '0 0 18px rgba(255,122,26,0.5)' }}
+                >
                   {improvementPct.toFixed(0)}% more efficient
                 </div>
                 <div className="text-[10px] text-[#817970] mt-0.5">
@@ -91,17 +129,30 @@ export default function OverviewMetrics({ scenario, result, baseline, loading, e
           </div>
         )}
         {cards.map(m => (
-          <div key={m.label} className="bg-[#211E1A] border border-[#3B342A] rounded-xl p-4">
+          <div
+            key={m.label}
+            className="bg-[#211E1A] border rounded-xl p-4"
+            style={m.hero ? { borderColor: `${m.accent}55`, boxShadow: `0 0 24px -8px ${m.accent}66` } : { borderColor: '#3B342A' }}
+          >
             <div className="flex items-center gap-2 mb-3">
               <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${m.accent}22`, color: m.accent }}>
                 <m.icon size={14} />
               </div>
               <span className="text-[11px] text-[#B9B0A5]">{m.label}</span>
             </div>
-            <div className="font-display font-bold text-[26px] text-[#FFF9F1] leading-none mb-1.5">
+            <div
+              className="font-display font-bold text-[26px] leading-none mb-1.5"
+              style={m.hero ? { color: m.accent, textShadow: `0 0 20px ${m.accent}55` } : { color: '#FFF9F1' }}
+            >
               {m.value}
             </div>
             <div className="text-[10px] text-[#817970]">{m.detail}</div>
+            {m.chart && (
+              <div className="mt-2.5 pt-2.5 border-t border-[#3B342A]">
+                {m.chart}
+                {m.chartCaption && <div className="text-[9px] text-[#817970] mt-1">{m.chartCaption}</div>}
+              </div>
+            )}
           </div>
         ))}
       </div>

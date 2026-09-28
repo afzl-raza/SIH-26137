@@ -52,6 +52,56 @@ export default function MetricCards({ result, previousResult, weights, manifest,
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Headline result - the same "impossible to miss" treatment
+          Overview's hero banner already uses for its own real efficiency
+          number, ported here for the real before/after re-optimize delta.
+          Only appears once there's an actual previousResult to compare
+          against (i.e. after a real re-optimize, not the very first run) -
+          shows the honest direction (down is good, up is a real
+          regression) rather than only ever announcing improvement. */}
+      {previousResult && costChange !== 0 && (
+        <div className={`clean-panel rounded-xl p-5 sm:p-6 border flex flex-col sm:flex-row items-center gap-4 sm:gap-6 ${
+          isImproved ? 'border-[#6B9A57]/30 bg-[#6B9A57]/5' : 'border-[#E8A93A]/30 bg-[#E8A93A]/5'
+        }`}>
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+            {result.is_feasible ? (
+              <span className="flex items-center gap-1 text-[#6B9A57]"><CheckCircle2 size={14} /> Optimization Complete</span>
+            ) : (
+              <span className="flex items-center gap-1 text-[#C1443B]"><AlertTriangle size={14} /> Optimization Complete</span>
+            )}
+            <span className="text-gray-600">·</span>
+            <span className={result.is_feasible ? 'text-[#6B9A57]' : 'text-[#C1443B]'}>
+              {result.is_feasible ? 'Feasible' : `${result.constraint_violations || 0} violation(s)`}
+            </span>
+          </div>
+          <div className="flex-1 flex flex-col sm:flex-row items-center gap-4 sm:gap-8 w-full">
+            <div className="text-center sm:text-left flex-shrink-0">
+              <div
+                className="font-display text-4xl sm:text-5xl font-bold tabular-nums leading-none"
+                style={{ color: isImproved ? '#10b981' : '#E8A93A' }}
+              >
+                {isImproved ? '' : '+'}{Math.abs(costChange).toFixed(1)}%
+              </div>
+              <div className="text-gray-500 text-[11px] uppercase tracking-wider mt-1.5">
+                Cost {isImproved ? 'Reduction' : 'Increase'}
+              </div>
+            </div>
+            <div className="hidden sm:block w-px h-10 bg-[#332E29] flex-shrink-0" />
+            <div className="flex items-center gap-6 sm:gap-8 font-mono text-sm">
+              <div className="text-center sm:text-left">
+                <div className="text-gray-500 text-[10px] uppercase tracking-wider">Before</div>
+                <div className="text-gray-400 tabular-nums">{previousResult.total_cost?.toFixed(1)}</div>
+              </div>
+              <ArrowRight size={16} className="text-gray-600 flex-shrink-0" />
+              <div className="text-center sm:text-left">
+                <div className="text-gray-500 text-[10px] uppercase tracking-wider">After</div>
+                <div className="text-white font-bold tabular-nums">{result.total_cost?.toFixed(1)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Solver Output — one dense row, cost given slightly more weight
           via a left accent border rather than a separate oversized block */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4">
