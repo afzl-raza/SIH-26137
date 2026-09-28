@@ -1071,14 +1071,41 @@ function DashboardShell({ onExitToOverview }) {
         )}
 
         {demoStage === 'PROVE' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <ScalabilityPanel />
-            <ReproducibilityPanel />
-            <ExperimentE1Panel />
-            <ExperimentE2Panel />
-            <ExperimentE4Panel />
-            <ExperimentE5Panel />
-          </div>
+          <>
+            {/* Plain-language orientation for anyone seeing this section for
+                the first time - not just judges. Without this, a first-time
+                visitor has no way to know these are real, independently-run
+                experiments (not decoration), or what "Run Now" does versus
+                the "Pre-computed evidence" label some panels show instead. */}
+            <div className="clean-card p-3.5 rounded-xl border border-[#3A342E] text-xs text-gray-400 leading-relaxed">
+              <span className="font-semibold text-gray-300">What is this section? </span>
+              Each card below is a real, independent experiment (E1–E6) that tests a specific claim about the
+              solver — which algorithm finds the cheapest routes, whether it actually converges, whether it
+              still works as the problem grows, and whether the same answer comes back on a re-run. Every
+              number is real output from the solver, generated ahead of time and saved with this project so it
+              never depends on this particular browser session.
+              {' '}
+              <span className="text-gray-500">
+                Where a card shows{' '}
+                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded border border-[#332E29]">Run Now</span>,
+                clicking it re-executes that real experiment live, right now, against this session's backend.
+                Where it shows{' '}
+                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded border border-[#332E29]">Pre-computed evidence</span>{' '}
+                instead, live re-running is turned off (these experiments use a full solver budget that can take
+                minutes on this hosted demo's free-tier hardware) — the numbers shown are still real, just generated
+                ahead of time rather than in front of you.
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <ScalabilityPanel />
+              <ReproducibilityPanel />
+              <ExperimentE1Panel />
+              <ExperimentE2Panel />
+              <ExperimentE4Panel />
+              <ExperimentE5Panel />
+            </div>
+          </>
         )}
 
         <ArchetypeBenchmarkPanel config={config} />
