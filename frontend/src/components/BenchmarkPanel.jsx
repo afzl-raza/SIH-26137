@@ -5,23 +5,36 @@ import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
-  PointElement,
-  LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend
 } from 'chart.js';
-import { Line } from 'react-chartjs-2';
+import { Bar } from 'react-chartjs-2';
 
 ChartJS.register(
   CategoryScale,
   LinearScale,
-  PointElement,
-  LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend
 );
+
+// convergence_history can have up to max_iterations (often 100) real
+// recorded points per algorithm - a literal one-bar-per-iteration chart
+// with 5 algorithms would draw 500+ bars and be unreadable. Sampling down
+// to a fixed number of evenly-spaced checkpoints (always including the
+// first and last recorded iteration) keeps every plotted value a real,
+// unmodified best_cost the solver actually recorded - nothing interpolated
+// or averaged - while staying legible as a bar chart.
+const MAX_CONVERGENCE_BARS = 14;
+function sampleIndices(length, maxPoints) {
+  if (length <= maxPoints) return Array.from({ length }, (_, i) => i);
+  const step = (length - 1) / (maxPoints - 1);
+  const indices = Array.from({ length: maxPoints }, (_, i) => Math.round(i * step));
+  return Array.from(new Set(indices));
+}
 
 // Single source of truth for per-algorithm color across the chart, bar
 // visualization, and table - previously three separate switch statements
@@ -106,23 +119,26 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
   // Convergence Chart data - "exact" is excluded on purpose: it solves
   // directly rather than iterating, so a convergence curve doesn't apply
   // to it (a single flat point would misrepresent what it does).
-  const chartDatasets = [];
+  const rawConvergence = [];
   ['pso', 'ga', 'qpso', 'qpso_ls', 'qpso_memetic'].forEach(id => {
     if (results[id] && results[id].convergence_history) {
-      chartDatasets.push({
-        label: results[id].algorithm || id.toUpperCase(),
-        data: results[id].convergence_history,
-        borderColor: getAlgorithmColor(id).hex,
-        backgroundColor: getAlgorithmColor(id).hex,
-        tension: 0.1,
-        pointRadius: 0,
-        borderWidth: 2
-      });
+      rawConvergence.push({ id, history: results[id].convergence_history });
     }
   });
+  const longestHistory = Math.max(0, ...rawConvergence.map(r => r.history.length));
+  const sampledIdx = sampleIndices(longestHistory, MAX_CONVERGENCE_BARS);
+
+  const chartDatasets = rawConvergence.map(({ id, history }) => ({
+    label: results[id].algorithm || id.toUpperCase(),
+    data: sampledIdx.map(i => history[Math.min(i, history.length - 1)] ?? null),
+    backgroundColor: getAlgorithmColor(id).hex,
+    borderRadius: 2,
+    categoryPercentage: 0.7,
+    barPercentage: 0.85
+  }));
 
   const chartData = {
-    labels: chartDatasets.length > 0 ? Array.from({ length: chartDatasets[0].data.length }, (_, i) => i) : [],
+    labels: sampledIdx.map(i => `#${i}`),
     datasets: chartDatasets
   };
 
@@ -139,7 +155,8 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
     scales: {
       x: {
         grid: { color: '#332E29' },
-        ticks: { color: '#9CA3AF', maxTicksLimit: 10 }
+        title: { display: true, text: 'Iteration', color: '#9CA3AF' },
+        ticks: { color: '#9CA3AF' }
       },
       y: {
         title: { display: true, text: 'Objective Cost', color: '#9CA3AF' },
@@ -371,12 +388,13 @@ export default function BenchmarkPanel({ benchmarkData, onClose, config, onPrevi
         <h3 className="text-xs font-semibold text-gray-400 tracking-wider">
           CONVERGENCE — best objective cost per recorded iteration
         </h3>
-        <div className="h-44">
-          <Line data={chartData} options={chartOptions} />
+        <div className="h-56">
+          <Bar data={chartData} options={chartOptions} />
         </div>
         <p className="text-[10px] text-gray-500 font-mono">
-          Every point is a value the solver recorded during this run. Greedy constructs its
-          solution in a single pass, so it has no curve to plot and is not charted.
+          Every bar is a value the solver actually recorded during this run - nothing interpolated.
+          {longestHistory > MAX_CONVERGENCE_BARS && ` Sampled to ${sampledIdx.length} evenly-spaced checkpoints out of ${longestHistory} recorded iterations for readability.`}
+          {' '}Greedy constructs its solution in a single pass, so it has no curve to plot and is not charted.
         </p>
       </div>
 

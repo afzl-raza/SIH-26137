@@ -7,15 +7,28 @@ import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
-  PointElement,
-  LineElement,
+  BarElement,
   Tooltip,
   Legend
 } from 'chart.js';
-import { Line } from 'react-chartjs-2';
+import { Bar } from 'react-chartjs-2';
 import { ALLOW_LIVE_EXPERIMENT_RERUN } from '../lib/solverDefaults';
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
+
+// best_cost is recorded once per iteration (often up to 100) for each of 3
+// algorithms - a literal one-bar-per-iteration chart would draw 300+ bars
+// and be unreadable. Sampling to a fixed number of evenly-spaced
+// checkpoints (always including the first and last recorded iteration)
+// keeps every plotted value a real, unmodified recorded best_cost, just
+// fewer of them shown for legibility.
+const MAX_CONVERGENCE_BARS = 14;
+function sampleIndices(length, maxPoints) {
+  if (length <= maxPoints) return Array.from({ length }, (_, i) => i);
+  const step = (length - 1) / (maxPoints - 1);
+  const indices = Array.from({ length: maxPoints }, (_, i) => Math.round(i * step));
+  return Array.from(new Set(indices));
+}
 
 function algoColor(id) {
   return ALGORITHM_COLORS[id]?.hex || '#9CA3AF';
@@ -131,16 +144,16 @@ export default function ExperimentE2Panel() {
   });
 
   const maxLen = Math.max(0, ...Object.values(grouped).map(v => v.length));
+  const sampledIdx = sampleIndices(maxLen, MAX_CONVERGENCE_BARS);
   const chartData = {
-    labels: Array.from({ length: maxLen }, (_, i) => i),
+    labels: sampledIdx.map(i => `#${i}`),
     datasets: Object.entries(grouped).map(([algo, values]) => ({
       label: algo.toUpperCase(),
-      data: values,
-      borderColor: algoColor(algo),
+      data: sampledIdx.map(i => values[Math.min(i, values.length - 1)] ?? null),
       backgroundColor: algoColor(algo),
-      tension: 0.1,
-      pointRadius: 0,
-      borderWidth: 2
+      borderRadius: 2,
+      categoryPercentage: 0.7,
+      barPercentage: 0.85
     }))
   };
 
@@ -149,7 +162,7 @@ export default function ExperimentE2Panel() {
     maintainAspectRatio: false,
     animation: { duration: 400, easing: 'easeOutQuad' },
     scales: {
-      x: { grid: { color: '#332E29' }, ticks: { color: '#9CA3AF', maxTicksLimit: 10 } },
+      x: { grid: { color: '#332E29' }, title: { display: true, text: 'Iteration', color: '#9CA3AF' }, ticks: { color: '#9CA3AF' } },
       y: { title: { display: true, text: 'Best Cost', color: '#9CA3AF' }, grid: { color: '#332E29' }, ticks: { color: '#9CA3AF' } }
     },
     plugins: { legend: { labels: { color: '#D1D5DB', boxWidth: 12, padding: 15 } } }
@@ -193,9 +206,16 @@ export default function ExperimentE2Panel() {
       {chartData.datasets.length === 0 ? (
         <p className="text-[11px] text-gray-600">No rows in the stored results.</p>
       ) : (
-        <div className="h-[220px]">
-          <Line data={chartData} options={chartOptions} />
-        </div>
+        <>
+          <div className="h-[220px]">
+            <Bar data={chartData} options={chartOptions} />
+          </div>
+          {maxLen > MAX_CONVERGENCE_BARS && (
+            <p className="text-[9px] text-gray-600 font-mono">
+              Sampled to {sampledIdx.length} evenly-spaced checkpoints out of {maxLen} recorded iterations for readability.
+            </p>
+          )}
+        </>
       )}
     </div>
   );

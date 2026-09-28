@@ -1097,7 +1097,13 @@ function DashboardShell({ onExitToOverview }) {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* items-start: without it, CSS Grid's default `stretch` forces
+                each short card (e.g. Reproducibility, E4) to match its
+                row-mate's height whenever one card has much more content
+                (e.g. Scalability's full sweep table) - leaving visible dead
+                space inside the shorter card instead of just letting it be
+                its own natural height. */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
               <ScalabilityPanel />
               <ReproducibilityPanel />
               <ExperimentE1Panel />
