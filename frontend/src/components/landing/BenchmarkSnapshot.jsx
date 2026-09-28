@@ -1,5 +1,5 @@
 import React from 'react';
-import { Scale } from 'lucide-react';
+import { Scale, Info } from 'lucide-react';
 
 // Real algorithms Q-DFRO benchmarks against (backend/optimizers/benchmark.py
 // run_benchmark) and the real metrics BenchmarkPanel.jsx reports
@@ -31,20 +31,29 @@ export default function BenchmarkSnapshot() {
         </div>
 
         <div className="clean-card rounded-2xl p-5 sm:p-6 landing-fade-up" style={{ animationDelay: '0.1s' }}>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-1">
             <p className="text-[11px] font-mono font-semibold text-gray-300 uppercase tracking-wide">
               Algorithm Performance
             </p>
-            <span className="text-[10px] font-mono text-gray-600">Illustrative</span>
+            <span className="inline-flex items-center gap-1 text-[9px] font-mono font-bold uppercase tracking-wide text-[#E8A93A] bg-[#3A2318] border border-[#5A3A22] px-2 py-0.5 rounded-full">
+              <Info className="w-2.5 h-2.5" />
+              Example layout
+            </span>
           </div>
+          <p className="text-[11px] text-gray-500 mb-4 leading-snug">
+            Not real results &mdash; every bar below is drawn the same length on purpose, to show the comparison layout without a live run to measure.
+          </p>
 
           <div className="space-y-3">
             {ALGORITHMS.map((algo) => (
               <div key={algo} className="flex items-center gap-3">
                 <span className="w-12 flex-shrink-0 text-[11px] font-mono text-gray-400">{algo}</span>
-                <div className="flex-1 h-2 rounded-full bg-[#26221D] overflow-hidden">
-                  <div className="h-full w-full rounded-full bg-[#3A342E]" />
-                </div>
+                <div
+                  className="flex-1 h-2 rounded-full bg-[#26221D] overflow-hidden"
+                  style={{
+                    backgroundImage: 'repeating-linear-gradient(-45deg, #3A342E 0px, #3A342E 5px, #2A2620 5px, #2A2620 10px)'
+                  }}
+                />
               </div>
             ))}
           </div>
@@ -58,8 +67,8 @@ export default function BenchmarkSnapshot() {
           </div>
 
           <p className="mt-4 text-xs text-gray-500 leading-relaxed">
-            Real numbers for each metric are generated live in the platform when
-            you run a benchmark &mdash; nothing here is a fixed result.
+            <span className="text-gray-300 font-semibold">Real numbers appear once you run a benchmark in the platform</span>
+            {' '}&mdash; nothing on this landing page is a fixed or precomputed result.
           </p>
         </div>
       </div>
