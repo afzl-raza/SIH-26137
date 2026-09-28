@@ -12,6 +12,7 @@ import {
   isValidLatLng,
   computeBounds,
   mergeBounds,
+  clampBoundsToAnchor,
   padBoundsIfTooSmall,
   estimateInitialZoom,
   boundsCenter,
@@ -165,6 +166,7 @@ const createVehicleMarkerIcon = (vehicleId, color, isSelected) => L.divIcon({
 export default function NetworkMap({
   scenario,
   scenarioId,
+  networkMeta,
   loading,
   currentResult,
   previousResult,
@@ -216,6 +218,21 @@ export default function NetworkMap({
     return computeBounds(base.map(n => [n.lat, n.lng]));
   }, [nodes, jobNodeIds]);
 
+  // For an OSM scenario, the backend already knows the exact bounded area
+  // the user selected (place + radius). Use that bounded area as the map's
+  // initial operating area instead of letting one road geometry determine the
+  // camera. Synthetic scenarios continue to use their actual scenario nodes.
+  const selectedAreaBounds = useMemo(() => {
+    if (!networkMeta?.bbox) return null;
+    const { min_lat, min_lon, max_lat, max_lon } = networkMeta.bbox;
+    return computeBounds([
+      [min_lat, min_lon],
+      [max_lat, max_lon]
+    ]);
+  }, [networkMeta]);
+
+  const viewportAnchorBounds = selectedAreaBounds || scenarioBounds;
+
   const depotLatLng = useMemo(() => {
     const depotNode = nodes.find(n => n.is_depot);
     return depotNode && isValidLatLng(depotNode.lat, depotNode.lng)
@@ -224,6 +241,19 @@ export default function NetworkMap({
   }, [nodes]);
 
   const mapControllerRef = useRef(null);
+  // react-leaflet's MapContainer mounts in two passes: its wrapping div's
+  // ref callback constructs the Leaflet map and calls setState, and only on
+  // the NEXT render/commit does it actually render children like
+  // MapViewController - so an effect declared here (NetworkMap, the
+  // PARENT) that runs during that FIRST commit will always find
+  // mapControllerRef.current still null, with nothing about the ref itself
+  // ever changing to prompt a retry. MapViewController's onReady callback
+  // (fired the moment its own useMap() first returns a real map) flips this,
+  // giving the auto-fit effect below a real dependency to react to - without
+  // it, a scenario/result that both arrive in a single render (as
+  // OverviewLiveMap.jsx does) would never get auto-fit at all, confirmed via
+  // a real render test, not assumed.
+  const [mapReady, setMapReady] = useState(false);
   // The Leaflet map only reads MapContainer's `center`/`zoom` props once, at
   // construction - so this has to be a one-time computation from whatever
   // data is available on first render, not a value that tracks later
@@ -467,7 +497,21 @@ export default function NetworkMap({
     if (!isNewScenario && !isNewResult) return;
     lastFitRef.current = { scenarioId, result: currentResult };
 
-    const target = mergeBounds(scenarioBounds, currentResult ? routeBounds : null);
+    // scenarioBounds (depot + delivery stops) is the actual selected area;
+    // routeBounds is clamped to it so one real-but-far-clipping OSM way
+    // can't drag the viewport out to wherever that road happens to keep
+    // going (see clampBoundsToAnchor) - a normal route's own bulge is always
+    // well inside the clamp, so this only ever affects the pathological case.
+    const rawRouteExtent = currentResult ? routeBounds : null;
+    const routeAnchor = selectedAreaBounds || scenarioBounds;
+    const clampedRouteExtent = clampBoundsToAnchor(
+      rawRouteExtent,
+      routeAnchor,
+      selectedAreaBounds ? { maxExpansionFactor: 0, minMarginDeg: 0 } : undefined
+    );
+    const target = selectedAreaBounds
+      ? selectedAreaBounds
+      : mergeBounds(scenarioBounds, clampedRouteExtent);
     const leafletBounds = toLeafletBounds(padBoundsIfTooSmall(target));
     if (!leafletBounds) return; // no valid coordinates yet - nothing to fit to
 
@@ -476,7 +520,14 @@ export default function NetworkMap({
     } else {
       controller.flyToBounds(leafletBounds, { ...DEFAULT_FIT_OPTIONS, duration: 0.9 });
     }
-  }, [scenarioId, currentResult, scenarioBounds, routeBounds]);
+    // mapReady is intentionally a dependency, not just a guard read above:
+    // MapContainer's two-pass mount means this effect's FIRST relevant run
+    // (right after a scenario/result change) can catch mapControllerRef
+    // still null, and nothing about that ref changes to prompt a retry -
+    // mapReady flipping true is the one dependency that reliably re-runs
+    // this effect once the controller genuinely exists, so a fit is never
+    // silently and permanently skipped (confirmed via a real render test).
+  }, [scenarioId, currentResult, scenarioBounds, routeBounds, selectedAreaBounds, mapReady]);
 
   // Per-vehicle-color glow rule, applied via className (not a duplicated
   // Polyline) - avoids the zoom/pan micro-stutter a second SVG path per
@@ -558,7 +609,7 @@ export default function NetworkMap({
   // see the ref's declaration earlier for why this can't just be a useMemo
   // that tracks later changes.
   if (initialViewportRef.current === null) {
-    const fallbackBounds = scenarioBounds || computeBounds(nodes.map(n => [n.lat, n.lng]));
+    const fallbackBounds = viewportAnchorBounds || computeBounds(nodes.map(n => [n.lat, n.lng]));
     const padded = padBoundsIfTooSmall(fallbackBounds);
     initialViewportRef.current = {
       center: boundsCenter(padded) || [nodes[0].lat, nodes[0].lng],
@@ -570,7 +621,8 @@ export default function NetworkMap({
   const handleFitAllStops = () => {
     const controller = mapControllerRef.current;
     if (!controller) return;
-    const leafletBounds = toLeafletBounds(padBoundsIfTooSmall(mergeBounds(scenarioBounds, routeBounds)));
+    const clampedRouteExtent = clampBoundsToAnchor(routeBounds, scenarioBounds);
+    const leafletBounds = toLeafletBounds(padBoundsIfTooSmall(mergeBounds(scenarioBounds, clampedRouteExtent)));
     if (leafletBounds) controller.flyToBounds(leafletBounds, { ...DEFAULT_FIT_OPTIONS, duration: 0.8 });
   };
 
@@ -773,7 +825,7 @@ export default function NetworkMap({
         {/* Renders nothing - owns the invalidateSize lifecycle and exposes
             fitToBounds/flyToBounds/setView to the plain-React buttons above
             via mapControllerRef (see MapViewController.jsx). */}
-        <MapViewController ref={mapControllerRef} />
+        <MapViewController ref={mapControllerRef} onReady={() => setMapReady(true)} />
 
         {mapView === 'gis' && (
           // Standard OSM raster tiles at full brightness - a dark CSS

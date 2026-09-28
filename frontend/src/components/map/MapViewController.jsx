@@ -15,30 +15,81 @@ import { useMap } from 'react-leaflet';
 //   2. Expose a small imperative API (fitToBounds / flyToBounds / setView)
 //      up to the plain-React toolbar that lives *outside* the map (the
 //      Fit All Stops / Focus Depot / Focus Vehicle / Reset View buttons),
-//      since those buttons cannot call useMap() themselves.
+//      since those buttons cannot call useMap() themselves - and up to
+//      NetworkMap's own auto-fit effect, the same way.
+//
+//   3. Tell NetworkMap, via `onReady`, the moment this component actually
+//      has a live map to hand out through that imperative API. react-leaflet's
+//      MapContainer mounts in two passes - the wrapping <div>'s ref callback
+//      constructs the Leaflet map and calls setState, and only on the
+//      NEXT render (a separate commit) does it actually render children
+//      like this component - so a `ref`/effect in the PARENT (NetworkMap)
+//      that runs during the FIRST commit will always see this component's
+//      own ref as not-yet-attached, with no further render/effect ever
+//      re-triggered by that (nothing about a plain `mapControllerRef` ever
+//      changes). Without `onReady`, that parent effect's one and only
+//      chance to fit the map to the new scenario/result is silently and
+//      permanently missed - confirmed via a real render test, not assumed.
 //
 // It never decides *what* bounds to show - NetworkMap computes those from
 // the actual scenario data. This component only knows how to point an
 // already-mounted Leaflet map at a box it's given, safely and without
 // fighting the user's own pan/zoom.
-const MapViewController = forwardRef(function MapViewController(_props, ref) {
+const MapViewController = forwardRef(function MapViewController({ onReady } = {}, ref) {
   const map = useMap();
   const lastSizeRef = useRef({ width: 0, height: 0 });
   const rafIdsRef = useRef([]);
+  // A fit requested while this container has no real pixel size (a hidden
+  // mobile "Controls" tab - the map's wrapping div is display:none whenever
+  // Dashboard.jsx's activeMobileTab !== 'map', and the Generate button that
+  // starts a new scenario/result lives on that OTHER tab - or any other
+  // genuinely zero-sized moment) can't be computed correctly: Leaflet's
+  // getBoundsZoom divides by the container's current pixel size
+  // (map.getSize()), so a 0x0 read produces a nonsensically low zoom - the
+  // map ends up "zoomed out to a huge area" - no matter how tight and
+  // correct the bounds passed in were. invalidateSize() alone can't fix
+  // this after the fact: it only re-syncs Leaflet's projection to whatever
+  // center/zoom is ALREADY set, it never re-fits to a target. So a fit
+  // asked for while hidden is remembered here and genuinely (re-)applied
+  // once the container is next observed to have a real size.
+  const pendingFitRef = useRef(null);
+
+  useEffect(() => {
+    if (map) onReady?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map]);
+
+  const hasRealSize = () => {
+    if (!map) return false;
+    const size = map.getSize();
+    return size.x > 0 && size.y > 0;
+  };
+
+  const applyOrDefer = (kind, leafletBounds, options) => {
+    if (!map || !leafletBounds) return;
+    if (!hasRealSize()) {
+      pendingFitRef.current = { kind, leafletBounds, options };
+      return;
+    }
+    pendingFitRef.current = null;
+    if (kind === 'fit') {
+      map.fitBounds(leafletBounds, options);
+    } else {
+      map.flyToBounds(leafletBounds, options);
+    }
+  };
 
   useImperativeHandle(ref, () => ({
     fitToBounds(leafletBounds, options = {}) {
-      if (!map || !leafletBounds) return;
-      map.fitBounds(leafletBounds, options);
+      applyOrDefer('fit', leafletBounds, options);
     },
     flyToBounds(leafletBounds, options = {}) {
-      if (!map || !leafletBounds) return;
       // flyToBounds animates; a user who has the tab in the background or
       // prefers-reduced-motion still gets a correct final view because
       // Leaflet clamps duration internally when the map isn't visible, and
       // we always pass a bounded duration below rather than relying on
       // defaults drifting later.
-      map.flyToBounds(leafletBounds, options);
+      applyOrDefer('fly', leafletBounds, options);
     },
     setView(center, zoom, options = {}) {
       if (!map || !center) return;
@@ -72,6 +123,16 @@ const MapViewController = forwardRef(function MapViewController(_props, ref) {
     const id1 = requestAnimationFrame(() => {
       const id2 = requestAnimationFrame(() => {
         map.invalidateSize();
+        // The container may have gained a real size only just now (this is
+        // the very case (a) exists for) - if a fit was deferred waiting for
+        // that, apply it for real rather than leaving it pending until some
+        // later, unrelated resize happens to fire the observer below.
+        if (pendingFitRef.current && hasRealSize()) {
+          const { kind, leafletBounds, options } = pendingFitRef.current;
+          pendingFitRef.current = null;
+          if (kind === 'fit') map.fitBounds(leafletBounds, options);
+          else map.flyToBounds(leafletBounds, options);
+        }
       });
       rafIdsRef.current.push(id2);
     });
@@ -94,6 +155,17 @@ const MapViewController = forwardRef(function MapViewController(_props, ref) {
         lastSizeRef.current = { width, height };
         if (width === 0 || height === 0) return; // still hidden - nothing to do yet
         map.invalidateSize();
+        // The container just went from zero (or unknown) to a real size -
+        // e.g. the mobile "Controls" tab that was active when Generate ran
+        // just got switched back to "Map". A fit requested while hidden
+        // couldn't be computed correctly then; apply it for real now that
+        // Leaflet has an actual size to measure against.
+        if (pendingFitRef.current) {
+          const { kind, leafletBounds, options } = pendingFitRef.current;
+          pendingFitRef.current = null;
+          if (kind === 'fit') map.fitBounds(leafletBounds, options);
+          else map.flyToBounds(leafletBounds, options);
+        }
       });
       observer.observe(container);
     }
