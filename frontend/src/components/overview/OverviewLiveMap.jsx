@@ -10,7 +10,7 @@ import NetworkMap from '../NetworkMap';
 // the copy is careful to say "today's plan", not "live".
 export default function OverviewLiveMap({ scenario, scenarioId, result, loading, refreshing, error, onDisruptEdge }) {
   return (
-    <div className="bg-[#211E1A] border border-[#3B342A] rounded-2xl p-5 flex flex-col">
+    <div data-tour="live-map" className="bg-[#211E1A] border border-[#3B342A] rounded-2xl p-5 flex flex-col">
       <div className="flex items-start justify-between mb-1 flex-wrap gap-2">
         <div>
           <div className="flex items-center gap-1.5">

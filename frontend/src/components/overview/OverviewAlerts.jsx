@@ -10,7 +10,7 @@ import { useToast } from '../ui/Toast';
 // incident (that only happens from the Dashboard), so every edge sits at
 // free_flow here and this will normally show the empty state below - that's
 // an honest reflection of "no conditions applied to this run", not a bug.
-export default function OverviewAlerts({ scenario, result, loading, error }) {
+export default function OverviewAlerts({ scenario, result, loading, error, onStartTour }) {
   const toast = useToast();
   const affectedEdges = (scenario?.edges || []).filter(
     e => e.congestion_level !== 'free_flow' || e.has_incident
@@ -18,7 +18,7 @@ export default function OverviewAlerts({ scenario, result, loading, error }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="bg-[#211E1A] border border-[#3B342A] rounded-2xl p-5">
+      <div data-tour="alerts" className="bg-[#211E1A] border border-[#3B342A] rounded-2xl p-5">
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-1.5">
             <h2 className="font-display font-bold text-[15px] text-[#FFF9F1]">Traffic alerts</h2>
@@ -77,12 +77,10 @@ export default function OverviewAlerts({ scenario, result, loading, error }) {
           <h3 className="font-display font-bold text-[14px] text-[#FFF9F1]">Need help?</h3>
         </div>
         <p className="text-[11px] text-[#B9B0A5] mb-3">
-          Take a 3-minute tour of planning your first route.
+          Take a 1-minute tour of this page's real data and its one live interaction.
         </p>
         <button
-          onClick={() => toast('Guided tour isn\'t built yet', {
-            detail: 'Try the real thing instead: click any road on the map above to simulate a disruption and watch the plan re-optimize.'
-          })}
+          onClick={onStartTour}
           className="bg-[#FF7A1A] hover:bg-[#E86D10] text-[#100F0D] font-display font-bold text-[12px] px-3.5 py-2 rounded-lg transition-colors"
         >
           Start guided tour

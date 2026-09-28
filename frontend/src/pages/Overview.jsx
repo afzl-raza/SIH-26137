@@ -7,6 +7,7 @@ import OverviewLiveMap from '../components/overview/OverviewLiveMap';
 import OverviewAlerts from '../components/overview/OverviewAlerts';
 import OverviewRecentRoutes from '../components/overview/OverviewRecentRoutes';
 import OverviewActivity from '../components/overview/OverviewActivity';
+import GuidedTour from '../components/overview/GuidedTour';
 import { ToastProvider } from '../components/ui/Toast';
 import { apiFetch } from '../api';
 import { DEFAULT_POPULATION_SIZE, DEFAULT_MAX_ITERATIONS } from '../lib/solverDefaults';
@@ -41,6 +42,7 @@ function OverviewShell({ onEnterDashboard, onExitToLanding, user, isGuest, onLog
   // switch, since a 240px-wide always-on sidebar has nowhere to go on a
   // phone-width screen.
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
   const [scenarioId, setScenarioId] = useState(null);
   const [scenario, setScenario] = useState(null);
   const [result, setResult] = useState(null);
@@ -174,7 +176,13 @@ function OverviewShell({ onEnterDashboard, onExitToLanding, user, isGuest, onLog
               error={error}
               onDisruptEdge={handleDisruptEdge}
             />
-            <OverviewAlerts scenario={scenario} result={result} loading={loading} error={error} />
+            <OverviewAlerts
+              scenario={scenario}
+              result={result}
+              loading={loading}
+              error={error}
+              onStartTour={() => setTourOpen(true)}
+            />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-[1fr,340px] gap-5">
@@ -183,6 +191,12 @@ function OverviewShell({ onEnterDashboard, onExitToLanding, user, isGuest, onLog
           </div>
         </main>
       </div>
+
+      <GuidedTour
+        open={tourOpen}
+        onClose={() => setTourOpen(false)}
+        onEnterDashboard={onEnterDashboard}
+      />
     </div>
   );
 }

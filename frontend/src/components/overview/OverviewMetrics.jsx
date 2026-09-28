@@ -79,7 +79,7 @@ export default function OverviewMetrics({ scenario, result, baseline, loading, e
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div data-tour="metrics" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {loading && cards.length === 0 && [1, 2, 3, 4].map(i => (
           <div key={i} className="bg-[#211E1A] border border-[#3B342A] rounded-xl p-4 flex items-center justify-center h-[104px]">
             <Loader2 size={16} className="animate-spin text-[#817970]" />

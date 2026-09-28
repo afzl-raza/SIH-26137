@@ -24,8 +24,8 @@ export default function OverviewGreeting({ onEnterDashboard, user, isGuest }) {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr,340px] gap-4">
-      {/* Hero */}
-      <div className="bg-[#211E1A] border border-[#3B342A] rounded-2xl p-6 relative overflow-hidden">
+      {/* Hero - data-tour anchor for GuidedTour's first step */}
+      <div data-tour="hero" className="bg-[#211E1A] border border-[#3B342A] rounded-2xl p-6 relative overflow-hidden">
         <div className="absolute -right-16 -top-16 w-56 h-56 rounded-full bg-[#FF7A1A]/10 pointer-events-none" />
         <div className="relative flex items-start justify-between gap-4 flex-wrap">
           <div className="max-w-xl">
