@@ -1,5 +1,6 @@
 import React from 'react';
 import { Info, MoreVertical, Loader2 } from 'lucide-react';
+import { useToast } from '../ui/Toast';
 
 const STATUS_STYLE = {
   Optimized: { bg: '#173A2D', fg: '#43D493' },
@@ -12,6 +13,7 @@ const STATUS_STYLE = {
 // shown here rather than being invented. Status is derived from the route's
 // own real constraint fields (capacity_exceeded/time_exceeded/late_jobs).
 export default function OverviewRecentRoutes({ scenario, result, loading, error }) {
+  const toast = useToast();
   const routes = result?.routes || [];
 
   return (
@@ -21,7 +23,12 @@ export default function OverviewRecentRoutes({ scenario, result, loading, error 
           <h2 className="font-display font-bold text-[15px] text-[#FFF9F1]">Recent routes</h2>
           <Info size={12} className="text-[#817970]" />
         </div>
-        <button className="text-[11px] text-[#FF7A1A] font-semibold cursor-default">View all routes</button>
+        <button
+          onClick={() => toast("Route history isn't built yet", { tone: 'error', detail: 'Only today\'s optimized fleet is shown here - there is no saved run history in this prototype.' })}
+          className="text-[11px] text-[#FF7A1A] font-semibold hover:text-[#E86D10] transition-colors"
+        >
+          View all routes
+        </button>
       </div>
       <p className="text-[11px] text-[#817970] mb-4">
         {scenario ? `Today's optimized fleet (${routes.length} vehicles).` : "Today's optimized fleet."}
@@ -73,7 +80,15 @@ export default function OverviewRecentRoutes({ scenario, result, loading, error 
                         {status}
                       </span>
                     </td>
-                    <td className="px-1 text-[#817970] cursor-default"><MoreVertical size={14} /></td>
+                    <td className="px-1">
+                      <button
+                        onClick={() => toast('Route actions aren\'t built yet', { tone: 'error', detail: 'Per-route actions (reassign, edit, cancel) aren\'t wired up in this prototype.' })}
+                        aria-label={`Actions for vehicle ${r.vehicle_id}`}
+                        className="text-[#817970] hover:text-[#FFF9F1] transition-colors p-0.5"
+                      >
+                        <MoreVertical size={14} />
+                      </button>
+                    </td>
                   </tr>
                 );
               })}

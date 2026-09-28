@@ -1,11 +1,13 @@
 import React from 'react';
 import { Info, Truck, Loader2 } from 'lucide-react';
+import { useToast } from '../ui/Toast';
 
 // Each entry is one vehicle's real route from the last /api/optimize result
 // Overview.jsx fetched - no teammate/join/detour events or CO2 figures exist
 // anywhere in the backend, so those (previously static) items are gone
 // rather than replaced with a different invented substitute.
 export default function OverviewActivity({ scenario, result, loading, error }) {
+  const toast = useToast();
   const routes = result?.routes || [];
 
   return (
@@ -15,7 +17,12 @@ export default function OverviewActivity({ scenario, result, loading, error }) {
           <h2 className="font-display font-bold text-[15px] text-[#FFF9F1]">Activity</h2>
           <Info size={12} className="text-[#817970]" />
         </div>
-        <button className="text-[11px] text-[#FF7A1A] font-semibold cursor-default">See all</button>
+        <button
+          onClick={() => toast("Activity history isn't built yet", { tone: 'error', detail: 'Only today\'s route results are shown here - there is no saved activity log in this prototype.' })}
+          className="text-[11px] text-[#FF7A1A] font-semibold hover:text-[#E86D10] transition-colors"
+        >
+          See all
+        </button>
       </div>
       <p className="text-[11px] text-[#817970] mb-4">Today's route results, per vehicle.</p>
 

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Info, AlertTriangle, Loader2, GraduationCap } from 'lucide-react';
+import { useToast } from '../ui/Toast';
 
 // Real alerts are derived from scenario.edges' backend-declared condition
 // state (congestion_level/has_incident - see backend/models.py Edge; using
@@ -10,6 +11,7 @@ import { Info, AlertTriangle, Loader2, GraduationCap } from 'lucide-react';
 // free_flow here and this will normally show the empty state below - that's
 // an honest reflection of "no conditions applied to this run", not a bug.
 export default function OverviewAlerts({ scenario, result, loading, error }) {
+  const toast = useToast();
   const affectedEdges = (scenario?.edges || []).filter(
     e => e.congestion_level !== 'free_flow' || e.has_incident
   );
@@ -22,7 +24,12 @@ export default function OverviewAlerts({ scenario, result, loading, error }) {
             <h2 className="font-display font-bold text-[15px] text-[#FFF9F1]">Traffic alerts</h2>
             <Info size={12} className="text-[#817970]" />
           </div>
-          <button className="text-[11px] text-[#FF7A1A] font-semibold cursor-default">View all</button>
+          <button
+            onClick={() => toast("Alert history isn't built yet", { tone: 'error', detail: 'Only the current scenario\'s conditions are shown here - there is no saved alert history in this prototype.' })}
+            className="text-[11px] text-[#FF7A1A] font-semibold hover:text-[#E86D10] transition-colors"
+          >
+            View all
+          </button>
         </div>
         <p className="text-[11px] text-[#817970] mb-4">What changed and what to do next.</p>
 
@@ -72,7 +79,12 @@ export default function OverviewAlerts({ scenario, result, loading, error }) {
         <p className="text-[11px] text-[#B9B0A5] mb-3">
           Take a 3-minute tour of planning your first route.
         </p>
-        <button className="bg-[#FF7A1A] hover:bg-[#E86D10] text-[#100F0D] font-display font-bold text-[12px] px-3.5 py-2 rounded-lg transition-colors">
+        <button
+          onClick={() => toast('Guided tour isn\'t built yet', {
+            detail: 'Try the real thing instead: click any road on the map above to simulate a disruption and watch the plan re-optimize.'
+          })}
+          className="bg-[#FF7A1A] hover:bg-[#E86D10] text-[#100F0D] font-display font-bold text-[12px] px-3.5 py-2 rounded-lg transition-colors"
+        >
           Start guided tour
         </button>
       </div>

@@ -40,6 +40,14 @@ export default function OverviewGreeting({ onEnterDashboard, user, isGuest }) {
               Q-DFRO finds practical routes around live traffic, helping your vehicles arrive
               sooner while using less time and fuel.
             </p>
+            {/* One-line demo framing for anyone new to the page - states in
+                plain terms that the numbers/map below are a real solver run,
+                not a mockup, and points at the one interaction that's
+                genuinely live on this screen. */}
+            <p className="text-[12px] text-[#F5B942] mt-3 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#F5B942] flex-shrink-0" />
+              This is a real optimizer run on today's network - click any road on the map below to see it re-plan live.
+            </p>
           </div>
           <button
             onClick={onEnterDashboard}

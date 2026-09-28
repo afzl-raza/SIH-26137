@@ -1,9 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Search, HelpCircle, Bell, LogOut, LogIn, ChevronDown } from 'lucide-react';
+import { Search, HelpCircle, Bell, LogOut, LogIn, ChevronDown, Menu } from 'lucide-react';
+import { useToast } from '../ui/Toast';
 
 // Search/help/notifications are static decoration this round - approved:
 // this prototype has one operator and no real notification stream, so these
-// are visual chrome, not a functioning search or inbox.
+// are visual chrome, not a functioning search or inbox. Clicking any of them
+// says so via a toast instead of doing nothing (touch devices have no hover
+// state, so the old title-tooltip-only approach was invisible on mobile).
 
 function initialsFor(name, email) {
   const source = (name || '').trim();
@@ -16,10 +19,13 @@ function initialsFor(name, email) {
   return localPart ? localPart.slice(0, 2).toUpperCase() : '?';
 }
 
-export default function OverviewTopBar({ user, isGuest, onLogout }) {
+export default function OverviewTopBar({ user, isGuest, onLogout, onOpenSidebar }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   const buttonRef = useRef(null);
+  const toast = useToast();
+
+  const notWiredUp = (label, detail) => () => toast(`${label} isn't wired up yet`, { tone: 'error', detail });
 
   const displayName = isGuest ? 'Guest User' : (user?.name?.trim() || user?.email || 'Fleet operator');
   const displayPosition = isGuest ? 'Explore Q-DFRO' : (user?.position || 'Fleet operator');
@@ -47,23 +53,43 @@ export default function OverviewTopBar({ user, isGuest, onLogout }) {
   }, [menuOpen]);
 
   return (
-    <div className="h-16 flex-shrink-0 border-b border-[#3B342A] bg-[#171512] flex items-center gap-4 px-6 font-sans">
-      <div
-        title="Search is not wired up in this prototype"
-        className="flex-1 max-w-md flex items-center gap-2 bg-[#211E1A] border border-[#3B342A] rounded-lg px-3 py-2 text-[#817970] cursor-default"
+    <div className="h-16 flex-shrink-0 border-b border-[#3B342A] bg-[#171512] flex items-center gap-2 sm:gap-4 px-3 sm:px-6 font-sans">
+      {/* Sidebar drawer trigger - below lg: only, since the sidebar is
+          always visible (static) at lg: and up. */}
+      <button
+        type="button"
+        onClick={onOpenSidebar}
+        aria-label="Open menu"
+        className="lg:hidden p-1.5 -ml-1 rounded-lg text-[#B9B0A5] hover:text-[#FFF9F1] hover:bg-[#211E1A] transition-colors flex-shrink-0"
       >
-        <Search size={15} />
-        <span className="text-[13px] flex-1">Search vehicles, routes, or destinations…</span>
-        <kbd className="text-[10px] bg-[#312B24] border border-[#3B342A] rounded px-1.5 py-0.5">⌘K</kbd>
-      </div>
+        <Menu size={20} />
+      </button>
+
+      <button
+        type="button"
+        onClick={notWiredUp('Search', 'Search across vehicles, routes, and destinations is not wired up in this prototype.')}
+        className="flex-1 max-w-md flex items-center gap-2 bg-[#211E1A] border border-[#3B342A] rounded-lg px-2.5 sm:px-3 py-2 text-[#817970] hover:border-[#4A4238] transition-colors text-left"
+      >
+        <Search size={15} className="flex-shrink-0" />
+        <span className="text-[13px] flex-1 hidden sm:inline truncate">Search vehicles, routes, or destinations…</span>
+        <kbd className="text-[10px] bg-[#312B24] border border-[#3B342A] rounded px-1.5 py-0.5 hidden sm:inline flex-shrink-0">⌘K</kbd>
+      </button>
 
       <div className="flex-1" />
 
-      <button type="button" title="Not wired up in this prototype" className="flex items-center gap-1.5 text-[13px] text-[#B9B0A5] cursor-default">
+      <button
+        type="button"
+        onClick={notWiredUp('Help', 'Help/support isn\'t wired up in this prototype.')}
+        className="hidden sm:flex items-center gap-1.5 text-[13px] text-[#B9B0A5] hover:text-[#FFF9F1] transition-colors"
+      >
         <HelpCircle size={16} />
         Help
       </button>
-      <button type="button" title="Not wired up in this prototype" className="text-[#B9B0A5] cursor-default p-1.5">
+      <button
+        type="button"
+        onClick={notWiredUp('Notifications', 'There is no live notification stream in this prototype - real traffic alerts appear in the Overview alerts panel.')}
+        className="text-[#B9B0A5] hover:text-[#FFF9F1] transition-colors p-1.5"
+      >
         <Bell size={16} />
       </button>
 

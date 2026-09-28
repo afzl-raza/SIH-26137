@@ -7,6 +7,7 @@ import OverviewLiveMap from '../components/overview/OverviewLiveMap';
 import OverviewAlerts from '../components/overview/OverviewAlerts';
 import OverviewRecentRoutes from '../components/overview/OverviewRecentRoutes';
 import OverviewActivity from '../components/overview/OverviewActivity';
+import { ToastProvider } from '../components/ui/Toast';
 import { apiFetch } from '../api';
 import { DEFAULT_POPULATION_SIZE, DEFAULT_MAX_ITERATIONS } from '../lib/solverDefaults';
 
@@ -25,7 +26,21 @@ const BASELINE_CONFIG = { algorithm: 'greedy', seed: 42 };
 // fabricated numbers. Only the workspace switcher and onboarding checklist
 // stay decorative, since there is no real multi-user or run-history backend
 // behind this prototype beyond the real auth session.
-export default function Overview({ onEnterDashboard, onExitToLanding, user, isGuest, onLogout }) {
+export default function Overview(props) {
+  return (
+    <ToastProvider>
+      <OverviewShell {...props} />
+    </ToastProvider>
+  );
+}
+
+function OverviewShell({ onEnterDashboard, onExitToLanding, user, isGuest, onLogout }) {
+  // Drives the sidebar as a slide-over drawer below `lg:` (see
+  // OverviewSidebar/OverviewTopBar) - same "hidden until opened" idea as
+  // Dashboard.jsx's activeMobileTab, just for a drawer instead of a tab
+  // switch, since a 240px-wide always-on sidebar has nowhere to go on a
+  // phone-width screen.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [scenarioId, setScenarioId] = useState(null);
   const [scenario, setScenario] = useState(null);
   const [result, setResult] = useState(null);
@@ -122,12 +137,21 @@ export default function Overview({ onEnterDashboard, onExitToLanding, user, isGu
 
   return (
     <div className="min-h-screen flex bg-[#171512] text-[#FFF9F1] font-sans">
-      <OverviewSidebar />
+      <OverviewSidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        onEnterDashboard={onEnterDashboard}
+      />
 
       <div className="flex-1 flex flex-col min-w-0">
-        <OverviewTopBar user={user} isGuest={isGuest} onLogout={onLogout} />
+        <OverviewTopBar
+          user={user}
+          isGuest={isGuest}
+          onLogout={onLogout}
+          onOpenSidebar={() => setSidebarOpen(true)}
+        />
 
-        <main className="flex-1 p-6 flex flex-col gap-5 max-w-[1600px] w-full mx-auto">
+        <main className="flex-1 p-4 sm:p-6 flex flex-col gap-5 max-w-[1600px] w-full mx-auto">
           {onExitToLanding && (
             <button
               onClick={onExitToLanding}
@@ -140,7 +164,7 @@ export default function Overview({ onEnterDashboard, onExitToLanding, user, isGu
           <OverviewGreeting onEnterDashboard={onEnterDashboard} user={user} isGuest={isGuest} />
           <OverviewMetrics scenario={scenario} result={result} baseline={baseline} loading={loading} error={error} />
 
-          <div className="grid grid-cols-1 xl:grid-cols-[1fr,340px] gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr,340px] gap-5">
             <OverviewLiveMap
               scenario={scenario}
               scenarioId={scenarioId}
@@ -153,7 +177,7 @@ export default function Overview({ onEnterDashboard, onExitToLanding, user, isGu
             <OverviewAlerts scenario={scenario} result={result} loading={loading} error={error} />
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-[1fr,340px] gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr,340px] gap-5">
             <OverviewRecentRoutes scenario={scenario} result={result} loading={loading} error={error} />
             <OverviewActivity scenario={scenario} result={result} loading={loading} error={error} />
           </div>
