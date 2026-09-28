@@ -936,8 +936,18 @@ function DashboardShell({ onExitToOverview }) {
 
       {/* ═══ ENGINEERING CONTROL ROOM (75% Map / 25% Operations) ═══ */}
       <main className="flex-1 p-2 sm:p-4 grid grid-cols-1 lg:grid-cols-4 gap-4 max-w-[1920px] w-full mx-auto items-stretch">
-        {/* HERO MAP */}
-        <div className={`lg:col-span-3 min-h-[350px] sm:min-h-[480px] lg:min-h-[620px] h-full w-full ${
+        {/* HERO MAP
+            lg:h-[calc(100vh-2rem)] + lg:sticky pins the map to a real
+            viewport-sized box on desktop instead of `h-full` blindly
+            matching this grid row's height. Without this, `items-stretch`
+            (see <main> above) stretches the row to match the much taller
+            operations sidebar column, so the map inherits that same huge
+            height - Leaflet centers correctly inside it, but the visible
+            viewport only shows the top slice, so Focus Depot/Fit All Stops
+            appear to do nothing (the camera moved, just off-screen below
+            the fold). Below lg, the grid is single-column so this stretching
+            never happens and h-full is unaffected. */}
+        <div className={`lg:col-span-3 min-h-[350px] sm:min-h-[480px] lg:min-h-[480px] h-full lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] w-full ${
           activeMobileTab === 'map' ? 'block' : 'hidden lg:block'
         }`}>
           <NetworkMap
