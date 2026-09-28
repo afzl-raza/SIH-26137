@@ -949,12 +949,13 @@ function DashboardShell({ onExitToOverview }) {
       {/* ═══ ENGINEERING CONTROL ROOM (75% Map / 25% Operations) ═══ */}
       <main className="flex-1 p-2 sm:p-4 grid grid-cols-1 lg:grid-cols-4 gap-4 max-w-[1920px] w-full mx-auto items-stretch">
         {/* HERO MAP */}
-        <div className={`lg:col-span-3 min-h-[350px] sm:min-h-[480px] lg:min-h-[620px] h-full w-full ${
+        <div className={`lg:col-span-3 h-[350px] sm:h-[480px] lg:h-[620px] w-full ${
           activeMobileTab === 'map' ? 'block' : 'hidden lg:block'
         }`}>
           <NetworkMap
             scenario={scenario}
             scenarioId={scenarioId}
+            networkMeta={networkMeta}
             loading={loading}
             currentResult={currentResult}
             previousResult={previousResult}

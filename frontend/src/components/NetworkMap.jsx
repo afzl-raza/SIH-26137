@@ -166,6 +166,7 @@ const createVehicleMarkerIcon = (vehicleId, color, isSelected) => L.divIcon({
 export default function NetworkMap({
   scenario,
   scenarioId,
+  networkMeta,
   loading,
   currentResult,
   previousResult,
@@ -216,6 +217,21 @@ export default function NetworkMap({
     const base = relevant.length > 1 ? relevant : nodes;
     return computeBounds(base.map(n => [n.lat, n.lng]));
   }, [nodes, jobNodeIds]);
+
+  // For an OSM scenario, the backend already knows the exact bounded area
+  // the user selected (place + radius). Use that bounded area as the map's
+  // initial operating area instead of letting one road geometry determine the
+  // camera. Synthetic scenarios continue to use their actual scenario nodes.
+  const selectedAreaBounds = useMemo(() => {
+    if (!networkMeta?.bbox) return null;
+    const { min_lat, min_lon, max_lat, max_lon } = networkMeta.bbox;
+    return computeBounds([
+      [min_lat, min_lon],
+      [max_lat, max_lon]
+    ]);
+  }, [networkMeta]);
+
+  const viewportAnchorBounds = selectedAreaBounds || scenarioBounds;
 
   const depotLatLng = useMemo(() => {
     const depotNode = nodes.find(n => n.is_depot);
@@ -487,8 +503,15 @@ export default function NetworkMap({
     // going (see clampBoundsToAnchor) - a normal route's own bulge is always
     // well inside the clamp, so this only ever affects the pathological case.
     const rawRouteExtent = currentResult ? routeBounds : null;
-    const clampedRouteExtent = clampBoundsToAnchor(rawRouteExtent, scenarioBounds);
-    const target = mergeBounds(scenarioBounds, clampedRouteExtent);
+    const routeAnchor = selectedAreaBounds || scenarioBounds;
+    const clampedRouteExtent = clampBoundsToAnchor(
+      rawRouteExtent,
+      routeAnchor,
+      selectedAreaBounds ? { maxExpansionFactor: 0, minMarginDeg: 0 } : undefined
+    );
+    const target = selectedAreaBounds
+      ? selectedAreaBounds
+      : mergeBounds(scenarioBounds, clampedRouteExtent);
     const leafletBounds = toLeafletBounds(padBoundsIfTooSmall(target));
     if (!leafletBounds) return; // no valid coordinates yet - nothing to fit to
 
@@ -504,7 +527,7 @@ export default function NetworkMap({
     // mapReady flipping true is the one dependency that reliably re-runs
     // this effect once the controller genuinely exists, so a fit is never
     // silently and permanently skipped (confirmed via a real render test).
-  }, [scenarioId, currentResult, scenarioBounds, routeBounds, mapReady]);
+  }, [scenarioId, currentResult, scenarioBounds, routeBounds, selectedAreaBounds, mapReady]);
 
   // Per-vehicle-color glow rule, applied via className (not a duplicated
   // Polyline) - avoids the zoom/pan micro-stutter a second SVG path per
@@ -586,7 +609,7 @@ export default function NetworkMap({
   // see the ref's declaration earlier for why this can't just be a useMemo
   // that tracks later changes.
   if (initialViewportRef.current === null) {
-    const fallbackBounds = scenarioBounds || computeBounds(nodes.map(n => [n.lat, n.lng]));
+    const fallbackBounds = viewportAnchorBounds || computeBounds(nodes.map(n => [n.lat, n.lng]));
     const padded = padBoundsIfTooSmall(fallbackBounds);
     initialViewportRef.current = {
       center: boundsCenter(padded) || [nodes[0].lat, nodes[0].lng],
