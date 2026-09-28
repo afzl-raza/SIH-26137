@@ -12,6 +12,57 @@ verified against the actual code and a full test run (`pytest backend/tests
 
 ---
 
+## Deployment performance: Render free tier + OSM network path ✅ Done (2026-09-28)
+
+Diagnosed, not assumed: traced both asymmetries the user reported to real,
+verified causes before touching anything.
+
+- **"Load Real Road Network" 2-3x slower locally than on Render**: the
+  Overpass query (`backend/realdata/osm_loader.py::build_overpass_query`)
+  is already lean (`out body geom`, filtered to drivable highway classes,
+  no wasted payload) - confirmed by reading it, not assumed. Both Overpass
+  mirrors are Europe-hosted; a datacenter-to-Europe link (Render) typically
+  has materially better throughput than a home ISP connection to the same
+  destination, independent of the code. There's also a cache-state
+  asymmetry: `.cache/` is gitignored, so each environment's cache only
+  warms from what's actually been requested against it.
+  - [x] **Fix**: committed a real, previously-fetched cache entry (geocoding
+        + OSM extract) for the demo location "Hazratganj, Lucknow" at
+        radius 1200m - the exact `ControlPanel.jsx` default - via a targeted
+        `.gitignore` negation (`!.cache/geocoding/<hash>.json`,
+        `!.cache/osm/<hash>.json`). Verified: `git check-ignore` confirms
+        these 2 files are tracked; a real `/api/problem/generate` call
+        against them returns in <0.5s with `"provenance": "cache"` (honest
+        labeling preserved, nothing marked as a fresh network fetch that
+        wasn't one). This makes the demo location instant and
+        network-independent on a fresh clone/deploy in either environment.
+- **Benchmark fast locally, slow on Render**: `render.yaml` has
+  `plan: free` - Render's free tier is throttled shared CPU. Run Benchmark
+  is 100% CPU-bound (5-6 population-based algorithms, no network calls), so
+  this is a real, expected compute-power difference, not a bug.
+  - [x] **Fix**: new `frontend/src/lib/solverDefaults.js` exports
+        `DEFAULT_POPULATION_SIZE`/`DEFAULT_MAX_ITERATIONS`, keyed off
+        Vite's `import.meta.env.PROD` (true only for a `vite build`
+        production bundle, i.e. what Vercel deploys) - 20/40 in production,
+        the original 40/100 unchanged in local dev. Wired into
+        `Dashboard.jsx`'s initial `config` state and `Overview.jsx`'s
+        `OPTIMIZE_CONFIG`. Verified two ways: grepped the actual `dist/`
+        production bundle and confirmed the literals `20`/`40` are baked in
+        (not `40`/`100`), and confirmed the local dev server's Advanced
+        Settings still shows `40`/`100` unchanged. Never changes what's
+        computed or how it's labeled - only how long a demo run takes on a
+        throttled instance.
+
+Also flagged as separate, non-code decisions (not done here): Render's free
+tier sleeps after 15 min idle (30-60s cold-start on the next request,
+easy to mistake for "benchmark is slow"; mitigated by an external
+keep-alive ping, e.g. UptimeRobot hitting `/api/health`) and upgrading to a
+paid Render plan removes the CPU throttling entirely - both are the user's
+call, not something to change unilaterally. Backend untouched, 454/454
+passing.
+
+---
+
 ## Overview: interactive wiring + non-technical copy ✅ Done (2026-09-27)
 
 Follow-up to the Overview screen below, after comparing it live against

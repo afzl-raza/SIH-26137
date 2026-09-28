@@ -10,6 +10,15 @@ frontend/dist/
 # Runtime cache for external data (geocoding / OSM / weather).
 # Regenerated on demand; committed offline fixtures live under tests/.
 .cache/
+# Exception: a real, previously-fetched cache entry for the demo location
+# (Hazratganj, Lucknow) is committed deliberately, so "Load Real Road
+# Network" is instant and network-independent on both a fresh local clone
+# and a fresh Render deploy - see backend/realdata/cache.py's own
+# docstring on why provenance always says "cache", never "network", for
+# these. Same real OSM/Nominatim data the app would fetch live; nothing
+# fabricated, just pre-fetched once.
+!.cache/geocoding/5e8e69edd905022d4d4a2b22788092a4.json
+!.cache/osm/1a828627fe6ba36b14b6327d34eaae55.json
 
 # Editors / OS
 .vscode/

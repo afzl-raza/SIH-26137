@@ -8,8 +8,9 @@ import OverviewAlerts from '../components/overview/OverviewAlerts';
 import OverviewRecentRoutes from '../components/overview/OverviewRecentRoutes';
 import OverviewActivity from '../components/overview/OverviewActivity';
 import { apiFetch } from '../api';
+import { DEFAULT_POPULATION_SIZE, DEFAULT_MAX_ITERATIONS } from '../lib/solverDefaults';
 
-const OPTIMIZE_CONFIG = { algorithm: 'qpso', population_size: 40, max_iterations: 100, seed: 42 };
+const OPTIMIZE_CONFIG = { algorithm: 'qpso', population_size: DEFAULT_POPULATION_SIZE, max_iterations: DEFAULT_MAX_ITERATIONS, seed: 42 };
 // A fast, real second opinion purely to give the non-technical summary
 // something concrete to compare against ("N% better than simple
 // dispatch") - Greedy has no search loop, so this costs single-digit

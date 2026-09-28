@@ -21,6 +21,7 @@ import IconButton from '../components/ui/IconButton';
 import { ToastProvider, useToast } from '../components/ui/Toast';
 import OperationOverlay from '../components/ui/OperationOverlay';
 import { apiFetch } from '../api';
+import { DEFAULT_POPULATION_SIZE, DEFAULT_MAX_ITERATIONS } from '../lib/solverDefaults';
 import { Activity, ArrowLeft, X } from 'lucide-react';
 
 // Pulls the condition-provenance envelope out of any scenario-carrying
@@ -151,8 +152,8 @@ function DashboardShell({ onExitToOverview }) {
 
   const [config, setConfig] = useState({
     algorithm: 'qpso',
-    population_size: 40,
-    max_iterations: 100,
+    population_size: DEFAULT_POPULATION_SIZE,
+    max_iterations: DEFAULT_MAX_ITERATIONS,
     seed: 42,
     weights: {
       travel_time_weight: 1.0,
