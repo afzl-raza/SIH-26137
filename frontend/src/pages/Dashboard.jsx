@@ -966,7 +966,7 @@ function DashboardShell({ onExitToOverview }) {
             <AlertTriangle size={18} className="animate-pulse" />
             TRAFFIC INCIDENT
           </div>
-          <div className="flex-1 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[12px] text-[#E8C5C0]">
+          <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[12px] text-[#E8C5C0]">
             <span className="font-semibold text-white">{incidentInfo.roadName}</span>
             {incidentInfo.congestionLevel && (
               <span className="uppercase tracking-wider text-[#E8A93A] font-bold">
@@ -981,10 +981,11 @@ function DashboardShell({ onExitToOverview }) {
           <Button
             variant="warning"
             size="sm"
+            fullWidth={false}
             icon={RefreshCw}
             onClick={handleReOptimize}
             disabled={loading}
-            className="flex-shrink-0"
+            className="flex-shrink-0 w-full sm:w-auto"
           >
             Re-Optimize
           </Button>
