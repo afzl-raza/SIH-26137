@@ -6,7 +6,7 @@
   "congestion_factor": 3.5,
   "before_cost": 192.98,
   "after_cost": 201.97,
-  "reoptimization_runtime_ms": 311.92,
+  "reoptimization_runtime_ms": 763.57,
   "changed_vehicle_ids": [
     1,
     2,

@@ -48,24 +48,32 @@ def _resolve_output_dir(output_root: Optional[Path], name: str) -> Path:
 
 def _normalize_solver_weights(cfg: dict) -> dict:
     """Normalizes legacy weight aliases (alpha/beta -> travel_time_weight/distance_weight)
-    so frozen config comparison matches semantics rather than field name evolution."""
+    so frozen config comparison matches semantics rather than field name evolution.
+
+    Checks both "solver" (E1/E3/E4/E5) and "solver_base" (E6) - E6 is the one
+    experiment that names its solver-config key differently, and this used to
+    only patch "solver", so a real, committed E6 config.json with the old
+    alpha/beta field names could never compare equal to a freshly-built one
+    again, permanently tripping the frozen-config guard below on every re-run.
+    """
     if not isinstance(cfg, dict):
         return cfg
     cfg_copy = dict(cfg)
-    if "solver" in cfg_copy and isinstance(cfg_copy["solver"], dict):
-        solver_copy = dict(cfg_copy["solver"])
-        if "weights" in solver_copy and isinstance(solver_copy["weights"], dict):
-            w = dict(solver_copy["weights"])
-            if "alpha" in w and "travel_time_weight" not in w:
-                w["travel_time_weight"] = w.pop("alpha")
-            elif "alpha" in w:
-                w.pop("alpha")
-            if "beta" in w and "distance_weight" not in w:
-                w["distance_weight"] = w.pop("beta")
-            elif "beta" in w:
-                w.pop("beta")
-            solver_copy["weights"] = w
-        cfg_copy["solver"] = solver_copy
+    for solver_key in ("solver", "solver_base"):
+        if solver_key in cfg_copy and isinstance(cfg_copy[solver_key], dict):
+            solver_copy = dict(cfg_copy[solver_key])
+            if "weights" in solver_copy and isinstance(solver_copy["weights"], dict):
+                w = dict(solver_copy["weights"])
+                if "alpha" in w and "travel_time_weight" not in w:
+                    w["travel_time_weight"] = w.pop("alpha")
+                elif "alpha" in w:
+                    w.pop("alpha")
+                if "beta" in w and "distance_weight" not in w:
+                    w["distance_weight"] = w.pop("beta")
+                elif "beta" in w:
+                    w.pop("beta")
+                solver_copy["weights"] = w
+            cfg_copy[solver_key] = solver_copy
     return cfg_copy
 
 

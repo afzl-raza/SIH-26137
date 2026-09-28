@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Trophy, Loader2, Play } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { Trophy, Loader2, Play, Check } from 'lucide-react';
 import { apiFetch } from '../api';
 import Button from './ui/Button';
 import { ALGORITHM_COLORS } from './BenchmarkPanel';
@@ -18,6 +18,12 @@ export default function ExperimentE1Panel() {
   const [status, setStatus] = useState('loading'); // loading | ready | not_run | error
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState(null);
+  // Confirms a re-run actually happened even though this comparison uses a
+  // fixed seed, so the table can come back byte-identical - without this, a
+  // successful re-run and a silently-failed one look the same to the operator.
+  const [justRan, setJustRan] = useState(false);
+  const justRanTimer = useRef(null);
+  useEffect(() => () => clearTimeout(justRanTimer.current), []);
 
   const load = useCallback(() => {
     return apiFetch('/api/experiments/E1_algorithm_comparison')
@@ -45,6 +51,8 @@ export default function ExperimentE1Panel() {
   const handleRunNow = () => {
     setRunning(true);
     setRunError(null);
+    clearTimeout(justRanTimer.current);
+    setJustRan(false);
     apiFetch('/api/experiments/E1_algorithm_comparison/run', { method: 'POST' })
       .then(res => {
         if (!res.ok) throw new Error(`Run failed (${res.status})`);
@@ -53,6 +61,8 @@ export default function ExperimentE1Panel() {
       .then(json => {
         setData(json);
         setStatus('ready');
+        setJustRan(true);
+        justRanTimer.current = setTimeout(() => setJustRan(false), 4000);
       })
       .catch(err => setRunError(err.message))
       .finally(() => setRunning(false));
@@ -115,6 +125,11 @@ export default function ExperimentE1Panel() {
         </Button>
       </div>
       {runError && <p className="text-[10px] text-[#E8918A]">{runError}</p>}
+      {!runError && justRan && (
+        <p className="text-[10px] text-[#6B9A57] flex items-center gap-1">
+          <Check size={11} className="flex-shrink-0" /> Re-ran just now — same fixed seed, so an unchanged table means it worked.
+        </p>
+      )}
       <div className="text-[10px] text-gray-500 font-mono">
         Population {data.config?.solver?.population_size ?? '?'}, iterations {data.config?.solver?.max_iterations ?? '?'} —
         same scenario/constraints across all algorithms

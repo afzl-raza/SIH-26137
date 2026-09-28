@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { AlertTriangle, Loader2, Play } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { AlertTriangle, Loader2, Play, Check } from 'lucide-react';
 import { apiFetch } from '../api';
 import Button from './ui/Button';
 
@@ -13,6 +13,12 @@ export default function ExperimentE4Panel() {
   const [status, setStatus] = useState('loading'); // loading | ready | not_run | error
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState(null);
+  // Confirms a re-run actually happened even though this experiment uses a
+  // fixed seed, so the result can come back byte-identical - without this, a
+  // successful re-run and a silently-failed one look the same to the operator.
+  const [justRan, setJustRan] = useState(false);
+  const justRanTimer = useRef(null);
+  useEffect(() => () => clearTimeout(justRanTimer.current), []);
 
   const load = useCallback(() => {
     return apiFetch('/api/experiments/E4_traffic_disruption')
@@ -40,6 +46,8 @@ export default function ExperimentE4Panel() {
   const handleRunNow = () => {
     setRunning(true);
     setRunError(null);
+    clearTimeout(justRanTimer.current);
+    setJustRan(false);
     apiFetch('/api/experiments/E4_traffic_disruption/run', { method: 'POST', timeoutMs: 60000 })
       .then(async res => {
         if (!res.ok) {
@@ -51,6 +59,8 @@ export default function ExperimentE4Panel() {
       .then(json => {
         setData(json);
         setStatus('ready');
+        setJustRan(true);
+        justRanTimer.current = setTimeout(() => setJustRan(false), 4000);
       })
       .catch(err => setRunError(err.message))
       .finally(() => setRunning(false));
@@ -114,6 +124,11 @@ export default function ExperimentE4Panel() {
         </Button>
       </div>
       {runError && <p className="text-[10px] text-[#E8918A]">{runError}</p>}
+      {!runError && justRan && (
+        <p className="text-[10px] text-[#6B9A57] flex items-center gap-1">
+          <Check size={11} className="flex-shrink-0" /> Re-ran just now — same fixed seed, so unchanged numbers mean it worked.
+        </p>
+      )}
 
       {result.target_edge && (
         <div className="text-[10px] text-gray-500 font-mono">

@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Gauge, Loader2, Play } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { Gauge, Loader2, Play, Check } from 'lucide-react';
 import { apiFetch } from '../api';
 import Button from './ui/Button';
 
@@ -12,6 +12,12 @@ export default function ExperimentE5Panel() {
   const [status, setStatus] = useState('loading'); // loading | ready | not_run | error
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState(null);
+  // Confirms a re-run actually happened even though this sweep uses a fixed
+  // seed, so the table can come back byte-identical - without this, a
+  // successful re-run and a silently-failed one look the same to the operator.
+  const [justRan, setJustRan] = useState(false);
+  const justRanTimer = useRef(null);
+  useEffect(() => () => clearTimeout(justRanTimer.current), []);
 
   const load = useCallback(() => {
     return apiFetch('/api/experiments/E5_traffic_severity')
@@ -39,6 +45,8 @@ export default function ExperimentE5Panel() {
   const handleRunNow = () => {
     setRunning(true);
     setRunError(null);
+    clearTimeout(justRanTimer.current);
+    setJustRan(false);
     apiFetch('/api/experiments/E5_traffic_severity/run', { method: 'POST' })
       .then(res => {
         if (!res.ok) throw new Error(`Run failed (${res.status})`);
@@ -47,6 +55,8 @@ export default function ExperimentE5Panel() {
       .then(json => {
         setData(json);
         setStatus('ready');
+        setJustRan(true);
+        justRanTimer.current = setTimeout(() => setJustRan(false), 4000);
       })
       .catch(err => setRunError(err.message))
       .finally(() => setRunning(false));
@@ -108,6 +118,11 @@ export default function ExperimentE5Panel() {
         </Button>
       </div>
       {runError && <p className="text-[10px] text-[#E8918A]">{runError}</p>}
+      {!runError && justRan && (
+        <p className="text-[10px] text-[#6B9A57] flex items-center gap-1">
+          <Check size={11} className="flex-shrink-0" /> Re-ran just now — same fixed seed, so an unchanged table means it worked.
+        </p>
+      )}
       {rows.length === 0 ? (
         <p className="text-[11px] text-gray-600">No rows in the stored results.</p>
       ) : (
