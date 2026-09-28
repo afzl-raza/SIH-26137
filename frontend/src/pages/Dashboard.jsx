@@ -284,7 +284,11 @@ function DashboardShell({ onExitToOverview }) {
       // For an OSM run the location is the input: the backend geocodes it
       // through Nominatim and pulls the real road network for the result.
       if (source === 'osm') {
-        body.place = place.trim();
+        const trimmedPlace = (place || '').trim();
+        if (!trimmedPlace) {
+          throw new Error('Please enter a location name before loading an OpenStreetMap road network.');
+        }
+        body.place = trimmedPlace;
         body.radius_m = Number(radiusM) || 1200;
       }
 
@@ -358,7 +362,11 @@ function DashboardShell({ onExitToOverview }) {
       return data;
     } catch (err) {
       if (requestToken !== generationTokenRef.current) return null; // superseded - stay quiet
-      setError(err.message);
+      if (err.name === 'AbortError' || err.name === 'TimeoutError' || err.message?.includes('aborted') || err.message?.includes('timed out')) {
+        setError(err.message?.includes('timed out') ? err.message : 'The request timed out while loading the road network. Please check your network connection and try again.');
+      } else {
+        setError(err.message);
+      }
       return null;
     } finally {
       // Only the latest request owns the shared loading/activeOperation
@@ -439,7 +447,8 @@ function DashboardShell({ onExitToOverview }) {
           job_node_ids: draftStopIds,
           demand_min: scenarioParams.demand_min,
           demand_max: scenarioParams.demand_max
-        })
+        }),
+        timeoutMs: 60000
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => null);
@@ -476,7 +485,11 @@ function DashboardShell({ onExitToOverview }) {
       });
     } catch (err) {
       if (requestToken !== generationTokenRef.current) return null; // superseded - stay quiet
-      setError(err.message);
+      if (err.name === 'AbortError' || err.name === 'TimeoutError' || err.message?.includes('aborted') || err.message?.includes('timed out')) {
+        setError(err.message?.includes('timed out') ? err.message : 'Applying custom depot/stop placement timed out. Please try again.');
+      } else {
+        setError(err.message);
+      }
     } finally {
       if (requestToken === generationTokenRef.current) {
         setLoading(false);
@@ -541,7 +554,8 @@ function DashboardShell({ onExitToOverview }) {
       const res = await apiFetch('/api/optimize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario_id: activeScenarioId, config: activeConfig })
+        body: JSON.stringify({ scenario_id: activeScenarioId, config: activeConfig }),
+        timeoutMs: 120000
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => null);
@@ -581,7 +595,11 @@ function DashboardShell({ onExitToOverview }) {
       });
     } catch (err) {
       if (tokenAtStart !== generationTokenRef.current) return; // superseded - stay quiet
-      setError(err.message);
+      if (err.name === 'AbortError' || err.name === 'TimeoutError' || err.message?.includes('aborted') || err.message?.includes('timed out')) {
+        setError(err.message?.includes('timed out') ? err.message : 'Optimization timed out. On large road networks or slower connections, calculation may take longer. Please try again.');
+      } else {
+        setError(err.message);
+      }
       setStatusState('ERROR');
     } finally {
       if (tokenAtStart === generationTokenRef.current) {
@@ -613,7 +631,8 @@ function DashboardShell({ onExitToOverview }) {
           scenario_id: scenarioId,
           traffic_mode: mode,
           weather_enabled: weather
-        })
+        }),
+        timeoutMs: 60000
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => null);
@@ -633,7 +652,11 @@ function DashboardShell({ onExitToOverview }) {
         setNetworkState('DISRUPTED');
       }
     } catch (err) {
-      setError(err.message);
+      if (err.name === 'AbortError' || err.name === 'TimeoutError' || err.message?.includes('aborted') || err.message?.includes('timed out')) {
+        setError(err.message?.includes('timed out') ? err.message : 'Updating conditions timed out. Please try again.');
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
       setActiveOperation(null);
@@ -698,7 +721,8 @@ function DashboardShell({ onExitToOverview }) {
       const res = await apiFetch('/api/traffic/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario_id: scenarioId, updates })
+        body: JSON.stringify({ scenario_id: scenarioId, updates }),
+        timeoutMs: 60000
       });
 
       if (!res.ok) {
@@ -738,7 +762,11 @@ function DashboardShell({ onExitToOverview }) {
         });
       }
     } catch (err) {
-      setError(err.message);
+      if (err.name === 'AbortError' || err.name === 'TimeoutError' || err.message?.includes('aborted') || err.message?.includes('timed out')) {
+        setError(err.message?.includes('timed out') ? err.message : 'Traffic incident update timed out. Please try again.');
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
       setActiveOperation(null);
@@ -822,7 +850,11 @@ function DashboardShell({ onExitToOverview }) {
       // below the fold. Waits a frame so the panel has actually rendered.
       setTimeout(scrollToBenchmark, 150);
     } catch (err) {
-      setError(err.message);
+      if (err.name === 'AbortError' || err.name === 'TimeoutError' || err.message?.includes('aborted') || err.message?.includes('timed out')) {
+        setError(err.message?.includes('timed out') ? err.message : 'The benchmark run timed out. Evaluating multiple algorithms across road networks can take longer.');
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
       setActiveOperation(null);

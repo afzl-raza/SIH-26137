@@ -444,8 +444,18 @@ export default function ControlPanel({
             variant="tertiary"
             size="sm"
             onClick={() => onGenerate?.()}
-            disabled={loading || (networkSource === 'synthetic' && scenarioParams?.demand_min > scenarioParams?.demand_max)}
-            disabledHint={!loading && scenarioParams?.demand_min > scenarioParams?.demand_max ? 'Demand min must not exceed demand max.' : undefined}
+            disabled={
+              loading ||
+              (networkSource === 'synthetic' && scenarioParams?.demand_min > scenarioParams?.demand_max) ||
+              (networkSource === 'osm' && !place?.trim())
+            }
+            disabledHint={
+              !loading && networkSource === 'synthetic' && scenarioParams?.demand_min > scenarioParams?.demand_max
+                ? 'Demand min must not exceed demand max.'
+                : !loading && networkSource === 'osm' && !place?.trim()
+                ? 'Enter a location name first to generate an OpenStreetMap scenario.'
+                : undefined
+            }
           >
             Generate New Scenario
           </Button>

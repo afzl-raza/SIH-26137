@@ -12,6 +12,52 @@ verified against the actual code and a full test run (`pytest backend/tests
 
 ---
 
+## Overview: interactive wiring + non-technical copy ✅ Done (2026-09-27)
+
+Follow-up to the Overview screen below, after comparing it live against
+`origin/main` and asking "how to make this more interactive/responsive and
+understandable for non-technical users".
+
+- [x] Overview now runs a real Greedy baseline alongside the QPSO+LS demo
+      run (`/api/optimize` twice - Greedy costs single-digit ms, so this
+      doesn't slow the page down) purely to state a real, honest
+      comparison: "N% more efficient than simply sending each vehicle to
+      the nearest stop". Never shown when the improvement isn't real
+      (ties or a Greedy win both suppress the stat, not a fabricated 0%).
+- [x] Plain-language copy pass on `OverviewMetrics.jsx`, borrowing the
+      phrasing pattern from the `ExecutiveOverview.jsx` this round
+      previously removed ("Feasible route plan", "Is this plan usable?")
+      instead of raw "Route cost"/"Plan status" jargon. A new hero banner
+      leads with the feasibility badge and the efficiency-comparison stat
+      before the detail cards.
+- [x] Interactive wiring: Overview's map now supports the same
+      click-a-road-to-disrupt interaction as `NetworkMap.jsx`/`Dashboard.jsx`
+      (`onDisruptEdge` -> real `POST /api/traffic/update` -> real
+      re-optimize of both the shown plan and the baseline, so the
+      efficiency stat never goes stale). A non-blocking "Re-optimizing…"
+      overlay covers the map during the ~1-2s recompute instead of a full
+      loading-state replace.
+
+Verified live: real disrupt (Road 1-11, severe/4x incident) correctly
+raised its current travel time from 2.23 to 8.92 min and triggered two
+fresh `/api/optimize` calls; reopening correctly triggered a second
+`/api/traffic/update` call. Zero console errors throughout. Backend
+untouched, 421/421 passing.
+
+Not done this pass (flagged, not forgotten): a mobile-responsive pass on
+Overview.jsx itself - untested below desktop width.
+
+**Merged with `origin/main` immediately after** (guest access, demo auth,
+landing page rework, real Overview alerts/recent-routes/activity data, map
+view controls, Sioux Falls + experiment panels) - one real conflict in
+`Overview.jsx` (both sides touched the same prop-passing block), resolved
+by taking the union of props. Verified live on a fresh tab: guest login ->
+Overview -> disrupted a road -> the disruption correctly showed up as a
+real alert in the teammate's new `OverviewAlerts.jsx`, an emergent synergy
+neither side built for the other. 454/454 backend tests passing.
+
+---
+
 ## Overview screen + benchmark visual upgrade ✅ Done (2026-09-26)
 
 Source: a Figma file (fetched via its REST API - real design tokens pulled,

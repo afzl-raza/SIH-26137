@@ -40,9 +40,12 @@ export default function ExperimentE4Panel() {
   const handleRunNow = () => {
     setRunning(true);
     setRunError(null);
-    apiFetch('/api/experiments/E4_traffic_disruption/run', { method: 'POST' })
-      .then(res => {
-        if (!res.ok) throw new Error(`Run failed (${res.status})`);
+    apiFetch('/api/experiments/E4_traffic_disruption/run', { method: 'POST', timeoutMs: 60000 })
+      .then(async res => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          throw new Error(body?.detail || `Run failed (${res.status})`);
+        }
         return res.json();
       })
       .then(json => {
