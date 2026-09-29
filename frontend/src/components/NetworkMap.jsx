@@ -922,7 +922,7 @@ export default function NetworkMap({
                       ? 'OSM road geometry'
                       : ar.geometrySource === 'mixed'
                       ? 'OSM road geometry (partial)'
-                      : 'node-to-node links'}
+                      : 'straight-line links'}
                   </p>
                 </div>
               </Popup>
@@ -990,7 +990,7 @@ export default function NetworkMap({
                 <Popup>
                   <div className="text-xs font-mono">
                     <p className="font-bold text-[#C1443B] text-sm">CENTRAL DEPOT</p>
-                    <p>Node ID: #{n.id}</p>
+                    <p>Location ID: #{n.id}</p>
                   </div>
                 </Popup>
               </Marker>
@@ -1012,8 +1012,8 @@ export default function NetworkMap({
               >
                 <Popup>
                   <div className="text-xs font-mono space-y-1">
-                    <p className={`font-bold ${isLate ? 'text-[#C1443B]' : 'text-[#5D7A9E]'}`}>Delivery Job #{jobObj.id}</p>
-                    <p>Node: #{n.id}</p>
+                    <p className={`font-bold ${isLate ? 'text-[#C1443B]' : 'text-[#5D7A9E]'}`}>Delivery #{jobObj.id}</p>
+                    <p>Location ID: #{n.id}</p>
                     <p>Demand: {jobObj.demand} units</p>
                     <p>Service Time: {jobObj.service_time} min</p>
                     {hasWindow && (
@@ -1060,14 +1060,14 @@ export default function NetworkMap({
             >
               <Popup>
                 <div className="text-xs font-mono space-y-2 max-h-48 overflow-y-auto">
-                  <p className="font-bold text-[#5D7A9E]">{group.entries.length} delivery jobs at this stop</p>
+                  <p className="font-bold text-[#5D7A9E]">{group.entries.length} deliveries at this stop</p>
                   {group.entries.map(({ node, job }) => {
                     const isLate = lateJobIds.has(job.id);
                     const hasWindow = job.ready_time != null && job.due_time != null;
                     return (
                       <div key={job.id} className="border-t border-[#3A342E] pt-1.5 space-y-0.5">
-                        <p className={`font-bold ${isLate ? 'text-[#C1443B]' : 'text-[#5D7A9E]'}`}>Delivery Job #{job.id}</p>
-                        <p>Node: #{node.id}</p>
+                        <p className={`font-bold ${isLate ? 'text-[#C1443B]' : 'text-[#5D7A9E]'}`}>Delivery #{job.id}</p>
+                        <p>Location ID: #{node.id}</p>
                         <p>Demand: {job.demand} units</p>
                         <p>Service Time: {job.service_time} min</p>
                         {hasWindow && (
@@ -1122,7 +1122,7 @@ export default function NetworkMap({
           <div className="space-y-1">
             {closedEdges.map(e => (
               <div key={e.id} className="flex items-center justify-between gap-2">
-                <span className="text-gray-400 text-[10px] truncate" title={e.roadName || `Node ${e.source} → ${e.destination}`}>
+                <span className="text-gray-400 text-[10px] truncate" title={e.roadName || `Location ${e.source} → ${e.destination}`}>
                   {e.roadName || `#${e.source} → #${e.destination}`}
                 </span>
                 <button

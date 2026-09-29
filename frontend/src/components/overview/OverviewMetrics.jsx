@@ -92,7 +92,7 @@ export default function OverviewMetrics({ scenario, result, baseline, loading, e
             <p className="text-[12px] text-[#B9B0A5] mt-0.5">
               {result.is_feasible
                 ? 'Every delivery is assigned to a vehicle, and no one is overloaded or running late.'
-                : `${result.constraint_violations} constraint violation(s) - see the Engineering Control Room for detail.`}
+                : `${result.constraint_violations} thing(s) to fix - see the Engineering Control Room for detail.`}
             </p>
           </div>
           {hasRealImprovement && (

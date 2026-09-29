@@ -290,7 +290,7 @@ export default function MetricCards({ result, previousResult, weights, manifest,
           )}
           {manifest.solver?.population_size != null && (
             <span>
-              <span className="text-gray-600">pop/iter</span>{' '}
+              <span className="text-gray-600">pop/rounds</span>{' '}
               <span className="text-gray-300">{manifest.solver.population_size}/{manifest.solver.max_iterations}</span>
             </span>
           )}

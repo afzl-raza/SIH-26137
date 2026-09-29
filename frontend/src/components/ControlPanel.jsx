@@ -316,7 +316,7 @@ export default function ControlPanel({
             {showScenarioShape && (
               <div className="grid grid-cols-2 gap-2 mt-2">
                 <div className="space-y-0.5">
-                  <label htmlFor="sp-num-nodes" className="text-gray-400 block text-[10px]">Nodes</label>
+                  <label htmlFor="sp-num-nodes" className="text-gray-400 block text-[10px]">Locations</label>
                   <input
                     id="sp-num-nodes"
                     type="number"
@@ -327,7 +327,7 @@ export default function ControlPanel({
                   />
                 </div>
                 <div className="space-y-0.5">
-                  <label htmlFor="sp-num-jobs" className="text-gray-400 block text-[10px]">Jobs</label>
+                  <label htmlFor="sp-num-jobs" className="text-gray-400 block text-[10px]">Deliveries</label>
                   <input
                     id="sp-num-jobs"
                     type="number"
@@ -401,14 +401,14 @@ export default function ControlPanel({
             {placementMode && (
               <div className="space-y-1.5">
                 <p className="text-[9px] text-gray-500 leading-snug">
-                  Click a node on the map: first click sets the depot, further
+                  Click a location on the map: first click sets the depot, further
                   clicks toggle delivery stops. Click the depot again to
                   re-pick it.
                 </p>
                 <div className="grid grid-cols-[auto,1fr] gap-x-2 font-mono text-[10px] text-gray-400">
                   <span className="text-gray-500">Depot:</span>
                   <span className={draftDepotId !== null ? 'text-[#E8A93A]' : ''}>
-                    {draftDepotId !== null ? `Node #${draftDepotId}` : 'not set'}
+                    {draftDepotId !== null ? `Location #${draftDepotId}` : 'not set'}
                   </span>
                   <span className="text-gray-500">Stops:</span>
                   <span className={draftStopIds.length > 0 ? 'text-[#9ABF87]' : ''}>
@@ -723,7 +723,7 @@ export default function ControlPanel({
                 />
               </div>
               <div className="space-y-1">
-                <label htmlFor="solver-max-iter" className="text-gray-400 block text-[10px]">Max Iter</label>
+                <label htmlFor="solver-max-iter" className="text-gray-400 block text-[10px]">Search Rounds</label>
                 <input
                   id="solver-max-iter"
                   type="number"
@@ -735,7 +735,7 @@ export default function ControlPanel({
             </div>
 
             <div className="space-y-1">
-              <label htmlFor="solver-seed" className="text-gray-400 block text-[10px]">Random Seed (0 = auto)</label>
+              <label htmlFor="solver-seed" className="text-gray-400 block text-[10px]">Repeat Key (0 = new result each time)</label>
               <input
                 id="solver-seed"
                 type="number"
@@ -761,7 +761,7 @@ export default function ControlPanel({
               )}
               <div className="grid grid-cols-2 gap-2">
                 <div className="flex items-center gap-1">
-                  <label htmlFor="weight-travel-time" className="text-[10px] text-gray-500 w-4" title="Travel time weight">α</label>
+                  <label htmlFor="weight-travel-time" className="text-[10px] text-gray-500 flex-shrink-0 whitespace-nowrap" title="Travel time weight">Time (α)</label>
                   <input
                     id="weight-travel-time"
                     type="number" step="0.1"
@@ -771,7 +771,7 @@ export default function ControlPanel({
                   />
                 </div>
                 <div className="flex items-center gap-1">
-                  <label htmlFor="weight-distance" className="text-[10px] text-gray-500 w-4" title="Distance weight">β</label>
+                  <label htmlFor="weight-distance" className="text-[10px] text-gray-500 flex-shrink-0 whitespace-nowrap" title="Distance weight">Distance (β)</label>
                   <input
                     id="weight-distance"
                     type="number" step="0.1"
@@ -781,7 +781,7 @@ export default function ControlPanel({
                   />
                 </div>
                 <div className="flex items-center gap-1">
-                  <label htmlFor="weight-gamma" className="text-[10px] text-gray-500 w-4">γ</label>
+                  <label htmlFor="weight-gamma" className="text-[10px] text-gray-500 flex-shrink-0 whitespace-nowrap" title="Congestion/traffic weight">Traffic (γ)</label>
                   <input
                     id="weight-gamma"
                     type="number" step="0.1"
@@ -791,7 +791,7 @@ export default function ControlPanel({
                   />
                 </div>
                 <div className="flex items-center gap-1">
-                  <label htmlFor="weight-penalty" className="text-[10px] text-gray-500 w-4">P</label>
+                  <label htmlFor="weight-penalty" className="text-[10px] text-gray-500 flex-shrink-0 whitespace-nowrap" title="Infeasibility penalty weight">Penalty (P)</label>
                   <input
                     id="weight-penalty"
                     type="number" step="10"
@@ -812,7 +812,7 @@ export default function ControlPanel({
               <div className="pt-2 border-t border-[#332E29]/60 space-y-1">
                 <div className="flex items-center gap-1.5 text-gray-400 text-[10px] uppercase tracking-wider">
                   <FileText size={11} />
-                  Run Manifest (server-reported)
+                  Run Details (server-reported)
                 </div>
                 <div className="grid grid-cols-[auto,1fr] gap-x-2 gap-y-0.5 font-mono text-[9px] text-gray-400">
                   <span className="text-gray-500">Run ID:</span>
@@ -833,7 +833,7 @@ export default function ControlPanel({
                   <span className="text-gray-500">Population:</span>
                   <span>{manifest.solver?.population_size ?? '—'}</span>
 
-                  <span className="text-gray-500">Iterations:</span>
+                  <span className="text-gray-500">Search Rounds:</span>
                   <span>{manifest.solver?.max_iterations ?? '—'}</span>
 
                   <span className="text-gray-500">Traffic mode:</span>
@@ -851,7 +851,7 @@ export default function ControlPanel({
                   </span>
 
                   <span className="text-gray-500">Incidents:</span>
-                  <span>{manifest.conditions?.incident_edge_count ?? 0} edge(s)</span>
+                  <span>{manifest.conditions?.incident_edge_count ?? 0} road(s)</span>
 
                   <span className="text-gray-500">Geometry:</span>
                   <span>{manifest.geometry_source || '—'}</span>
@@ -861,8 +861,8 @@ export default function ControlPanel({
 
                   <span className="text-gray-500">Network:</span>
                   <span>
-                    {manifest.network?.node_count} nodes · {manifest.network?.edge_count} edges ·{' '}
-                    {manifest.network?.job_count} jobs · {manifest.network?.vehicle_count} vehicles
+                    {manifest.network?.node_count} locations · {manifest.network?.edge_count} roads ·{' '}
+                    {manifest.network?.job_count} deliveries · {manifest.network?.vehicle_count} vehicles
                   </span>
                 </div>
               </div>

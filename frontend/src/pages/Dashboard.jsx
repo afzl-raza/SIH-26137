@@ -371,7 +371,7 @@ function DashboardShell({ onExitToOverview }) {
         });
       } else {
         toast('Scenario generated', {
-          detail: `${data.scenario?.vehicles?.length ?? 0} vehicles · ${data.scenario?.jobs?.length ?? 0} jobs · ${data.scenario?.edges?.length ?? 0} road segments. Next: Optimize Fleet.`
+          detail: `${data.scenario?.vehicles?.length ?? 0} vehicles · ${data.scenario?.jobs?.length ?? 0} stops · ${data.scenario?.edges?.length ?? 0} road segments. Next: Optimize Fleet.`
         });
       }
 
