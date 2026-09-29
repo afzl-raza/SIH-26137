@@ -48,7 +48,7 @@ DEFAULT_USER_AGENT = os.environ.get(
     "SIH26137-QDFRO/1.0 (+https://github.com/afzl-raza/SIH-26137)",
 )
 MIN_REQUEST_INTERVAL_S = 1.0
-DEFAULT_TIMEOUT_S = float(os.environ.get("QDFRO_GEOCODE_TIMEOUT_S", 15.0))
+DEFAULT_TIMEOUT_S = 15.0
 
 # Area bounds. The default is a neighbourhood-sized extract, not a city.
 DEFAULT_RADIUS_M = 3000.0

@@ -95,7 +95,7 @@ export default function ArchetypeBenchmarkPanel({ config }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ scenario_id: genData.scenario_id, config }),
-          timeoutMs: 300000
+          timeoutMs: 120000
         });
         if (!bmRes.ok) {
           const detail = await bmRes.json().catch(() => null);

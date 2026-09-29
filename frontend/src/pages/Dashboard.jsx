@@ -316,10 +316,13 @@ function DashboardShell({ onExitToOverview }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        // Leave room for geocoding and the bounded Overpass mirror attempts,
-        // but stay within common web-host request limits. Upstream calls have
-        // their own shorter timeouts so unavailable mirrors fail promptly.
-        timeoutMs: 90000
+        // A cold OpenStreetMap fetch (uncached place/radius) legitimately
+        // takes 20-90s+: Nominatim geocoding plus an Overpass query, with
+        // retries across mirrors on the backend. The default apiFetch
+        // timeout (15s) aborts this before the backend can finish, so this
+        // call needs its own longer allowance. Synthetic generation stays
+        // fast regardless, so the longer timeout costs it nothing.
+        timeoutMs: 120000
       });
       if (!res.ok) {
         // The backend refuses rather than substituting synthetic roads when
@@ -543,9 +546,7 @@ function DashboardShell({ onExitToOverview }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenario_id: activeScenarioId, config: activeConfig }),
-        // Large real scenarios can take several minutes to converge, especially
-        // when the request includes QPSO sweeps over a real OSM-derived graph.
-        timeoutMs: 300000
+        timeoutMs: 120000
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => null);
@@ -825,9 +826,12 @@ function DashboardShell({ onExitToOverview }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenario_id: scenarioId, config }),
-        // Real OSM network benchmarks are multi-solver runs and can exceed two
-        // minutes on a cold graph, so the browser must not cancel them early.
-        timeoutMs: 300000
+        // Runs 3 population-based optimizers sequentially (pop_size *
+        // max_iterations candidate evaluations each) against the full
+        // scenario. On a large real OpenStreetMap extract this can take
+        // well over the default 15s timeout even after fixing the
+        // per-candidate edge-map rebuild (see fitness.build_edge_map).
+        timeoutMs: 120000
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => null);

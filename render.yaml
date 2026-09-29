@@ -11,12 +11,4 @@ services:
         value: 3.11.0
       - key: QDFRO_ENVIRONMENT
         value: production
-      - key: QDFRO_GEOCODE_TIMEOUT_S
-        value: "15"
-      - key: QDFRO_OVERPASS_TIMEOUT_S
-        value: "20"
-      - key: QDFRO_OVERPASS_ATTEMPTS
-        value: "1"
-      - key: QDFRO_OVERPASS_QUERY_TIMEOUT_S
-        value: "120"
     healthCheckPath: /api/health
