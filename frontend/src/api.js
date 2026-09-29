@@ -1,7 +1,10 @@
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 export function apiFetch(path, options = {}) {
-  const { timeoutMs = 60000, ...fetchOptions } = options;
+  // Real-data loading (Nominatim + Overpass) can legitimately take several
+  // minutes on a cold request. Keep the default generous enough that the app
+  // does not time out before the backend has finished its own backoff/retry.
+  const { timeoutMs = 180000, ...fetchOptions } = options;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     controller.abort(
