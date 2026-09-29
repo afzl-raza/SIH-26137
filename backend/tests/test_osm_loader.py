@@ -12,6 +12,8 @@ import json
 import os
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -401,6 +403,52 @@ def test_second_load_comes_from_cache():
     assert len(second.edges) == len(first.edges)
 
 
+def test_concurrent_loads_share_one_upstream_request():
+    """A cache miss for one area must not fan out into duplicate Overpass calls."""
+    cache = tmp_cache()
+    loc = a_location()
+    calls = []
+    started = threading.Event()
+    release = threading.Event()
+    results = []
+
+    def post(url, query, timeout):
+        calls.append(url)
+        started.set()
+        assert release.wait(timeout=1.0)
+        return _connected_payload()
+
+    def load():
+        results.append(load_osm_graph(
+            loc, cache=cache, post_overpass=post, endpoints=["https://first.test"]
+        ))
+
+    first = threading.Thread(target=load)
+    second = threading.Thread(target=load)
+    first.start()
+    assert started.wait(timeout=1.0)
+    second.start()
+
+    # Wait until the second caller has joined the same in-flight key before
+    # allowing the first one to complete and write the cache.
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        with osm_loader_module._INFLIGHT_GUARD:
+            if any(state.users == 2 for state in osm_loader_module._INFLIGHT_LOADS.values()):
+                break
+        time.sleep(0.01)
+    else:
+        pytest.fail("second load did not join the in-flight request")
+
+    release.set()
+    first.join(timeout=1.0)
+    second.join(timeout=1.0)
+
+    assert len(calls) == 1
+    assert len(results) == 2
+    assert {graph.provenance for graph in results} == {SOURCE_NETWORK, SOURCE_CACHE}
+
+
 def test_network_failure_serves_cached_network_marked_stale():
     cache = tmp_cache()
     loc = a_location()
@@ -428,14 +476,14 @@ def test_network_failure_without_cache_is_an_explicit_error():
     def dead(url, query, timeout):
         raise ConnectionError("overpass down")
 
-    with pytest.raises(OsmLoaderError, match="no cached extract"):
+    with pytest.raises(OsmLoaderError) as exc_info:
         load_osm_graph(a_location(), cache=tmp_cache(), post_overpass=dead)
+    assert exc_info.value.code == "osm_upstream_unavailable"
+    assert exc_info.value.status_code == 503
 
 
-def test_transient_failure_is_retried_on_the_same_endpoint(monkeypatch):
-    """Public Overpass instances 504 under load; one retry per endpoint is
-    what makes the difference between a working demo and a 502."""
-    monkeypatch.setattr(osm_loader_module, "RETRY_BACKOFF_S", 0.0)
+def test_transient_failure_falls_through_to_the_next_endpoint():
+    """A bounded live load makes one attempt per mirror, then fails over."""
     attempted = []
 
     def flaky(url, query, timeout):
@@ -448,12 +496,11 @@ def test_transient_failure_is_retried_on_the_same_endpoint(monkeypatch):
         a_location(), cache=tmp_cache(), post_overpass=flaky,
         endpoints=["https://first.test", "https://second.test"])
 
-    assert attempted == ["https://first.test", "https://first.test"]
+    assert attempted == ["https://first.test", "https://second.test"]
     assert graph.provenance == SOURCE_NETWORK
 
 
-def test_persistently_failing_endpoint_falls_through_to_the_next(monkeypatch):
-    monkeypatch.setattr(osm_loader_module, "RETRY_BACKOFF_S", 0.0)
+def test_persistently_failing_endpoint_is_called_once_before_failover():
     attempted = []
 
     def flaky(url, query, timeout):
@@ -466,8 +513,7 @@ def test_persistently_failing_endpoint_falls_through_to_the_next(monkeypatch):
         a_location(), cache=tmp_cache(), post_overpass=flaky,
         endpoints=["https://first.test", "https://second.test"])
 
-    assert attempted[:2] == ["https://first.test", "https://first.test"]
-    assert "https://second.test" in attempted
+    assert attempted == ["https://first.test", "https://second.test"]
     assert graph.provenance == SOURCE_NETWORK
 
 

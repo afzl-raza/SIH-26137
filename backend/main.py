@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -599,10 +600,12 @@ def _generate_from_openstreetmap(req: GenerateRequest):
     try:
         graph = load_osm_graph(location)
     except OsmLoaderError as e:
-        # Upstream is unavailable and nothing is cached. This deliberately
-        # fails rather than quietly returning a synthetic network, which would
-        # misrepresent generated roads as real map data.
-        raise HTTPException(status_code=502, detail=str(e))
+        # Keep `detail` as a string for existing clients, and provide a stable
+        # machine-readable code without exposing upstream URLs or exceptions.
+        return JSONResponse(
+            status_code=e.status_code,
+            content={"code": e.code, "detail": str(e)},
+        )
 
     try:
         scenario = osm_graph_to_scenario(

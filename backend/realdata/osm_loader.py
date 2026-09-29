@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import math
 import os
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -46,6 +47,7 @@ from .cache import (
     SOURCE_CACHE,
     SOURCE_CACHE_STALE,
     SOURCE_NETWORK,
+    canonical_key,
 )
 from .geocoding import BoundingBox, ResolvedLocation
 
@@ -81,10 +83,11 @@ PARSER_VERSION = 1
 CACHE_NAMESPACE = "osm"
 OSM_TTL_SECONDS = 30 * 24 * 60 * 60  # road layouts change slowly
 
-DEFAULT_TIMEOUT_S = 180.0
-# Retries per endpoint before moving to the next mirror.
-ATTEMPTS_PER_ENDPOINT = int(os.environ.get("QDFRO_OVERPASS_ATTEMPTS", 2))
-RETRY_BACKOFF_S = float(os.environ.get("QDFRO_OVERPASS_BACKOFF_S", 2.0))
+# Public Overpass instances are an optional enhancement, not a reason to hold
+# a demo request open for minutes. A request gets one bounded try per mirror
+# and the complete operation has a deadline below common hosting timeouts.
+DEFAULT_TIMEOUT_S = float(os.environ.get("QDFRO_OVERPASS_TIMEOUT_S", 10.0))
+TOTAL_TIMEOUT_S = float(os.environ.get("QDFRO_OVERPASS_TOTAL_TIMEOUT_S", 35.0))
 OVERPASS_QUERY_TIMEOUT_S = 120
 MAX_BBOX_AREA_KM2 = float(os.environ.get("QDFRO_MAX_BBOX_AREA_KM2", 900.0))
 
@@ -138,7 +141,43 @@ KNOTS_TO_KPH = 1.852
 
 
 class OsmLoaderError(RuntimeError):
-    """Raised when a road network cannot be obtained from network or cache."""
+    """A safe, stable error exposed by the road-network API."""
+
+    def __init__(self, message: str, *, code: str = "osm_load_failed", status_code: int = 502):
+        super().__init__(message)
+        self.code = code
+        self.status_code = status_code
+
+
+class _InFlightLoad:
+    """One in-process lock plus its waiter count for a cache key."""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.users = 0
+
+
+_INFLIGHT_GUARD = threading.Lock()
+_INFLIGHT_LOADS: Dict[str, _InFlightLoad] = {}
+
+
+def _join_inflight_load(key: Dict[str, Any]) -> Tuple[str, _InFlightLoad]:
+    """Returns the per-extract lock and records this caller as a user."""
+    fingerprint = canonical_key(key)
+    with _INFLIGHT_GUARD:
+        state = _INFLIGHT_LOADS.get(fingerprint)
+        if state is None:
+            state = _InFlightLoad()
+            _INFLIGHT_LOADS[fingerprint] = state
+        state.users += 1
+    return fingerprint, state
+
+
+def _leave_inflight_load(fingerprint: str, state: _InFlightLoad) -> None:
+    with _INFLIGHT_GUARD:
+        state.users -= 1
+        if state.users == 0 and _INFLIGHT_LOADS.get(fingerprint) is state:
+            del _INFLIGHT_LOADS[fingerprint]
 
 
 def _utc_now_iso() -> str:
@@ -578,7 +617,9 @@ def load_osm_graph(
     if area > MAX_BBOX_AREA_KM2:
         raise OsmLoaderError(
             f"Requested area is {area:.0f} km2, above the {MAX_BBOX_AREA_KM2:.0f} km2 "
-            f"limit. Reduce radius_m or use a smaller bounding box."
+            f"limit. Reduce radius_m or use a smaller bounding box.",
+            code="osm_area_too_large",
+            status_code=422,
         )
 
     cache = cache if cache is not None else DISK_CACHE
@@ -590,44 +631,67 @@ def load_osm_graph(
         return _graph_from_payload(
             entry.payload, location, highway_classes, SOURCE_CACHE, endpoint="cache")
 
-    query = build_overpass_query(bbox, highway_classes)
-    errors: List[str] = []
-    for url in (endpoints if endpoints is not None else overpass_endpoints()):
-        # Public Overpass instances return 504 under load often enough that a
-        # single attempt is not reliable: during development the same query
-        # failed on one attempt and succeeded moments later. One retry per
-        # endpoint costs little and materially improves the odds.
-        payload = None
-        for attempt in range(ATTEMPTS_PER_ENDPOINT):
-            try:
-                payload = post(url, query, timeout_s)
+    deadline = time.monotonic() + TOTAL_TIMEOUT_S
+    fingerprint, in_flight = _join_inflight_load(key)
+    acquired = False
+    try:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not in_flight.lock.acquire(timeout=remaining):
+            raise OsmLoaderError(
+                "The road-network request timed out. Please try again or select a prefetched network.",
+                code="osm_load_timeout",
+                status_code=503,
+            )
+        acquired = True
+
+        # A concurrent caller may have populated the cache while this request
+        # waited for the key. Re-check before making another external request.
+        entry = None if force_refresh else cache.get(CACHE_NAMESPACE, key)
+        if entry is not None and not entry.is_stale(OSM_TTL_SECONDS):
+            return _graph_from_payload(
+                entry.payload, location, highway_classes, SOURCE_CACHE, endpoint="cache")
+
+        query = build_overpass_query(bbox, highway_classes)
+        invalid_response = False
+        for url in (endpoints if endpoints is not None else overpass_endpoints()):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 break
-            except Exception as exc:
-                errors.append(f"{url} (attempt {attempt + 1}): {type(exc).__name__}: {exc}")
-                if attempt + 1 < ATTEMPTS_PER_ENDPOINT:
-                    time.sleep(RETRY_BACKOFF_S)
-        if payload is None:
-            continue
+            try:
+                payload = post(url, query, min(timeout_s, remaining))
+            except Exception:
+                continue
 
-        if not isinstance(payload, dict) or "elements" not in payload:
-            errors.append(f"{url}: unexpected response shape")
-            continue
+            if not isinstance(payload, dict) or "elements" not in payload:
+                invalid_response = True
+                continue
 
-        cache.set(CACHE_NAMESPACE, key, payload)
-        return _graph_from_payload(
-            payload, location, highway_classes, SOURCE_NETWORK, endpoint=url)
+            cache.set(CACHE_NAMESPACE, key, payload)
+            return _graph_from_payload(
+                payload, location, highway_classes, SOURCE_NETWORK, endpoint=url)
 
-    # Every endpoint failed. A stale extract is far better than no map, as
-    # long as it is labelled stale.
-    if entry is not None:
-        return _graph_from_payload(
-            entry.payload, location, highway_classes, SOURCE_CACHE_STALE,
-            endpoint="cache")
+        # Every endpoint failed. A stale extract is far better than no map, as
+        # long as it is labelled stale.
+        if entry is not None:
+            return _graph_from_payload(
+                entry.payload, location, highway_classes, SOURCE_CACHE_STALE,
+                endpoint="cache")
 
-    raise OsmLoaderError(
-        "Could not retrieve OpenStreetMap data and no cached extract is "
-        "available for this area. Tried: " + "; ".join(errors or ["no endpoints"])
-    )
+        if invalid_response:
+            raise OsmLoaderError(
+                "The road-data provider returned an invalid response. Please try again later.",
+                code="osm_upstream_invalid_response",
+                status_code=502,
+            )
+        raise OsmLoaderError(
+            "Live OpenStreetMap data is unavailable. Please try again later or select a prefetched network.",
+            code="osm_upstream_unavailable",
+            status_code=503,
+        )
+    finally:
+        if acquired:
+            in_flight.lock.release()
+        _leave_inflight_load(fingerprint, in_flight)
 
 
 def _graph_from_payload(
@@ -641,14 +705,18 @@ def _graph_from_payload(
     if not edges:
         raise OsmLoaderError(
             "No drivable roads were found in the requested area. Try a larger "
-            "radius or a different location."
+            "radius or a different location.",
+            code="osm_no_drivable_roads",
+            status_code=422,
         )
 
     nodes, edges, component_stats = largest_routable_component(nodes, edges)
     if not edges:
         raise OsmLoaderError(
             "The road network in this area has no strongly connected component "
-            "large enough to route on. Try a larger radius."
+            "large enough to route on. Try a larger radius.",
+            code="osm_not_routable",
+            status_code=422,
         )
 
     stats.update(component_stats)

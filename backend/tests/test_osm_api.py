@@ -144,7 +144,8 @@ def test_missing_location_is_a_client_error(mock_overpass):
 def test_area_above_the_limit_is_rejected(mock_overpass):
     response = _generate_osm(latitude=None, longitude=None,
                              bbox=[0.0, 0.0, 20.0, 20.0])
-    assert response.status_code == 502
+    assert response.status_code == 422
+    assert response.json()["code"] == "osm_area_too_large"
     assert "km2" in response.json()["detail"]
 
 
@@ -166,9 +167,10 @@ def test_overpass_failure_without_cache_returns_an_error_not_synthetic_data(monk
     monkeypatch.setattr(main_module, "load_osm_graph", dead)
 
     response = _generate_osm()
-    assert response.status_code == 502
+    assert response.status_code == 503
+    assert response.json()["code"] == "osm_upstream_unavailable"
     detail = response.json()["detail"]
-    assert "no cached extract" in detail
+    assert "Live OpenStreetMap data is unavailable" in detail
 
     body = response.json()
     assert "scenario" not in body
