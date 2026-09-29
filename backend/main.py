@@ -602,10 +602,10 @@ def _generate_from_openstreetmap(req: GenerateRequest):
     except OsmLoaderError as e:
         # Keep `detail` as a string for existing clients, and provide a stable
         # machine-readable code without exposing upstream URLs or exceptions.
-        return JSONResponse(
-            status_code=e.status_code,
-            content={"code": e.code, "detail": str(e)},
-        )
+        content = {"code": e.code, "detail": str(e)}
+        if e.diagnostics:
+            content["diagnostics"] = e.diagnostics
+        return JSONResponse(status_code=e.status_code, content=content)
 
     try:
         scenario = osm_graph_to_scenario(

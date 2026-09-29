@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 import pytest
+import httpx
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -365,6 +366,40 @@ def test_endpoint_is_configurable(monkeypatch):
 
     monkeypatch.delenv("QDFRO_OVERPASS_URL")
     assert overpass_endpoints()[0].startswith("https://")
+
+
+def test_http_transport_retries_405_as_get(monkeypatch):
+    calls = []
+
+    class Response:
+        def __init__(self, status_code, body=None):
+            self.status_code = status_code
+            self._body = body
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                request = httpx.Request("POST", "https://example.test/api")
+                raise httpx.HTTPStatusError("bad status", request=request, response=self)
+
+        def json(self):
+            return self._body
+
+    def post(*args, **kwargs):
+        calls.append(("POST", args, kwargs))
+        return Response(405)
+
+    def get(*args, **kwargs):
+        calls.append(("GET", args, kwargs))
+        return Response(200, _connected_payload())
+
+    monkeypatch.setattr(httpx, "post", post)
+    monkeypatch.setattr(httpx, "get", get)
+
+    result = osm_loader_module._http_post_overpass("https://example.test/api", "query", 5.0)
+
+    assert result == _connected_payload()
+    assert [method for method, _, _ in calls] == ["POST", "GET"]
+    assert calls[1][2]["params"] == {"data": "query"}
 
 
 def test_unbounded_area_is_rejected():

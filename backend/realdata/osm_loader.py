@@ -35,6 +35,7 @@ import math
 import os
 import threading
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -143,10 +144,18 @@ KNOTS_TO_KPH = 1.852
 class OsmLoaderError(RuntimeError):
     """A safe, stable error exposed by the road-network API."""
 
-    def __init__(self, message: str, *, code: str = "osm_load_failed", status_code: int = 502):
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "osm_load_failed",
+        status_code: int = 502,
+        diagnostics: Optional[Dict[str, Any]] = None,
+    ):
         super().__init__(message)
         self.code = code
         self.status_code = status_code
+        self.diagnostics = diagnostics
 
 
 class _InFlightLoad:
@@ -414,17 +423,58 @@ def _http_post_overpass(url: str, query: str, timeout_s: float) -> Any:
 
     from .geocoding import DEFAULT_USER_AGENT
 
+    timeout = httpx.Timeout(timeout_s, connect=min(20.0, timeout_s))
+    headers = {"User-Agent": DEFAULT_USER_AGENT, "Accept": "application/json"}
     response = httpx.post(
         url,
         data={"data": query},
-        timeout=httpx.Timeout(timeout_s, connect=20.0),
-        headers={"User-Agent": DEFAULT_USER_AGENT, "Accept": "application/json"},
+        timeout=timeout,
+        headers=headers,
+        follow_redirects=True,
     )
+    # Some public mirrors accept the interpreter query only as a URL
+    # parameter. Retry that equivalent request when POST is explicitly
+    # rejected instead of discarding an otherwise healthy mirror.
+    if response.status_code in (405, 501):
+        response = httpx.get(
+            url,
+            params={"data": query},
+            timeout=timeout,
+            headers=headers,
+            follow_redirects=True,
+        )
     response.raise_for_status()
     return response.json()
 
 
 PostOverpass = Callable[[str, str, float], Any]
+
+
+def _provider_failure_label(exc: Exception) -> str:
+    """Stable, URL-free explanation suitable for an API response."""
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None)
+    if isinstance(status_code, int):
+        return f"HTTP {status_code}"
+
+    name = type(exc).__name__.lower()
+    if "timeout" in name:
+        return "timeout"
+    if "connect" in name or "network" in name or "connection" in name:
+        return "connection error"
+    return "request error"
+
+
+def _provider_failure_diagnostics(failures: Sequence[str]) -> Dict[str, Any]:
+    counts = Counter(failures)
+    summary = ", ".join(
+        f"{label} ({count})" for label, count in sorted(counts.items())
+    ) or "no provider was configured"
+    return {
+        "attempted": len(failures),
+        "failures": dict(sorted(counts.items())),
+        "summary": f"Road-data provider results: {summary}.",
+    }
 
 
 # ------------------------------------------------------------------ parse
@@ -653,17 +703,20 @@ def load_osm_graph(
 
         query = build_overpass_query(bbox, highway_classes)
         invalid_response = False
+        failures: List[str] = []
         for url in (endpoints if endpoints is not None else overpass_endpoints()):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
             try:
                 payload = post(url, query, min(timeout_s, remaining))
-            except Exception:
+            except Exception as exc:
+                failures.append(_provider_failure_label(exc))
                 continue
 
             if not isinstance(payload, dict) or "elements" not in payload:
                 invalid_response = True
+                failures.append("invalid response")
                 continue
 
             cache.set(CACHE_NAMESPACE, key, payload)
@@ -682,11 +735,13 @@ def load_osm_graph(
                 "The road-data provider returned an invalid response. Please try again later.",
                 code="osm_upstream_invalid_response",
                 status_code=502,
+                diagnostics=_provider_failure_diagnostics(failures),
             )
         raise OsmLoaderError(
             "Live OpenStreetMap data is unavailable. Please try again later or select a prefetched network.",
             code="osm_upstream_unavailable",
             status_code=503,
+            diagnostics=_provider_failure_diagnostics(failures),
         )
     finally:
         if acquired:

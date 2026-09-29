@@ -174,6 +174,8 @@ def test_overpass_failure_without_cache_returns_an_error_not_synthetic_data(monk
 
     body = response.json()
     assert "scenario" not in body
+    assert body["diagnostics"]["attempted"] == 3
+    assert body["diagnostics"]["failures"] == {"connection error": 3}
 
 
 def test_cached_extract_is_served_and_labelled_when_overpass_dies(monkeypatch):

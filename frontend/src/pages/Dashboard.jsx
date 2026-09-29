@@ -41,6 +41,9 @@ function extractConditionMeta(data) {
   };
 }
 
+const PREFETCHED_DEMO_LOCATION = 'Hazratganj, Lucknow';
+const PREFETCHED_DEMO_RADIUS_M = 1200;
+
 export default function Dashboard({ onExitToOverview }) {
   return (
     <ToastProvider>
@@ -284,7 +287,7 @@ function DashboardShell({ onExitToOverview }) {
   // ─── API: Generate Scenario ──────────────────────
   // Accepts an optional explicit source so a control can switch network kind
   // and generate in one action without waiting for a state update to land.
-  const handleGenerateScenario = async (sourceOverride) => {
+  const handleGenerateScenario = async (sourceOverride, osmRequestOverrides = {}) => {
     const source = (typeof sourceOverride === 'string') ? sourceOverride : networkSource;
     setLoading(true);
     setActiveOperation('generate');
@@ -304,12 +307,12 @@ function DashboardShell({ onExitToOverview }) {
       // For an OSM run the location is the input: the backend geocodes it
       // through Nominatim and pulls the real road network for the result.
       if (source === 'osm') {
-        const trimmedPlace = (place || '').trim();
+        const trimmedPlace = (osmRequestOverrides.place ?? place).trim();
         if (!trimmedPlace) {
           throw new Error('Please enter a location name before loading an OpenStreetMap road network.');
         }
         body.place = trimmedPlace;
-        body.radius_m = Number(radiusM) || 1200;
+        body.radius_m = Number(osmRequestOverrides.radiusM ?? radiusM) || 1200;
       }
 
       const res = await apiFetch('/api/problem/generate', {
@@ -329,7 +332,10 @@ function DashboardShell({ onExitToOverview }) {
         // a place cannot be resolved or Overpass is unreachable, so its
         // message is worth surfacing verbatim.
         const detail = await res.json().catch(() => null);
-        throw new Error(detail?.detail || 'Failed to generate network scenario');
+        const diagnostic = detail?.diagnostics?.summary;
+        throw new Error([detail?.detail || 'Failed to generate network scenario', diagnostic]
+          .filter((value, index, values) => value && values.indexOf(value) === index)
+          .join(' '));
       }
       const data = await res.json();
       setScenario(data.scenario);
@@ -387,6 +393,16 @@ function DashboardShell({ onExitToOverview }) {
       setLoading(false);
       setActiveOperation(null);
     }
+  };
+
+  const handleLoadPrefetchedDemoNetwork = () => {
+    setNetworkSource('osm');
+    setPlace(PREFETCHED_DEMO_LOCATION);
+    setRadiusM(PREFETCHED_DEMO_RADIUS_M);
+    return handleGenerateScenario('osm', {
+      place: PREFETCHED_DEMO_LOCATION,
+      radiusM: PREFETCHED_DEMO_RADIUS_M
+    });
   };
 
   // ─── Manual depot/stop placement ─────────────────
@@ -1084,6 +1100,7 @@ function DashboardShell({ onExitToOverview }) {
             config={config}
             setConfig={setConfig}
             onGenerate={handleGenerateScenario}
+            onLoadPrefetchedDemoNetwork={handleLoadPrefetchedDemoNetwork}
             onOptimize={handleOptimize}
             onSimulateIncident={handleSimulateIncident}
             onReOptimize={handleReOptimize}

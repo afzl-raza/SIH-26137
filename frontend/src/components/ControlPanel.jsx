@@ -26,6 +26,7 @@ export default function ControlPanel({
   config,
   setConfig,
   onGenerate,
+  onLoadPrefetchedDemoNetwork,
   onOptimize,
   onSimulateIncident,
   onReOptimize,
@@ -203,10 +204,17 @@ export default function ControlPanel({
               >
                 Load Real Road Network
               </Button>
+              <Button
+                variant="secondary"
+                onClick={() => onLoadPrefetchedDemoNetwork?.()}
+                disabled={loading}
+              >
+                Load Prefetched Demo Network
+              </Button>
               <p className="text-[9px] text-gray-600 leading-snug">
                 OpenStreetMap supplies roads, geometry, one-way rules and speed limits only.
-                It carries no traffic data. If the area cannot be loaded the request fails —
-                synthetic roads are never substituted for real ones.
+                The demo network is cached for reliable presentation use. Other places use
+                live providers; synthetic roads are never substituted for real ones.
               </p>
             </div>
           )}
