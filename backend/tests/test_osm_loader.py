@@ -434,8 +434,9 @@ def test_network_failure_without_cache_is_an_explicit_error():
 
 def test_transient_failure_is_retried_on_the_same_endpoint(monkeypatch):
     """Public Overpass instances 504 under load; one retry per endpoint is
-    what makes the difference between a working demo and a 502."""
+    available to deployments with a longer request budget."""
     monkeypatch.setattr(osm_loader_module, "RETRY_BACKOFF_S", 0.0)
+    monkeypatch.setattr(osm_loader_module, "ATTEMPTS_PER_ENDPOINT", 2)
     attempted = []
 
     def flaky(url, query, timeout):
@@ -454,6 +455,7 @@ def test_transient_failure_is_retried_on_the_same_endpoint(monkeypatch):
 
 def test_persistently_failing_endpoint_falls_through_to_the_next(monkeypatch):
     monkeypatch.setattr(osm_loader_module, "RETRY_BACKOFF_S", 0.0)
+    monkeypatch.setattr(osm_loader_module, "ATTEMPTS_PER_ENDPOINT", 2)
     attempted = []
 
     def flaky(url, query, timeout):

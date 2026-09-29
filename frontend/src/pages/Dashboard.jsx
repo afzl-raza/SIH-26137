@@ -316,11 +316,10 @@ function DashboardShell({ onExitToOverview }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-        // Real location loads are not instant: Nominatim geocoding, retrying
-        // Overpass mirrors, and pulling a bounded road graph can take several
-        // minutes on a cold request. Prevent the browser from aborting a valid
-        // request before the backend has finished its own work.
-        timeoutMs: 300000
+        // Leave room for geocoding and the bounded Overpass mirror attempts,
+        // but stay within common web-host request limits. Upstream calls have
+        // their own shorter timeouts so unavailable mirrors fail promptly.
+        timeoutMs: 90000
       });
       if (!res.ok) {
         // The backend refuses rather than substituting synthetic roads when

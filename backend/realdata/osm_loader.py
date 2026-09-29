@@ -81,14 +81,16 @@ PARSER_VERSION = 1
 CACHE_NAMESPACE = "osm"
 OSM_TTL_SECONDS = 30 * 24 * 60 * 60  # road layouts change slowly
 
-# A cold OpenStreetMap fetch may need multiple minutes when geocoding and
-# Overpass are both slow or the first mirrors are saturated; keep the request
-# alive long enough for legitimate real-data loads to finish.
-DEFAULT_TIMEOUT_S = float(os.environ.get("QDFRO_OVERPASS_TIMEOUT_S", 300.0))
-# Retries per endpoint before moving to the next mirror.
-ATTEMPTS_PER_ENDPOINT = int(os.environ.get("QDFRO_OVERPASS_ATTEMPTS", 2))
+# Bound each upstream request so the complete generate operation can finish
+# within common web-host request limits, even when every Overpass mirror is
+# unavailable. The endpoint list still provides failover without spending
+# several minutes retrying a single slow mirror.
+DEFAULT_TIMEOUT_S = float(os.environ.get("QDFRO_OVERPASS_TIMEOUT_S", 20.0))
+# One attempt per mirror by default; deployments can tune this when they have
+# a longer request budget.
+ATTEMPTS_PER_ENDPOINT = int(os.environ.get("QDFRO_OVERPASS_ATTEMPTS", 1))
 RETRY_BACKOFF_S = float(os.environ.get("QDFRO_OVERPASS_BACKOFF_S", 2.0))
-OVERPASS_QUERY_TIMEOUT_S = int(os.environ.get("QDFRO_OVERPASS_QUERY_TIMEOUT_S", 300))
+OVERPASS_QUERY_TIMEOUT_S = int(os.environ.get("QDFRO_OVERPASS_QUERY_TIMEOUT_S", 120))
 MAX_BBOX_AREA_KM2 = float(os.environ.get("QDFRO_MAX_BBOX_AREA_KM2", 900.0))
 
 EARTH_RADIUS_M = 6_371_000.0
