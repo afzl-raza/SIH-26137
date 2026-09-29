@@ -147,6 +147,30 @@ def test_missing_location_is_a_client_error(mock_overpass):
     assert "place name" in response.json()["detail"].lower()
 
 
+@pytest.mark.parametrize(
+    "overrides,detail",
+    [
+        ({"num_jobs": -1}, "num_jobs cannot be negative"),
+        ({"num_vehicles": 0}, "num_vehicles must be at least 1"),
+        ({"time_windows": True, "tw_width_min": 0}, "tw_width_min must be positive"),
+    ],
+)
+def test_common_validation_runs_before_osm_generation(mock_overpass, overrides, detail):
+    response = _generate_osm(**overrides)
+    assert response.status_code == 400
+    assert detail in response.json()["detail"]
+    assert mock_overpass == []
+
+
+@pytest.mark.parametrize("bbox", [[], [26.8, 80.9], [1.0, 2.0, 3.0, 4.0, 5.0]])
+def test_invalid_bbox_length_returns_a_client_error(mock_overpass, bbox):
+    response = _generate_osm(
+        latitude=None, longitude=None, bbox=bbox,
+    )
+    assert response.status_code == 400
+    assert "expected 4 coordinates" in response.json()["detail"]
+
+
 def test_area_above_the_limit_is_rejected(mock_overpass):
     response = _generate_osm(latitude=None, longitude=None,
                              bbox=[0.0, 0.0, 20.0, 20.0])
@@ -180,8 +204,11 @@ def test_overpass_failure_without_cache_returns_an_error_not_synthetic_data(monk
 
     body = response.json()
     assert "scenario" not in body
-    assert body["diagnostics"]["attempted"] == 3
-    assert body["diagnostics"]["failures"] == {"connection error": 3}
+    endpoint_count = len(osm_loader_module.overpass_endpoints())
+    assert body["diagnostics"]["attempted"] == endpoint_count
+    assert body["diagnostics"]["failures"] == {
+        "connection error": endpoint_count
+    }
 
 
 def test_cached_extract_is_served_and_labelled_when_overpass_dies(monkeypatch):

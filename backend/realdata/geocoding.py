@@ -75,7 +75,10 @@ def clamp_radius(radius_m: Optional[float]) -> float:
     to download a whole city."""
     if radius_m is None:
         return DEFAULT_RADIUS_M
-    return float(min(MAX_RADIUS_M, max(MIN_RADIUS_M, float(radius_m))))
+    radius = float(radius_m)
+    if not math.isfinite(radius):
+        raise GeocodingError("radius_m must be a finite number.")
+    return float(min(MAX_RADIUS_M, max(MIN_RADIUS_M, radius)))
 
 
 @dataclass(frozen=True)
@@ -225,8 +228,15 @@ def geocode_place(
             {"q": query, "format": "jsonv2", "limit": 1, "addressdetails": 0},
             timeout_s,
         )
-        if not payload:
-            raise GeocodingError(f"No location found for '{query}'.")
+        if not isinstance(payload, list) or not payload:
+            message = (
+                str(payload.get("error", f"No location found for '{query}'."))
+                if isinstance(payload, dict)
+                else f"No location found for '{query}'."
+            )
+            raise GeocodingError(message)
+        if not isinstance(payload[0], dict):
+            raise GeocodingError(f"The geocoding service returned an invalid result for '{query}'.")
         hit = payload[0]
         stored = {
             "lat": float(hit["lat"]),
@@ -264,6 +274,13 @@ def _location_from_payload(
 ) -> ResolvedLocation:
     lat = float(payload["lat"])
     lon = float(payload["lon"])
+    if (
+        not math.isfinite(lat)
+        or not math.isfinite(lon)
+        or not (-90.0 <= lat <= 90.0)
+        or not (-180.0 <= lon <= 180.0)
+    ):
+        raise GeocodingError("The geocoding service returned coordinates outside valid ranges.")
     return ResolvedLocation(
         query=query,
         latitude=lat,
@@ -295,10 +312,28 @@ def resolve_location(
     radius = clamp_radius(radius_m)
 
     if bbox is not None:
-        min_lat, min_lon, max_lat, max_lon = (float(v) for v in bbox)
-        if min_lat > max_lat or min_lon > max_lon:
+        try:
+            coordinates = tuple(bbox)
+        except TypeError as exc:
+            raise GeocodingError("Invalid bbox: expected 4 coordinates.") from exc
+        if len(coordinates) != 4:
+            raise GeocodingError("Invalid bbox: expected 4 coordinates.")
+        try:
+            min_lat, min_lon, max_lat, max_lon = (float(v) for v in coordinates)
+        except (TypeError, ValueError) as exc:
+            raise GeocodingError("Invalid bbox: all coordinates must be numbers.") from exc
+        if not all(math.isfinite(value) for value in (min_lat, min_lon, max_lat, max_lon)):
+            raise GeocodingError("Invalid bbox: all coordinates must be finite.")
+        if (
+            min_lat > max_lat
+            or min_lon > max_lon
+            or min_lat < -90.0
+            or max_lat > 90.0
+            or min_lon < -180.0
+            or max_lon > 180.0
+        ):
             raise GeocodingError(
-                "Invalid bbox: expected (min_lat, min_lon, max_lat, max_lon)."
+                "Invalid bbox: expected ordered coordinates within latitude and longitude ranges."
             )
         box = BoundingBox(min_lat, min_lon, max_lat, max_lon)
         center_lat, center_lon = box.center
@@ -315,7 +350,12 @@ def resolve_location(
 
     if latitude is not None and longitude is not None:
         lat, lon = float(latitude), float(longitude)
-        if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lon <= 180.0):
+        if (
+            not math.isfinite(lat)
+            or not math.isfinite(lon)
+            or not (-90.0 <= lat <= 90.0)
+            or not (-180.0 <= lon <= 180.0)
+        ):
             raise GeocodingError(f"Coordinates out of range: {lat}, {lon}.")
         return ResolvedLocation(
             query=place or f"{lat},{lon}",

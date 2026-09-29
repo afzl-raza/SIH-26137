@@ -7,6 +7,7 @@ hemispheres so nothing can quietly become city-specific.
 import json
 import os
 import sys
+import threading
 import time
 
 import pytest
@@ -209,6 +210,26 @@ def test_unknown_place_raises(cache):
         geocode_place("nowhere-at-all", cache=cache, fetch_json=transport)
 
 
+def test_nominatim_error_object_becomes_a_geocoding_error(cache):
+    with pytest.raises(GeocodingError, match="Unable to geocode"):
+        geocode_place(
+            "somewhere",
+            cache=cache,
+            fetch_json=lambda url, params, timeout: {"error": "Unable to geocode"},
+        )
+
+
+@pytest.mark.parametrize("bbox", [(1.0, 2.0), (1.0, 2.0, 3.0, 4.0, 5.0)])
+def test_bbox_requires_exactly_four_coordinates(bbox):
+    with pytest.raises(GeocodingError, match="expected 4 coordinates"):
+        resolve_location(bbox=bbox)
+
+
+def test_bbox_coordinates_must_be_in_geographic_ranges():
+    with pytest.raises(GeocodingError, match="latitude and longitude ranges"):
+        resolve_location(bbox=(-91.0, 0.0, 0.0, 1.0))
+
+
 # ================================================================ caching
 
 def test_second_lookup_is_served_from_cache(cache):
@@ -300,6 +321,66 @@ def test_cache_root_is_configurable(tmp_path):
     custom = DiskCache(root=tmp_path / "somewhere-else")
     custom.set("osm", {"a": 1}, {"b": 2})
     assert (tmp_path / "somewhere-else" / "osm").exists()
+
+
+def test_default_cache_root_uses_next_writable_candidate(tmp_path, monkeypatch):
+    import realdata.cache as cache_module
+
+    module_file = tmp_path / "app" / "realdata" / "cache.py"
+    monkeypatch.delenv("QDFRO_CACHE_DIR", raising=False)
+    monkeypatch.setattr(cache_module, "__file__", str(module_file))
+
+    original_mkdir = cache_module.Path.mkdir
+    rejected = tmp_path / ".cache"
+
+    def deny_first_candidate(path, *args, **kwargs):
+        if path == rejected:
+            raise PermissionError("simulated root-owned deployment directory")
+        return original_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(cache_module.Path, "mkdir", deny_first_candidate)
+    assert cache_module.default_cache_root() == tmp_path / "app" / ".cache"
+
+
+def test_cache_write_failure_does_not_break_the_request(tmp_path, caplog):
+    root_file = tmp_path / "not-a-directory"
+    root_file.write_text("occupied", encoding="utf-8")
+    cache = DiskCache(root=root_file)
+
+    cache.set("osm", {"key": "value"}, {"payload": "still returned"})
+
+    assert "Could not write cache entry" in caplog.text
+
+
+def test_concurrent_cache_writes_use_distinct_temporary_files(cache, monkeypatch):
+    import realdata.cache as cache_module
+
+    replaced_sources = []
+    replace_lock = threading.Lock()
+    original_replace = cache_module.os.replace
+
+    def record_replace(source, destination):
+        with replace_lock:
+            replaced_sources.append(source)
+        original_replace(source, destination)
+
+    monkeypatch.setattr(cache_module.os, "replace", record_replace)
+    barrier = threading.Barrier(2)
+
+    def write(value):
+        barrier.wait()
+        cache.set("osm", {"same": "key"}, {"value": value})
+
+    workers = [threading.Thread(target=write, args=(value,)) for value in (1, 2)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=2)
+
+    assert all(not worker.is_alive() for worker in workers)
+    assert len(replaced_sources) == 2
+    assert len(set(replaced_sources)) == 2
+    assert cache.get("osm", {"same": "key"}).payload["value"] in (1, 2)
 
 
 # ================================================ no hardcoded locations

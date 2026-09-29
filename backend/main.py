@@ -1,5 +1,6 @@
 import csv
 import json
+import math
 import threading
 import time
 import uuid
@@ -485,31 +486,27 @@ def generate_problem(req: GenerateRequest):
     needs the nodes and edges to draw the map. What moves server-side is the
     scenario on every *subsequent* request body.
     """
+    # Validate fields shared by both scenario sources before dispatch. OSM
+    # generation must not bypass checks that protect terminal/fleet creation.
+    if req.num_vehicles < 1:
+        raise HTTPException(status_code=400, detail="num_vehicles must be at least 1")
+    if req.num_jobs < 0:
+        raise HTTPException(status_code=400, detail="num_jobs cannot be negative")
+    if req.time_windows and (
+        not math.isfinite(req.tw_width_min) or req.tw_width_min <= 0
+    ):
+        raise HTTPException(status_code=400, detail="tw_width_min must be positive when time_windows is enabled")
+
     if req.source.strip().lower() in ("osm", "openstreetmap"):
         return _generate_from_openstreetmap(req)
 
     if req.demand_min > req.demand_max:
         raise HTTPException(status_code=400, detail="demand_min cannot exceed demand_max")
 
-    # Same "reject before calling the generator" convention as the check
-    # above. Each of these is reachable today only as an opaque 500 rather
-    # than this clean 400 - reproduced directly: num_vehicles=0 raises a
-    # bare ZeroDivisionError inside generate_synthetic_scenario (vehicle
-    # capacity is derived by dividing total demand across vehicles);
-    # negative num_jobs/num_nodes raise ValueError from random.sample
-    # ("Sample larger than population or is negative"); tw_width_min <= 0
-    # produces a job with ready_time > due_time, which the existing
-    # Job validator rejects deep inside generation. None of these are a
-    # supported contract - unlike num_jobs=0, which is deliberately
-    # supported (see test_exact_optimizer.py) and left untouched here.
-    if req.num_vehicles < 1:
-        raise HTTPException(status_code=400, detail="num_vehicles must be at least 1")
-    if req.num_jobs < 0:
-        raise HTTPException(status_code=400, detail="num_jobs cannot be negative")
+    # num_nodes and demand bounds are synthetic-only; num_jobs=0 remains
+    # supported (see test_exact_optimizer.py).
     if req.num_nodes < 1:
         raise HTTPException(status_code=400, detail="num_nodes must be at least 1")
-    if req.time_windows and req.tw_width_min <= 0:
-        raise HTTPException(status_code=400, detail="tw_width_min must be positive when time_windows is enabled")
 
     try:
         scenario = generate_synthetic_scenario(
@@ -626,7 +623,7 @@ def _generate_from_openstreetmap(req: GenerateRequest):
             place=req.place,
             latitude=req.latitude,
             longitude=req.longitude,
-            bbox=tuple(req.bbox) if req.bbox else None,
+            bbox=tuple(req.bbox) if req.bbox is not None else None,
             radius_m=req.radius_m,
         )
     except GeocodingError as e:

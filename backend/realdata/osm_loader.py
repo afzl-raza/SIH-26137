@@ -31,6 +31,7 @@ and is simulated; nothing here is a live traffic feed.
 """
 from __future__ import annotations
 
+import logging
 import math
 import os
 import threading
@@ -62,9 +63,8 @@ from observability import trace_event
 # optional in practice - the primary instance returned 504 twice during
 # development before succeeding on retry.
 DEFAULT_OVERPASS_ENDPOINTS = (
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass.openstreetmap.fr/api/interpreter",
+    "https://lz4.overpass-api.de/api/interpreter",
 )
 
 # Drivable classes. Deliberately excludes footway, cycleway, path, steps,
@@ -89,12 +89,13 @@ OSM_TTL_SECONDS = 30 * 24 * 60 * 60  # road layouts change slowly
 # Public Overpass instances are an optional enhancement, not a reason to hold
 # a demo request open for minutes. A request gets one bounded try per mirror
 # and the complete operation has a deadline below common hosting timeouts.
-DEFAULT_TIMEOUT_S = float(os.environ.get("QDFRO_OVERPASS_TIMEOUT_S", 10.0))
+DEFAULT_TIMEOUT_S = float(os.environ.get("QDFRO_OVERPASS_TIMEOUT_S", 20.0))
 TOTAL_TIMEOUT_S = float(os.environ.get("QDFRO_OVERPASS_TOTAL_TIMEOUT_S", 35.0))
 OVERPASS_QUERY_TIMEOUT_S = 120
 MAX_BBOX_AREA_KM2 = float(os.environ.get("QDFRO_MAX_BBOX_AREA_KM2", 900.0))
 
 EARTH_RADIUS_M = 6_371_000.0
+logger = logging.getLogger(__name__)
 
 # --- documented fallbacks ------------------------------------------------
 # In the sampled real extract, 132 of 133 ways carried no maxspeed tag, so
@@ -687,8 +688,12 @@ def load_osm_graph(
     entry = None if force_refresh else cache.get(CACHE_NAMESPACE, key)
     if entry is not None and not entry.is_stale(OSM_TTL_SECONDS):
         trace_event("osm.network_cache_hit", provenance=SOURCE_CACHE)
-        return _graph_from_payload(
-            entry.payload, location, highway_classes, SOURCE_CACHE, endpoint="cache")
+        try:
+            return _graph_from_payload(
+                entry.payload, location, highway_classes, SOURCE_CACHE, endpoint="cache")
+        except OsmLoaderError as exc:
+            _discard_invalid_cache_entry(cache, key, exc)
+            entry = None
 
     trace_event("osm.network_cache_miss")
 
@@ -711,8 +716,12 @@ def load_osm_graph(
         entry = None if force_refresh else cache.get(CACHE_NAMESPACE, key)
         if entry is not None and not entry.is_stale(OSM_TTL_SECONDS):
             trace_event("osm.network_cache_hit_after_wait", provenance=SOURCE_CACHE)
-            return _graph_from_payload(
-                entry.payload, location, highway_classes, SOURCE_CACHE, endpoint="cache")
+            try:
+                return _graph_from_payload(
+                    entry.payload, location, highway_classes, SOURCE_CACHE, endpoint="cache")
+            except OsmLoaderError as exc:
+                _discard_invalid_cache_entry(cache, key, exc)
+                entry = None
 
         query = build_overpass_query(bbox, highway_classes)
         invalid_response = False
@@ -738,7 +747,23 @@ def load_osm_graph(
                 )
                 continue
 
-            if not isinstance(payload, dict) or "elements" not in payload:
+            if not isinstance(payload, dict) or not isinstance(payload.get("elements"), list):
+                invalid_response = True
+                failures.append("invalid response")
+                trace_event(
+                    "osm.overpass_request_failed",
+                    provider=provider,
+                    reason="invalid response",
+                    duration_ms=round((time.monotonic() - started_at) * 1000),
+                )
+                continue
+
+            try:
+                graph = _graph_from_payload(
+                    payload, location, highway_classes, SOURCE_NETWORK, endpoint=url)
+            except OsmLoaderError as exc:
+                if exc.code != "osm_upstream_invalid_response":
+                    raise
                 invalid_response = True
                 failures.append("invalid response")
                 trace_event(
@@ -756,16 +781,18 @@ def load_osm_graph(
                 duration_ms=round((time.monotonic() - started_at) * 1000),
                 element_count=len(payload["elements"]),
             )
-            return _graph_from_payload(
-                payload, location, highway_classes, SOURCE_NETWORK, endpoint=url)
+            return graph
 
         # Every endpoint failed. A stale extract is far better than no map, as
         # long as it is labelled stale.
         if entry is not None:
             trace_event("osm.network_cache_stale", provenance=SOURCE_CACHE_STALE)
-            return _graph_from_payload(
-                entry.payload, location, highway_classes, SOURCE_CACHE_STALE,
-                endpoint="cache")
+            try:
+                return _graph_from_payload(
+                    entry.payload, location, highway_classes, SOURCE_CACHE_STALE,
+                    endpoint="cache")
+            except OsmLoaderError as exc:
+                _discard_invalid_cache_entry(cache, key, exc)
 
         if invalid_response:
             trace_event("osm.network_load_failed", code="osm_upstream_invalid_response")
@@ -788,6 +815,19 @@ def load_osm_graph(
         _leave_inflight_load(fingerprint, in_flight)
 
 
+def _discard_invalid_cache_entry(
+    cache: DiskCache,
+    key: Dict[str, Any],
+    error: OsmLoaderError,
+) -> None:
+    logger.warning("Ignoring invalid cached OSM extract (%s).", error.code)
+    trace_event("osm.network_cache_invalid", code=error.code)
+    try:
+        cache.delete(CACHE_NAMESPACE, key)
+    except OSError as exc:
+        logger.warning("Could not remove invalid OSM cache entry: %s", exc)
+
+
 def _graph_from_payload(
     payload: Dict[str, Any],
     location: ResolvedLocation,
@@ -795,7 +835,14 @@ def _graph_from_payload(
     provenance: str,
     endpoint: str,
 ) -> OsmRoadGraph:
-    nodes, edges, stats = parse_overpass_response(payload, highway_classes)
+    try:
+        nodes, edges, stats = parse_overpass_response(payload, highway_classes)
+    except (AttributeError, KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise OsmLoaderError(
+            "The road-data provider returned a malformed response. Please try again later.",
+            code="osm_upstream_invalid_response",
+            status_code=502,
+        ) from exc
     if not edges:
         raise OsmLoaderError(
             "No drivable roads were found in the requested area. Try a larger "

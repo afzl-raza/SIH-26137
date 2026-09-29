@@ -32,6 +32,7 @@ is ever invented.
 """
 from __future__ import annotations
 
+import math
 import random
 from typing import Dict, List, Optional, Tuple
 
@@ -90,6 +91,8 @@ def select_terminals(
 
     Deterministic for a given graph, job count and seed.
     """
+    if num_jobs < 0:
+        raise ValueError("num_jobs cannot be negative.")
     center_lat, center_lon = graph.location.latitude, graph.location.longitude
     depot = _closest_node(graph, center_lat, center_lon)
 
@@ -115,6 +118,10 @@ def osm_graph_to_scenario(
     """Builds a ProblemScenario from a real OSM road graph."""
     if not graph.nodes or not graph.edges:
         raise ValueError("Cannot build a scenario from an empty road graph.")
+    if num_vehicles < 1:
+        raise ValueError("num_vehicles must be at least 1.")
+    if time_windows and (not math.isfinite(tw_width_min) or tw_width_min <= 0):
+        raise ValueError("tw_width_min must be positive when time_windows is enabled.")
 
     depot_osm_id, job_osm_ids = select_terminals(graph, num_jobs, seed)
 

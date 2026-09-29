@@ -552,10 +552,58 @@ def test_persistently_failing_endpoint_is_called_once_before_failover():
     assert graph.provenance == SOURCE_NETWORK
 
 
+def test_malformed_overpass_payload_falls_through_to_next_endpoint():
+    attempted = []
+
+    def transport(url, query, timeout):
+        attempted.append(url)
+        if len(attempted) == 1:
+            return {"elements": [None]}
+        return _connected_payload()
+
+    graph = load_osm_graph(
+        a_location(),
+        cache=tmp_cache(),
+        post_overpass=transport,
+        endpoints=["https://malformed.test", "https://healthy.test"],
+    )
+
+    assert graph.provenance == SOURCE_NETWORK
+    assert graph.endpoint == "https://healthy.test"
+    assert attempted == ["https://malformed.test", "https://healthy.test"]
+
+
 def test_empty_area_raises_rather_than_inventing_roads():
+    cache = tmp_cache()
     with pytest.raises(OsmLoaderError, match="No drivable roads"):
-        load_osm_graph(a_location(), cache=tmp_cache(),
+        load_osm_graph(a_location(), cache=cache,
                        post_overpass=lambda u, q, t: payload())
+    assert cache.entries("osm") == 0
+
+
+def test_unusable_cached_extract_is_removed_and_retried():
+    cache = tmp_cache()
+    location = a_location()
+    from realdata.osm_loader import _cache_key
+
+    key = _cache_key(location.bbox, DEFAULT_HIGHWAY_CLASSES)
+    cache.set("osm", key, {"elements": []})
+    calls = []
+
+    def transport(url, query, timeout):
+        calls.append(url)
+        return _connected_payload()
+
+    graph = load_osm_graph(
+        location,
+        cache=cache,
+        post_overpass=transport,
+        endpoints=["https://retry.test"],
+    )
+
+    assert graph.provenance == SOURCE_NETWORK
+    assert calls == ["https://retry.test"]
+    assert cache.entries("osm") == 1
 
 
 # ===================================================== scenario adapter

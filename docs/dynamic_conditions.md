@@ -382,9 +382,11 @@ guards it.
 
 | Variable | Effect |
 |---|---|
-| `QDFRO_CACHE_DIR` | Cache root for geocoding, OSM and weather. Default `<repo>/.cache`. |
+| `QDFRO_CACHE_DIR` | Cache root for geocoding, OSM and weather. Without an override, the first writable path is selected from `<repo>/.cache`, `<backend>/.cache`, the working directory, and the system temporary directory. |
 | `QDFRO_USER_AGENT` | User-Agent for Nominatim (its usage policy requires one). |
 | `QDFRO_MAX_RADIUS_M` | Upper bound on OSM extract radius. Default 10000. |
+| `QDFRO_OVERPASS_URL` | Optional comma-separated Overpass endpoint override. Defaults to the France public instance, then `lz4.overpass-api.de`. |
+| `QDFRO_OVERPASS_TIMEOUT_S` | Per-endpoint client timeout in seconds. Default 20. |
 
 Weather TTL (`weather.WEATHER_TTL_SECONDS`, 15 min) and the model parameter
 tables are module constants, deliberately not environment-tunable — they are

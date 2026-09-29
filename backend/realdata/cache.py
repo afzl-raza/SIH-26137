@@ -14,14 +14,19 @@ detail. Every caller reports which of NETWORK / CACHE / CACHE_STALE / ERROR
 it actually got, so the UI can never claim fresh data it did not fetch.
 
 The cache root is configurable with the QDFRO_CACHE_DIR environment variable
-and defaults to <repo_root>/.cache. Nothing secret is stored: entries hold
-public geocoding, road and weather data only.
+and defaults to the first writable location among <repo_root>/.cache,
+<backend>/.cache, the working directory, and the system temporary directory.
+Nothing secret is stored: entries hold public geocoding, road and weather
+data only.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
+import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,15 +40,35 @@ SOURCE_CACHE_STALE = "cache-stale"  # served from cache past its TTL (offline)
 SOURCE_ERROR = "error"            # nothing usable available
 
 DEFAULT_TTL_SECONDS = 7 * 24 * 60 * 60  # road networks change slowly
+logger = logging.getLogger(__name__)
 
 
 def default_cache_root() -> Path:
-    """<repo_root>/.cache unless QDFRO_CACHE_DIR overrides it."""
+    """Find a writable default, unless QDFRO_CACHE_DIR overrides it."""
     env = os.environ.get("QDFRO_CACHE_DIR")
     if env:
         return Path(env)
-    # backend/realdata/cache.py -> backend/realdata -> backend -> repo root
-    return Path(__file__).resolve().parents[2] / ".cache"
+    # In a Render service rooted at /app, parents[2] is /, which is not
+    # writable by the service user. Probe each sensible location before using
+    # the system temporary directory.
+    candidates = (
+        Path(__file__).resolve().parents[2] / ".cache",
+        Path(__file__).resolve().parents[1] / ".cache",
+        Path.cwd() / ".cache",
+        Path(tempfile.gettempdir()) / "qdfro_cache",
+    )
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryFile(dir=candidate):
+                pass
+            return candidate
+        except OSError as exc:
+            logger.warning("Cache directory %s is not writable: %s", candidate, exc)
+
+    # Let DiskCache.set report a failed write without making cache access a
+    # prerequisite for starting the server or serving fetched data.
+    return candidates[-1]
 
 
 def canonical_key(key: Dict[str, Any]) -> str:
@@ -116,12 +141,22 @@ class DiskCache:
         """Writes an entry atomically, so a crash mid-write cannot leave a
         truncated file that later reads would choke on."""
         path = self.path_for(namespace, key)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        record = {"cached_at": time.time(), "key": key, "payload": payload}
-
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(record), encoding="utf-8")
-        os.replace(tmp, path)
+        tmp: Optional[Path] = None
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            record = {"cached_at": time.time(), "key": key, "payload": payload}
+            tmp = path.with_name(
+                f"{path.stem}_{os.getpid()}_{threading.get_ident()}_{time.time_ns()}.tmp"
+            )
+            tmp.write_text(json.dumps(record), encoding="utf-8")
+            os.replace(tmp, path)
+        except OSError as exc:
+            logger.warning("Could not write cache entry %s: %s", path, exc)
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError as cleanup_exc:
+                    logger.warning("Could not remove temporary cache file %s: %s", tmp, cleanup_exc)
         return path
 
     def delete(self, namespace: str, key: Dict[str, Any]) -> None:
