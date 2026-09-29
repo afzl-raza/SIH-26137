@@ -1091,7 +1091,7 @@ function DashboardShell({ onExitToOverview }) {
             children (ControlPanel/VehicleInspector/QPSOExplainability/
             ArchitectureSnapshot) are laid out to expect. `lg:flex` keeps
             it a flex container at every width the panel is visible at. */}
-        <div className={`space-y-4 flex flex-col ${
+        <div className={`space-y-4 flex flex-col min-w-0 ${
           activeMobileTab === 'controls' ? 'flex' : 'hidden lg:flex'
         }`}>
           <ControlPanel
@@ -1139,7 +1139,7 @@ function DashboardShell({ onExitToOverview }) {
             onConfirmPlacement={handleConfirmPlacement}
           />
 
-          <div id="vehicle-inspector-section" className="scroll-mt-4">
+          <div id="vehicle-inspector-section" className="scroll-mt-4 w-full min-w-0">
             <VehicleInspector
               vehicle={selectedVehicle}
               route={selectedRoute}

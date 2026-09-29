@@ -37,7 +37,7 @@ export default function VehicleInspector({ vehicle, route, scenario, onDeselect 
   // (which pushed the whole sidebar/page very tall) or overflowing past a
   // cap with no overflow handling (which bled into the panel below).
   return (
-    <div className="clean-card p-3.5 rounded-xl shadow-lg text-gray-300 flex flex-col max-h-[560px]" style={{ borderColor: '#5A3A22' }}>
+    <div className="clean-card w-full min-w-0 p-3.5 rounded-xl shadow-lg text-gray-300 flex flex-col max-h-[560px]" style={{ borderColor: '#5A3A22' }}>
       {/* 1. HEADER (always visible, not part of the scroll region) */}
       <div className="flex items-center justify-between border-b border-[#332E29] pb-2 mb-4 flex-shrink-0">
         <div className="flex items-center gap-2">
