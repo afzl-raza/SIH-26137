@@ -1,4 +1,10 @@
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+// Local Vite development proxies relative /api requests to FastAPI.  A hosted
+// frontend has no such proxy, so an unset build variable must not send POSTs
+// to Vercel's own /api route (which responds with 405 Method Not Allowed).
+const DEFAULT_PRODUCTION_API = 'https://sih26137-backend.onrender.com';
+
+export const API_BASE = import.meta.env.VITE_API_BASE_URL
+  || (import.meta.env.PROD ? DEFAULT_PRODUCTION_API : '');
 
 export function apiFetch(path, options = {}) {
   const { timeoutMs = 60000, ...fetchOptions } = options;
