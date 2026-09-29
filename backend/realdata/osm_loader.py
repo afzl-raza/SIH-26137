@@ -39,6 +39,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from urllib.parse import urlsplit
 
 import networkx as nx
 
@@ -51,6 +52,7 @@ from .cache import (
     canonical_key,
 )
 from .geocoding import BoundingBox, ResolvedLocation
+from observability import trace_event
 
 # --- configuration -------------------------------------------------------
 
@@ -436,6 +438,12 @@ def _http_post_overpass(url: str, query: str, timeout_s: float) -> Any:
     # parameter. Retry that equivalent request when POST is explicitly
     # rejected instead of discarding an otherwise healthy mirror.
     if response.status_code in (405, 501):
+        trace_event(
+            "osm.overpass_post_rejected",
+            provider=urlsplit(url).netloc,
+            status_code=response.status_code,
+            retry_transport="GET",
+        )
         response = httpx.get(
             url,
             params={"data": query},
@@ -678,8 +686,11 @@ def load_osm_graph(
 
     entry = None if force_refresh else cache.get(CACHE_NAMESPACE, key)
     if entry is not None and not entry.is_stale(OSM_TTL_SECONDS):
+        trace_event("osm.network_cache_hit", provenance=SOURCE_CACHE)
         return _graph_from_payload(
             entry.payload, location, highway_classes, SOURCE_CACHE, endpoint="cache")
+
+    trace_event("osm.network_cache_miss")
 
     deadline = time.monotonic() + TOTAL_TIMEOUT_S
     fingerprint, in_flight = _join_inflight_load(key)
@@ -687,6 +698,7 @@ def load_osm_graph(
     try:
         remaining = deadline - time.monotonic()
         if remaining <= 0 or not in_flight.lock.acquire(timeout=remaining):
+            trace_event("osm.network_wait_timed_out")
             raise OsmLoaderError(
                 "The road-network request timed out. Please try again or select a prefetched network.",
                 code="osm_load_timeout",
@@ -698,6 +710,7 @@ def load_osm_graph(
         # waited for the key. Re-check before making another external request.
         entry = None if force_refresh else cache.get(CACHE_NAMESPACE, key)
         if entry is not None and not entry.is_stale(OSM_TTL_SECONDS):
+            trace_event("osm.network_cache_hit_after_wait", provenance=SOURCE_CACHE)
             return _graph_from_payload(
                 entry.payload, location, highway_classes, SOURCE_CACHE, endpoint="cache")
 
@@ -707,36 +720,62 @@ def load_osm_graph(
         for url in (endpoints if endpoints is not None else overpass_endpoints()):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
+                trace_event("osm.overpass_deadline_reached")
                 break
+            provider = urlsplit(url).netloc
+            started_at = time.monotonic()
+            trace_event("osm.overpass_request_started", provider=provider, timeout_s=round(min(timeout_s, remaining), 2))
             try:
                 payload = post(url, query, min(timeout_s, remaining))
             except Exception as exc:
-                failures.append(_provider_failure_label(exc))
+                failure = _provider_failure_label(exc)
+                failures.append(failure)
+                trace_event(
+                    "osm.overpass_request_failed",
+                    provider=provider,
+                    reason=failure,
+                    duration_ms=round((time.monotonic() - started_at) * 1000),
+                )
                 continue
 
             if not isinstance(payload, dict) or "elements" not in payload:
                 invalid_response = True
                 failures.append("invalid response")
+                trace_event(
+                    "osm.overpass_request_failed",
+                    provider=provider,
+                    reason="invalid response",
+                    duration_ms=round((time.monotonic() - started_at) * 1000),
+                )
                 continue
 
             cache.set(CACHE_NAMESPACE, key, payload)
+            trace_event(
+                "osm.overpass_request_completed",
+                provider=provider,
+                duration_ms=round((time.monotonic() - started_at) * 1000),
+                element_count=len(payload["elements"]),
+            )
             return _graph_from_payload(
                 payload, location, highway_classes, SOURCE_NETWORK, endpoint=url)
 
         # Every endpoint failed. A stale extract is far better than no map, as
         # long as it is labelled stale.
         if entry is not None:
+            trace_event("osm.network_cache_stale", provenance=SOURCE_CACHE_STALE)
             return _graph_from_payload(
                 entry.payload, location, highway_classes, SOURCE_CACHE_STALE,
                 endpoint="cache")
 
         if invalid_response:
+            trace_event("osm.network_load_failed", code="osm_upstream_invalid_response")
             raise OsmLoaderError(
                 "The road-data provider returned an invalid response. Please try again later.",
                 code="osm_upstream_invalid_response",
                 status_code=502,
                 diagnostics=_provider_failure_diagnostics(failures),
             )
+        trace_event("osm.network_load_failed", code="osm_upstream_unavailable")
         raise OsmLoaderError(
             "Live OpenStreetMap data is unavailable. Please try again later or select a prefetched network.",
             code="osm_upstream_unavailable",

@@ -81,6 +81,12 @@ def test_osm_generate_returns_full_provenance(mock_overpass):
     assert body["scenario_id"] and body["scenario_hash"]
 
 
+def test_api_response_exposes_a_request_id():
+    response = client.get("/api/health", headers={"X-Request-ID": "osm-trace-123"})
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] == "osm-trace-123"
+
+
 def test_osm_response_does_not_claim_live_traffic(mock_overpass):
     """OSM gives roads, not traffic. The response must say so."""
     body = _generate_osm().json()

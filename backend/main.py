@@ -1,6 +1,8 @@
 import csv
 import json
 import threading
+import time
+import uuid
 from contextlib import asynccontextmanager
 import os
 import re
@@ -64,6 +66,7 @@ from experiments.runner import (
     run_e5_traffic_severity,
     run_e6_reproducibility,
 )
+from observability import reset_trace_id, set_trace_id, trace_event
 
 
 @asynccontextmanager
@@ -90,6 +93,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def trace_api_request(request, call_next):
+    """Correlate all server-side work for one API call in Render logs."""
+    if not request.url.path.startswith("/api/"):
+        return await call_next(request)
+
+    supplied_id = request.headers.get("x-request-id", "")
+    trace_id = supplied_id if re.fullmatch(r"[A-Za-z0-9._-]{8,64}", supplied_id) else uuid.uuid4().hex
+    token = set_trace_id(trace_id)
+    started_at = time.perf_counter()
+    trace_event("api.request_started", method=request.method, path=request.url.path)
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        trace_event(
+            "api.request_failed",
+            error_type=type(exc).__name__,
+            duration_ms=round((time.perf_counter() - started_at) * 1000),
+        )
+        raise
+    else:
+        response.headers["X-Request-ID"] = trace_id
+        trace_event(
+            "api.request_completed",
+            status_code=response.status_code,
+            duration_ms=round((time.perf_counter() - started_at) * 1000),
+        )
+        return response
+    finally:
+        reset_trace_id(token)
 
 
 # ══════════════════════════════════════════════════════════════════════════

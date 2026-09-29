@@ -38,6 +38,7 @@ from .cache import (
     SOURCE_CACHE_STALE,
     SOURCE_NETWORK,
 )
+from observability import trace_event
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 CACHE_NAMESPACE = "geocoding"
@@ -213,9 +214,12 @@ def geocode_place(
 
     entry = cache.get(CACHE_NAMESPACE, cache_key)
     if entry is not None and not entry.is_stale(GEOCODE_TTL_SECONDS):
+        trace_event("osm.geocode_cache_hit", provenance=SOURCE_CACHE)
         return _location_from_payload(entry.payload, query, radius_m, SOURCE_CACHE)
 
     try:
+        trace_event("osm.geocode_request_started", provider="nominatim")
+        started_at = time.monotonic()
         payload = fetch(
             NOMINATIM_URL,
             {"q": query, "format": "jsonv2", "limit": 1, "addressdetails": 0},
@@ -230,6 +234,11 @@ def geocode_place(
             "display_name": hit.get("display_name", query),
         }
         cache.set(CACHE_NAMESPACE, cache_key, stored)
+        trace_event(
+            "osm.geocode_request_completed",
+            provider="nominatim",
+            duration_ms=round((time.monotonic() - started_at) * 1000),
+        )
         return _location_from_payload(stored, query, radius_m, SOURCE_NETWORK)
 
     except GeocodingError:
@@ -238,8 +247,10 @@ def geocode_place(
         # Network down / service unavailable: fall back to a stale entry if we
         # have one, clearly labelled as such.
         if allow_stale and entry is not None:
+            trace_event("osm.geocode_cache_stale", provider="nominatim")
             return _location_from_payload(
                 entry.payload, query, radius_m, SOURCE_CACHE_STALE)
+        trace_event("osm.geocode_request_failed", provider="nominatim", error_type=type(exc).__name__)
         raise GeocodingError(
             f"Could not resolve '{query}' and no cached result is available: {exc}"
         ) from exc
