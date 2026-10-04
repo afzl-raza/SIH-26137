@@ -57,8 +57,11 @@ export default function VehicleInspector({ vehicle, route, scenario, onDeselect 
           actually shrink and scroll instead of growing to fit its content.
           Wrapped in a relative box so the fade cue below can pin to the
           bottom of the visible viewport regardless of scroll position. */}
-      <div className="flex-1 min-h-0 relative">
-      <div className="h-full overflow-y-auto pr-1 space-y-4">
+      <div className="flex-1 min-h-0 relative flex flex-col">
+      {/* flex-1 min-h-0 (not h-full): the card only has a max-height, so a
+          percentage height has no definite parent to resolve against and
+          the scroller grew to its content, spilling over the panel below. */}
+      <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-4">
       {/* 2. CAPACITY BAR */}
       <div className="space-y-1.5">
         <div className="flex justify-between text-xs font-medium">
