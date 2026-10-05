@@ -26,10 +26,39 @@ const MapViewController = forwardRef(function MapViewController(_props, ref) {
   const lastSizeRef = useRef({ width: 0, height: 0 });
   const rafIdsRef = useRef([]);
 
+  // Leaflet cannot fit or fly to bounds while its container has no size: its
+  // zoom maths divides by the (zero) viewport and produces NaN, and
+  // flyToBounds then throws "Invalid LatLng object: (NaN, NaN)". That is
+  // exactly the state of the map on a phone when the operator clicks
+  // Optimize from the "Controls" tab (the Network Map tab is display:none).
+  // Uncaught, it unmounted the whole app. So camera moves requested while the
+  // map is hidden are parked here and applied, without animation, the moment
+  // the container gets a real size again (see the ResizeObserver below).
+  const pendingFitRef = useRef(null);
+
+  const isMapVisible = () => {
+    const container = map && map.getContainer();
+    return !!container && container.clientWidth > 0 && container.clientHeight > 0;
+  };
+
+  const applyFit = (leafletBounds, options, animated) => {
+    try {
+      if (animated) map.flyToBounds(leafletBounds, options);
+      else map.fitBounds(leafletBounds, { ...options, animate: false });
+    } catch (err) {
+      // A bad camera move must never take the dashboard down with it.
+      console.warn('Map camera move skipped:', err);
+    }
+  };
+
   useImperativeHandle(ref, () => ({
     fitToBounds(leafletBounds, options = {}) {
       if (!map || !leafletBounds) return;
-      map.fitBounds(leafletBounds, options);
+      if (!isMapVisible()) {
+        pendingFitRef.current = { leafletBounds, options };
+        return;
+      }
+      applyFit(leafletBounds, options, false);
     },
     flyToBounds(leafletBounds, options = {}) {
       if (!map || !leafletBounds) return;
@@ -38,10 +67,14 @@ const MapViewController = forwardRef(function MapViewController(_props, ref) {
       // Leaflet clamps duration internally when the map isn't visible, and
       // we always pass a bounded duration below rather than relying on
       // defaults drifting later.
-      map.flyToBounds(leafletBounds, options);
+      if (!isMapVisible()) {
+        pendingFitRef.current = { leafletBounds, options };
+        return;
+      }
+      applyFit(leafletBounds, options, true);
     },
     setView(center, zoom, options = {}) {
-      if (!map || !center) return;
+      if (!map || !center || !isMapVisible()) return;
       map.setView(center, zoom, options);
     },
     invalidateSize() {
@@ -94,6 +127,13 @@ const MapViewController = forwardRef(function MapViewController(_props, ref) {
         lastSizeRef.current = { width, height };
         if (width === 0 || height === 0) return; // still hidden - nothing to do yet
         map.invalidateSize();
+        // The map just became visible: apply the camera move that was
+        // requested while it was hidden (e.g. the new route result).
+        if (pendingFitRef.current) {
+          const { leafletBounds, options } = pendingFitRef.current;
+          pendingFitRef.current = null;
+          applyFit(leafletBounds, options, false);
+        }
       });
       observer.observe(container);
     }

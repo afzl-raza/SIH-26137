@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import NetworkMap from '../components/NetworkMap';
+import ErrorBoundary from '../components/ui/ErrorBoundary';
 import ControlPanel from '../components/ControlPanel';
 import VehicleInspector from '../components/VehicleInspector';
 import MetricCards from '../components/MetricCards';
@@ -1058,6 +1059,7 @@ function DashboardShell({ onExitToOverview }) {
           className={`lg:col-span-3 min-h-[350px] sm:min-h-[480px] lg:min-h-[480px] h-full lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] w-full scroll-mt-4 ${
           activeMobileTab === 'map' ? 'block' : 'hidden lg:block'
         }`}>
+          <ErrorBoundary label="The network map">
           <NetworkMap
             scenario={scenario}
             scenarioId={scenarioId}
@@ -1077,6 +1079,7 @@ function DashboardShell({ onExitToOverview }) {
             draftStopIds={draftStopIds}
             onPlaceNode={handlePlaceNode}
           />
+          </ErrorBoundary>
         </div>
 
         {/* OPERATIONS PANEL
