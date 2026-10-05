@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import NetworkMap from '../components/NetworkMap';
 import ErrorBoundary from '../components/ui/ErrorBoundary';
 import ControlPanel from '../components/ControlPanel';
@@ -17,6 +17,7 @@ import ExperimentE4Panel from '../components/ExperimentE4Panel';
 import ExperimentE5Panel from '../components/ExperimentE5Panel';
 import ExperimentE7Panel from '../components/ExperimentE7Panel';
 import SustainabilityCard from '../components/SustainabilityCard';
+import GuidedDemoBanner from '../components/ui/GuidedDemoBanner';
 import SiouxFallsPanel from '../components/SiouxFallsPanel';
 import Logo from '../components/Logo';
 import Badge from '../components/ui/Badge';
@@ -111,6 +112,9 @@ function DashboardShell({ onExitToOverview }) {
   // fewer vehicles change. Off by default - the default fresh search is the one
   // that visibly re-routes after an incident.
   const [stableReplan, setStableReplan] = useState(false);
+  // Scripted demo: which step is due next, or null when not running. Each step
+  // calls the same real handlers a manual click does; this only sequences them.
+  const [demoStep, setDemoStep] = useState(null);
 
   // Where the network comes from. 'synthetic' keeps the generated graph the
   // demo has always started with; 'osm' runs the real chain the backend
@@ -838,6 +842,71 @@ function DashboardShell({ onExitToOverview }) {
     await handleOptimize();
   };
 
+  // ─── Scripted demo ──────────────────────────────
+  // generate -> optimize -> incident -> re-optimize -> benchmark, so a live
+  // presentation can't derail on a missed click. It is a state machine driven
+  // by an effect rather than one long async function on purpose: every handler
+  // reads scenario / currentResult / networkState from its render closure, so
+  // each step must run after React has rendered the previous step's result.
+  // Nothing is simulated - every step is the real API call a manual click makes.
+  const demoBusyRef = useRef(false);
+  const demoCancelledRef = useRef(false);
+  const DEMO_PAUSE_MS = 2500; // lets the audience see each result before the next step
+
+  const startGuidedDemo = () => {
+    demoCancelledRef.current = false;
+    setStableReplan(false); // the demo shows routes visibly changing
+    setActiveMobileTab('map');
+    setDemoStep('generate');
+  };
+
+  const stopGuidedDemo = () => {
+    demoCancelledRef.current = true;
+    setDemoStep(null);
+  };
+
+  useEffect(() => {
+    if (!demoStep) return;
+    if (error) { stopGuidedDemo(); return; } // a failed step ends the demo, error stays visible
+    if (loading || demoBusyRef.current) return;
+
+    demoBusyRef.current = true;
+    const pause = () => new Promise(resolve => setTimeout(resolve, DEMO_PAUSE_MS));
+    const next = (step) => { if (!demoCancelledRef.current) setDemoStep(step); };
+
+    (async () => {
+      try {
+        if (demoStep === 'generate') {
+          const fresh = await handleGenerateScenario('synthetic');
+          if (!fresh) return stopGuidedDemo();
+          next('optimize');
+        } else if (demoStep === 'optimize') {
+          if (!scenarioId) return stopGuidedDemo();
+          await handleOptimize();
+          await pause();
+          next('incident');
+        } else if (demoStep === 'incident') {
+          await handleSimulateIncident();
+          await pause();
+          next('reoptimize');
+        } else if (demoStep === 'reoptimize') {
+          await handleReOptimize();
+          await pause();
+          next('benchmark');
+        } else if (demoStep === 'benchmark') {
+          await handleRunBenchmark();
+          if (!demoCancelledRef.current) {
+            setDemoStep(null);
+            toast('Guided demo complete', { detail: 'Plan, disrupt, re-plan and compare: every step was a real solver run.' });
+          }
+        }
+      } finally {
+        demoBusyRef.current = false;
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demoStep, loading, error, scenarioId]);
+
   // ─── Replay Run ─────────────────────────────────
   // Re-issues the real generate + optimize API calls with the exact same
   // seed/config already in state. Deterministic by construction (tested
@@ -1027,6 +1096,8 @@ function DashboardShell({ onExitToOverview }) {
         </div>
       )}
 
+      <GuidedDemoBanner step={demoStep} onStop={stopGuidedDemo} />
+
       {/* ═══ MOBILE VIEWPORT SWITCHER (small screens) ═══ */}
       <div className="lg:hidden flex border-b border-[#332E29] bg-[#171513] p-1.5 gap-2 px-3 sm:px-6 shadow-md">
           <button
@@ -1125,6 +1196,8 @@ function DashboardShell({ onExitToOverview }) {
             onOptimize={handleOptimize}
             onSimulateIncident={handleSimulateIncident}
             onReOptimize={handleReOptimize}
+            onRunDemo={startGuidedDemo}
+            demoRunning={demoStep != null}
             stableReplan={stableReplan}
             setStableReplan={setStableReplan}
             onReplay={handleReplay}

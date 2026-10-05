@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Zap,
+  Play,
   AlertTriangle,
   RefreshCw,
   BarChart2,
@@ -30,6 +31,8 @@ export default function ControlPanel({
   onOptimize,
   onSimulateIncident,
   onReOptimize,
+  onRunDemo,
+  demoRunning = false,
   stableReplan = false,
   setStableReplan,
   onReplay,
@@ -619,6 +622,17 @@ export default function ControlPanel({
 
       {/* 03. OPERATIONS */}
       <ControlSection index={3} title="Operations" icon={Zap}>
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={Play}
+          onClick={onRunDemo}
+          disabled={loading || demoRunning}
+          disabledHint={demoRunning ? 'The guided demo is running.' : undefined}
+        >
+          Run guided demo
+        </Button>
+
         <Button variant="primary" size="lg" icon={Zap} onClick={onOptimize} disabled={loading}>
           Optimize Fleet
         </Button>
