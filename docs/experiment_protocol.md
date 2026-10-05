@@ -212,3 +212,19 @@ instead of exploring alternatives. It is therefore an opt-in "stable re-plan"
 option in the UI, off by default; the default cold re-optimize is the one that
 shows routes visibly changing after an incident.
 
+
+## Keeping the deck and paper in sync
+
+Every number quoted in the deck and the paper is derived in one place,
+`scripts/report_numbers.py`, from the experiment files above. Run it after any
+experiment re-run:
+
+```bash
+python scripts/report_numbers.py                           # rewrites docs/generated/report_numbers.{json,md}
+python scripts/report_numbers.py --check-deck deck.pptx    # exits non-zero if a figure drifted
+python scripts/report_numbers.py --check-paper paper.docx
+```
+
+Costs, travel times and distances are deterministic and are checked.
+Runtimes depend on the machine, so they are listed in the generated table but
+never checked.
