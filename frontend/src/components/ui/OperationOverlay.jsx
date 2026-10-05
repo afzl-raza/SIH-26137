@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import VehicleLoader from './VehicleLoader';
 
 // Friendly copy per real, in-flight operation - no algorithm names, no
@@ -29,8 +29,21 @@ export const OPERATION_COPY = {
   }
 };
 
+// How long a request can run before we tell the operator it is slower than
+// usual. The hosted backend runs on a free tier that sleeps when idle, so the
+// first request after a quiet spell can take tens of seconds. This is a real
+// elapsed-time check on the in-flight request, not a fabricated progress step.
+export const SLOW_REQUEST_MS = 5000;
+
 export default function OperationOverlay({ operation }) {
   const copy = OPERATION_COPY[operation] || OPERATION_COPY.optimize;
+  const [slow, setSlow] = useState(false);
+
+  useEffect(() => {
+    setSlow(false);
+    const timer = setTimeout(() => setSlow(true), SLOW_REQUEST_MS);
+    return () => clearTimeout(timer);
+  }, [operation]);
 
   return (
     <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-[#0D0C0B]/75 backdrop-blur-[2px] operation-overlay-fade">
@@ -39,6 +52,14 @@ export default function OperationOverlay({ operation }) {
         <div>
           <div className="font-display font-bold text-gray-100 text-base">{copy.title}</div>
           <p className="text-gray-400 text-xs mt-1.5 leading-relaxed">{copy.description}</p>
+          {slow && (
+            <p
+              role="status"
+              className="mt-3 text-[11px] leading-relaxed text-[#E8C578] bg-[#3A2E14]/60 border border-[#5A4A22] rounded-lg px-3 py-2"
+            >
+              Waking the server up. The first request after a quiet spell can take up to a minute. Please keep this page open.
+            </p>
+          )}
         </div>
         <div className="w-full h-1.5 bg-[#26221D] rounded-full overflow-hidden">
           <div className="h-full w-1/3 bg-[#C6602E] rounded-full operation-overlay-progress" />
