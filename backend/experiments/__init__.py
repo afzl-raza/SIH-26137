@@ -6,6 +6,7 @@ from .runner import (
     run_e5_traffic_severity,
     run_e6_reproducibility,
     run_e7_optimality_gap,
+    run_e8_warm_start,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "run_e5_traffic_severity",
     "run_e6_reproducibility",
     "run_e7_optimality_gap",
+    "run_e8_warm_start",
 ]

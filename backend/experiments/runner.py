@@ -484,11 +484,144 @@ def run_e7_optimality_gap(
     return summary
 
 
+def _iterations_to_converge(history, tolerance: float = 0.001) -> int:
+    """First iteration whose best cost is within `tolerance` of the final
+    best cost: how long the search needed before it stopped improving."""
+    if not history:
+        return 0
+    final = history[-1]
+    for idx, value in enumerate(history):
+        if value <= final * (1.0 + tolerance):
+            return idx
+    return len(history) - 1
+
+
+def _plan_changes(before_routes, after_routes) -> tuple:
+    """(vehicles whose job order differs, jobs now on a different vehicle)."""
+    before = {r.vehicle_id: list(r.job_ids) for r in before_routes}
+    after = {r.vehicle_id: list(r.job_ids) for r in after_routes}
+    vehicles_changed = sum(1 for vid, jobs in after.items() if before.get(vid) != jobs)
+    owner_before = {j: vid for vid, jobs in before.items() for j in jobs}
+    jobs_moved = sum(1 for vid, jobs in after.items() for j in jobs if owner_before.get(j) != vid)
+    return vehicles_changed, jobs_moved
+
+
+def run_e8_warm_start(
+    solver_config: OptimizationConfig = None,
+    seeds: Iterable[int] = (1, 2, 3, 4, 5),
+    num_nodes: int = 30,
+    num_jobs: int = 15,
+    num_vehicles: int = 3,
+    congestion_factor: float = 5.0,
+    reduced_budget: tuple = (20, 20),
+    output_root: Optional[Path] = None,
+) -> dict:
+    """E8 - Warm-start re-optimization: after an incident, re-solve from
+    scratch (cold) versus seeded with the previous plan (warm), on identical
+    scenarios, incidents and solver seeds.
+
+    One incident per route-bearing vehicle per scenario: the congested edge is
+    the middle edge of that vehicle's node path, so every incident really hits
+    the plan being re-optimized. Each case is solved cold and warm at the full
+    budget and at a reduced one (population, iterations = `reduced_budget`).
+    Reported: final cost, runtime, iterations until the best cost stopped
+    improving, and how much of the plan changed.
+    """
+    solver_config = solver_config or DEFAULT_SOLVER_CONFIG
+    seeds = list(seeds)
+    out_dir = _resolve_output_dir(output_root, "E8_warm_start")
+
+    config_dict = {
+        "scenarios": {"num_nodes": num_nodes, "num_jobs": num_jobs,
+                      "num_vehicles": num_vehicles, "seeds": seeds},
+        "solver": solver_config.model_dump(),
+        "congestion_factor": congestion_factor,
+        "reduced_budget": {"population_size": reduced_budget[0], "max_iterations": reduced_budget[1]},
+        "note": "Same solver seed for cold and warm. Warm = previous plan injected as one initial particle.",
+    }
+    _write_frozen_config(out_dir, config_dict)
+
+    budgets = {
+        "full": solver_config,
+        "reduced": solver_config.model_copy(update={
+            "population_size": reduced_budget[0], "max_iterations": reduced_budget[1]}),
+    }
+    optimizer = QPSOOptimizer()
+    rows = []
+
+    for seed in seeds:
+        base_scenario = generate_synthetic_scenario(
+            num_nodes=num_nodes, num_jobs=num_jobs, num_vehicles=num_vehicles, seed=seed)
+        before = optimizer.optimize(base_scenario, solver_config)
+        previous_plan = {r.vehicle_id: list(r.job_ids) for r in before.routes}
+
+        for route in before.routes:
+            path = route.node_path
+            if len(path) < 3:
+                continue
+            mid = len(path) // 2
+            edge = (path[mid - 1], path[mid])
+            incident_scenario, _ = apply_incidents(base_scenario, {edge: congestion_factor})
+
+            for budget_name, cfg in budgets.items():
+                for mode in ("cold", "warm"):
+                    result = optimizer.optimize(
+                        incident_scenario, cfg,
+                        warm_start=previous_plan if mode == "warm" else None,
+                    )
+                    vehicles_changed, jobs_moved = _plan_changes(before.routes, result.routes)
+                    rows.append({
+                        "scenario_seed": seed,
+                        "incident_vehicle": route.vehicle_id,
+                        "budget": budget_name,
+                        "mode": mode,
+                        "total_cost": result.total_cost,
+                        "runtime_ms": result.runtime_ms,
+                        "iterations_to_converge": _iterations_to_converge(result.convergence_history),
+                        "vehicles_changed": vehicles_changed,
+                        "jobs_moved": jobs_moved,
+                        "is_feasible": result.is_feasible,
+                        "warm_started": result.warm_started,
+                    })
+
+    fieldnames = ["scenario_seed", "incident_vehicle", "budget", "mode", "total_cost", "runtime_ms",
+                  "iterations_to_converge", "vehicles_changed", "jobs_moved", "is_feasible", "warm_started"]
+    with (out_dir / "results.csv").open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    summary = {"incidents": len({(r["scenario_seed"], r["incident_vehicle"]) for r in rows}), "budgets": {}}
+    for budget_name in budgets:
+        summary["budgets"][budget_name] = {}
+        for mode in ("cold", "warm"):
+            mine = [r for r in rows if r["budget"] == budget_name and r["mode"] == mode]
+            summary["budgets"][budget_name][mode] = {
+                "mean_cost": float(np.mean([r["total_cost"] for r in mine])),
+                "mean_runtime_ms": float(np.mean([r["runtime_ms"] for r in mine])),
+                "mean_iterations_to_converge": float(np.mean([r["iterations_to_converge"] for r in mine])),
+                "mean_vehicles_changed": float(np.mean([r["vehicles_changed"] for r in mine])),
+                "mean_jobs_moved": float(np.mean([r["jobs_moved"] for r in mine])),
+                "feasible_runs": int(sum(1 for r in mine if r["is_feasible"])),
+                "runs": len(mine),
+            }
+        # Paired comparison: on how many incidents was warm cheaper / equal / dearer?
+        cold = {(r["scenario_seed"], r["incident_vehicle"]): r["total_cost"]
+                for r in rows if r["budget"] == budget_name and r["mode"] == "cold"}
+        warm = {(r["scenario_seed"], r["incident_vehicle"]): r["total_cost"]
+                for r in rows if r["budget"] == budget_name and r["mode"] == "warm"}
+        summary["budgets"][budget_name]["warm_cheaper"] = sum(1 for k in cold if warm[k] < cold[k] - 1e-6)
+        summary["budgets"][budget_name]["warm_equal"] = sum(1 for k in cold if abs(warm[k] - cold[k]) <= 1e-6)
+        summary["budgets"][budget_name]["warm_dearer"] = sum(1 for k in cold if warm[k] > cold[k] + 1e-6)
+    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+    return summary
+
+
 def main():
     parser = argparse.ArgumentParser(description="Q-DFRO experiment runner")
     parser.add_argument(
         "--experiment", required=True,
-        choices=["e1", "e2", "e3", "e4", "e5", "e6", "e7", "all"]
+        choices=["e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "all"]
     )
     args = parser.parse_args()
 
@@ -528,6 +661,11 @@ def main():
         print("Running E7 - optimality gap vs exact solver...")
         run_e7_optimality_gap()
         print("  wrote experiments/E7_optimality_gap/")
+
+    if args.experiment in ("e8", "all"):
+        print("Running E8 - warm-start re-optimization...")
+        run_e8_warm_start()
+        print("  wrote experiments/E8_warm_start/")
 
 
 if __name__ == "__main__":

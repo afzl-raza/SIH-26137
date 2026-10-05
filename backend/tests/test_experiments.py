@@ -14,6 +14,7 @@ from experiments.runner import (
     run_e4_traffic_disruption,
     run_e6_reproducibility,
     run_e7_optimality_gap,
+    run_e8_warm_start,
 )
 
 # Small/fast scenario + solver budget so this whole test module stays quick;
@@ -157,3 +158,26 @@ def test_e7_optimality_gap_against_exact_solver(tmp_path):
     assert algos["greedy"]["mean_gap_pct"] >= -1e-6
     for stats in algos.values():
         assert stats["runs"] == 4
+
+
+def test_e8_warm_start_writes_paired_cold_and_warm_rows(tmp_path):
+    summary = run_e8_warm_start(
+        solver_config=FAST_SOLVER, seeds=[1], num_nodes=14, num_jobs=6, num_vehicles=2,
+        reduced_budget=(4, 4), output_root=tmp_path,
+    )
+
+    out_dir = tmp_path / "E8_warm_start"
+    assert (out_dir / "config.json").exists()
+    with (out_dir / "results.csv").open() as f:
+        rows = list(csv.DictReader(f))
+    assert rows, "expected at least one incident case"
+
+    # Every case is solved both ways, at both budgets, and only warm rows are warm.
+    assert {r["mode"] for r in rows} == {"cold", "warm"}
+    assert {r["budget"] for r in rows} == {"full", "reduced"}
+    assert all((r["warm_started"] == "True") == (r["mode"] == "warm") for r in rows)
+
+    for budget in ("full", "reduced"):
+        stats = summary["budgets"][budget]
+        assert stats["cold"]["runs"] == stats["warm"]["runs"]
+        assert (stats["warm_cheaper"] + stats["warm_equal"] + stats["warm_dearer"]) == stats["cold"]["runs"]

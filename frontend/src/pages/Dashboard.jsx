@@ -107,6 +107,10 @@ function DashboardShell({ onExitToOverview }) {
   // Re-Optimize for the same reason it does after an incident: the routes on
   // screen were computed against edge costs that no longer apply.
   const [conditionsDirty, setConditionsDirty] = useState(false);
+  // Opt-in: seed Re-Optimize with the current routes (QPSO warm start, E8) so
+  // fewer vehicles change. Off by default - the default fresh search is the one
+  // that visibly re-routes after an incident.
+  const [stableReplan, setStableReplan] = useState(false);
 
   // Where the network comes from. 'synthetic' keeps the generated graph the
   // demo has always started with; 'osm' runs the real chain the backend
@@ -564,7 +568,15 @@ function DashboardShell({ onExitToOverview }) {
       const res = await apiFetch('/api/optimize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario_id: activeScenarioId, config: activeConfig }),
+        body: JSON.stringify({
+          scenario_id: activeScenarioId,
+          config: activeConfig,
+          // Only for a re-optimize with the option on, and only when there is
+          // a plan to start from.
+          ...(isReopt && stableReplan && currentResult?.routes
+            ? { warm_start_routes: Object.fromEntries(currentResult.routes.map(r => [r.vehicle_id, r.job_ids])) }
+            : {})
+        }),
         timeoutMs: 120000
       });
       if (!res.ok) {
@@ -603,7 +615,7 @@ function DashboardShell({ onExitToOverview }) {
       }
 
       toast('Route plan ready', {
-        detail: `${data.routes?.length ?? 0} routes · ${data.total_travel_time?.toFixed(1) ?? '—'} min travel time. Your ${isReopt ? 'updated' : 'optimized'} routes are ready to review.`,
+        detail: `${data.routes?.length ?? 0} routes · ${data.total_travel_time?.toFixed(1) ?? '—'} min travel time. Your ${isReopt ? 'updated' : 'optimized'} routes are ready to review.${data.warm_started ? ' Started from the previous routes (stable re-plan).' : ''}`,
         action: { label: 'View results', onClick: scrollToResults }
       });
     } catch (err) {
@@ -1113,6 +1125,8 @@ function DashboardShell({ onExitToOverview }) {
             onOptimize={handleOptimize}
             onSimulateIncident={handleSimulateIncident}
             onReOptimize={handleReOptimize}
+            stableReplan={stableReplan}
+            setStableReplan={setStableReplan}
             onReplay={handleReplay}
             onRunBenchmark={handleRunBenchmark}
             loading={loading}

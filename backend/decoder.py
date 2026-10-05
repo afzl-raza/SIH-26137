@@ -137,16 +137,36 @@ def chromosome_from_routes(routes: List[VehicleRoute], scenario: ProblemScenario
     recovers v_idx exactly (0 <= sequence_key < 1) and the same relative
     visiting order (sequence_key is strictly increasing with m).
     """
+    return chromosome_from_job_orders(
+        {route.vehicle_id: list(route.job_ids) for route in routes}, scenario
+    )
+
+
+def chromosome_from_job_orders(
+    orders: Dict[int, List[int]], scenario: ProblemScenario
+) -> np.ndarray:
+    """Same encoding as chromosome_from_routes, from a plain
+    {vehicle_id: [job_id, ...]} mapping (e.g. a previous plan sent back by a
+    client). Raises ValueError unless every job in the scenario appears exactly
+    once and every vehicle id exists - a plan that doesn't fit the scenario
+    can't be encoded faithfully, and a silently-partial key vector would be
+    worse than none."""
     num_jobs = len(scenario.jobs)
     num_vehicles = len(scenario.vehicles)
     job_id_to_index = {j.id: idx for idx, j in enumerate(scenario.jobs)}
     vehicle_id_to_idx = {v.id: idx for idx, v in enumerate(scenario.vehicles)}
 
+    seen: List[int] = [job_id for ids in orders.values() for job_id in ids]
+    if sorted(seen) != sorted(job_id_to_index):
+        raise ValueError("Warm-start plan does not cover this scenario's jobs exactly once.")
+    if any(vid not in vehicle_id_to_idx for vid in orders):
+        raise ValueError("Warm-start plan references a vehicle not in this scenario.")
+
     keys = np.zeros(num_jobs)
-    for route in routes:
-        v_idx = vehicle_id_to_idx[route.vehicle_id]
-        k = len(route.job_ids)
-        for m, job_id in enumerate(route.job_ids):
+    for vehicle_id, job_ids in orders.items():
+        v_idx = vehicle_id_to_idx[vehicle_id]
+        k = len(job_ids)
+        for m, job_id in enumerate(job_ids):
             sequence_key = (m + 1) / (k + 1)
             keys[job_id_to_index[job_id]] = (v_idx + sequence_key) / num_vehicles
 

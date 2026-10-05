@@ -13,7 +13,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from auth.security import verify_password
 from auth.store import (
@@ -68,6 +68,7 @@ from experiments.runner import (
     run_e5_traffic_severity,
     run_e6_reproducibility,
     run_e7_optimality_gap,
+    run_e8_warm_start,
 )
 from observability import reset_trace_id, set_trace_id, trace_event
 
@@ -408,6 +409,10 @@ class ScenarioRefMixin(BaseModel):
 
 class OptimizePayload(ScenarioRefMixin):
     config: OptimizationConfig
+    # Optional previous plan, {vehicle_id: [job_id, ...]}. Used by QPSO only
+    # (seeded as one initial particle - see QPSOOptimizer.optimize); ignored by
+    # every other algorithm and when the plan doesn't fit the scenario.
+    warm_start_routes: Optional[Dict[int, List[int]]] = None
 
 
 class SustainabilityPayload(ScenarioRefMixin):
@@ -470,6 +475,7 @@ KNOWN_EXPERIMENTS = {
     "E5_traffic_severity",
     "E6_reproducibility",
     "E7_optimality_gap",
+    "E8_warm_start",
 }
 
 
@@ -689,6 +695,7 @@ def optimize_route(payload: OptimizePayload):
             optimizer = MemeticQPSOOptimizer()
         elif "qpso" in algo:
             optimizer = QPSOOptimizer()
+            return optimizer.optimize(scenario, payload.config, warm_start=payload.warm_start_routes)
         elif "pso" in algo:
             optimizer = PSOOptimizer()
         elif "ga" in algo or "genetic" in algo:
@@ -1114,6 +1121,7 @@ EXPERIMENT_RUNNERS = {
     "E5_traffic_severity": run_e5_traffic_severity,
     "E6_reproducibility": run_e6_reproducibility,
     "E7_optimality_gap": run_e7_optimality_gap,
+    "E8_warm_start": run_e8_warm_start,
 }
 
 

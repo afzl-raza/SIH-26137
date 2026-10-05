@@ -1,9 +1,9 @@
 import time
 import numpy as np
-from typing import List
+from typing import Dict, List, Optional
 from models import ProblemScenario, OptimizationConfig, OptimizationResult
 from route_cache import get_route_matrix
-from decoder import decode_random_keys, chromosome_from_routes
+from decoder import decode_random_keys, chromosome_from_routes, chromosome_from_job_orders
 from fitness import build_edge_map, evaluate_solution
 from optimizers.base import BaseOptimizer
 from optimizers.local_search import local_search_refine
@@ -16,8 +16,15 @@ class QPSOOptimizer(BaseOptimizer):
     def optimize(
         self,
         scenario: ProblemScenario,
-        config: OptimizationConfig
+        config: OptimizationConfig,
+        warm_start: Optional[Dict[int, List[int]]] = None,
     ) -> OptimizationResult:
+        """`warm_start` is an optional previous plan, {vehicle_id: [job_id, ...]}.
+        It is injected as ONE particle of the initial population (the other
+        pop_size - 1 stay random), so the swarm keeps its exploration and the
+        previous plan only wins if it still scores well under the current
+        costs. A plan that does not fit this scenario is ignored and the run
+        is an ordinary cold start (result.warm_started says which happened)."""
         start_time = time.perf_counter()
         np.random.seed(config.seed)
 
@@ -60,6 +67,14 @@ class QPSOOptimizer(BaseOptimizer):
 
         # Initialize quantum particle positions X in [0, 1]^num_jobs
         X = np.random.rand(pop_size, num_jobs)
+
+        warm_started = False
+        if warm_start:
+            try:
+                X[0] = chromosome_from_job_orders(warm_start, scenario)
+                warm_started = True
+            except ValueError:
+                pass  # plan doesn't fit this scenario: ordinary cold start
 
         pbest_pos = np.copy(X)
         pbest_cost = np.full(pop_size, float('inf'))
@@ -194,7 +209,7 @@ class QPSOOptimizer(BaseOptimizer):
         # algorithm produced two different numbers.
         label = self.name + (" + Local Search" if config.use_local_search else " (ablation, no local search)")
 
-        return evaluate_solution(
+        result = evaluate_solution(
             routes=gbest_routes,
             scenario=scenario,
             weights=config.weights,
@@ -204,3 +219,5 @@ class QPSOOptimizer(BaseOptimizer):
             convergence_elapsed_ms=convergence_elapsed_ms,
             edge_map=edge_map
         )
+        result.warm_started = warm_started
+        return result

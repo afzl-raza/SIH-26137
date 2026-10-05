@@ -30,6 +30,8 @@ export default function ControlPanel({
   onOptimize,
   onSimulateIncident,
   onReOptimize,
+  stableReplan = false,
+  setStableReplan,
   onReplay,
   onRunBenchmark,
   loading,
@@ -644,6 +646,21 @@ export default function ControlPanel({
             Re-Optimize
           </Button>
         </div>
+
+        <label className="flex items-start gap-2 text-[10px] text-gray-400 leading-snug cursor-pointer">
+          <input
+            type="checkbox"
+            checked={stableReplan}
+            onChange={(e) => setStableReplan?.(e.target.checked)}
+            disabled={loading}
+            className="mt-0.5 accent-[#C6602E]"
+          />
+          <span>
+            <span className="text-gray-300 font-semibold">Stable re-plan.</span> Start Re-Optimize from the
+            current routes so fewer vehicles change. Can end slightly more expensive than a fresh search
+            (see experiment E8 in the docs).
+          </span>
+        </label>
 
         <Button variant="secondary" size="sm" icon={BarChart2} onClick={onRunBenchmark} disabled={loading}>
           Run Benchmark

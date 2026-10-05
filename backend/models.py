@@ -283,6 +283,9 @@ class OptimizationResult(BaseModel):
     # that don't record per-iteration timing (e.g. Greedy).
     convergence_elapsed_ms: List[float] = []
     is_feasible: bool
+    # True when the search was seeded with a previous plan (QPSO warm start,
+    # used by re-optimization). False for every cold start.
+    warm_started: bool = False
 
 
 class TrafficUpdate(BaseModel):

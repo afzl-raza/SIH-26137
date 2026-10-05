@@ -1,0 +1,34 @@
+{
+  "scenarios": {
+    "num_nodes": 30,
+    "num_jobs": 15,
+    "num_vehicles": 3,
+    "seeds": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  "solver": {
+    "algorithm": "qpso",
+    "population_size": 40,
+    "max_iterations": 100,
+    "seed": 42,
+    "weights": {
+      "travel_time_weight": 1.0,
+      "distance_weight": 0.5,
+      "gamma": 1.0,
+      "penalty_weight": 1000.0
+    },
+    "use_local_search": true,
+    "local_search_interval": 10
+  },
+  "congestion_factor": 5.0,
+  "reduced_budget": {
+    "population_size": 20,
+    "max_iterations": 20
+  },
+  "note": "Same solver seed for cold and warm. Warm = previous plan injected as one initial particle."
+}

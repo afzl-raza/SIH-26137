@@ -1,0 +1,51 @@
+{
+  "incidents": 15,
+  "budgets": {
+    "full": {
+      "cold": {
+        "mean_cost": 204.16666666666669,
+        "mean_runtime_ms": 783.1653333333333,
+        "mean_iterations_to_converge": 18.666666666666668,
+        "mean_vehicles_changed": 2.7333333333333334,
+        "mean_jobs_moved": 5.066666666666666,
+        "feasible_runs": 5,
+        "runs": 15
+      },
+      "warm": {
+        "mean_cost": 208.624,
+        "mean_runtime_ms": 770.2713333333334,
+        "mean_iterations_to_converge": 0.6666666666666666,
+        "mean_vehicles_changed": 0.2,
+        "mean_jobs_moved": 0.06666666666666667,
+        "feasible_runs": 6,
+        "runs": 15
+      },
+      "warm_cheaper": 6,
+      "warm_equal": 1,
+      "warm_dearer": 8
+    },
+    "reduced": {
+      "cold": {
+        "mean_cost": 205.29,
+        "mean_runtime_ms": 91.812,
+        "mean_iterations_to_converge": 10.0,
+        "mean_vehicles_changed": 2.933333333333333,
+        "mean_jobs_moved": 6.466666666666667,
+        "feasible_runs": 10,
+        "runs": 15
+      },
+      "warm": {
+        "mean_cost": 208.624,
+        "mean_runtime_ms": 81.88466666666665,
+        "mean_iterations_to_converge": 0.6666666666666666,
+        "mean_vehicles_changed": 0.2,
+        "mean_jobs_moved": 0.06666666666666667,
+        "feasible_runs": 6,
+        "runs": 15
+      },
+      "warm_cheaper": 7,
+      "warm_equal": 0,
+      "warm_dearer": 8
+    }
+  }
+}

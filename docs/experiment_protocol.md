@@ -1,6 +1,6 @@
 # Q-DFRO — Experiment Protocol
 
-Methodology for experiments E1–E7, implemented in `backend/experiments/runner.py`
+Methodology for experiments E1–E8, implemented in `backend/experiments/runner.py`
 and runnable via:
 
 ```bash
@@ -178,4 +178,37 @@ overloads one vehicle slightly (about one demand unit), so those optima are
 not strictly feasible. The CSV carries `exact_is_feasible` and `is_feasible`
 for every row so this stays visible. Instances above 10 jobs have no exact
 reference; their evidence is the relative ranking in E1.
+
+## E8 — Warm-start re-optimization
+
+**Question:** after an incident, does seeding the re-solve with the previous
+plan make re-optimization faster, cheaper or more stable than starting over?
+
+**Config** (`experiments/E8_warm_start/config.json`): 30 nodes, 15 jobs, 3
+vehicles, scenario seeds `[1, 2, 3, 4, 5]`. One incident per vehicle per
+scenario (15 incidents): the middle edge of that vehicle's route
+becomes 5x slower. Each incident is re-solved **cold** (random start) and
+**warm** (the previous plan injected as one of the initial particles; the
+rest stay random), same solver seed, at the full budget (population 40, 100
+iterations) and a reduced one (20, 20).
+
+**Result** (`experiments/E8_warm_start/summary.json`, means over 15 incidents):
+
+| Run | Cost | Runtime | Vehicles with a changed route | Jobs moved to another vehicle |
+|---|---|---|---|---|
+| Cold, full budget | 204.17 | 783 ms | 2.73 | 5.07 |
+| Warm, full budget | 208.62 | 770 ms | 0.20 | 0.07 |
+| Cold, reduced budget | 205.29 | 92 ms | 2.93 | 6.47 |
+| Warm, reduced budget | 208.62 | 82 ms | 0.20 | 0.07 |
+
+Paired by incident at the full budget, warm was cheaper in 6, equal in 1 and
+more expensive in 8 cases (reduced budget: 7 / 0 / 8).
+
+**Reading:** warm start makes re-planning **stable**: the previous plan
+barely changes. It does **not** make it faster (the iteration budget is
+fixed, so runtime is the same), and on average it ends slightly more
+expensive than a fresh search, because the swarm contracts around the old plan
+instead of exploring alternatives. It is therefore an opt-in "stable re-plan"
+option in the UI, off by default; the default cold re-optimize is the one that
+shows routes visibly changing after an incident.
 
