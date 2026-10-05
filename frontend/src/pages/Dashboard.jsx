@@ -577,6 +577,10 @@ function DashboardShell({ onExitToOverview }) {
       setCurrentResult(data);
       setResultCompletedAt(Date.now());
       setStatusState('OPTIMIZED');
+      // On a phone the Optimize button lives on the Controls tab while the
+      // routes are drawn on the Network Map tab - bring the result into view.
+      // (No effect at lg+, where both are always visible.)
+      setActiveMobileTab('map');
       // The routes on screen now match the current edge costs again.
       setConditionsDirty(false);
       // The manifest describes the run that just happened, so refresh it here

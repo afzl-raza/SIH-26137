@@ -307,10 +307,12 @@ export default function ControlPanel({
           </p>
         </div>
 
-        {/* Scenario shape - synthetic-only, since num_nodes/num_jobs/
-            num_vehicles/demand range only mean something for the generator;
-            an OSM scenario's node count comes from the real map. */}
-        {networkSource === 'synthetic' && scenarioParams && (
+        {/* Scenario shape. Deliveries and vehicles apply to both network
+            kinds (the backend's OSM builder takes num_jobs/num_vehicles too).
+            Locations and the demand range are synthetic-only: an OSM
+            scenario's node count comes from the real map and its demand is
+            not configurable. */}
+        {scenarioParams && (
           <div className="bg-[#141210]/50 border border-[#332E29] rounded-lg p-2.5">
             <button
               onClick={() => setShowScenarioShape(!showScenarioShape)}
@@ -323,6 +325,7 @@ export default function ControlPanel({
 
             {showScenarioShape && (
               <div className="grid grid-cols-2 gap-2 mt-2">
+                {networkSource === 'synthetic' && (
                 <div className="space-y-0.5">
                   <label htmlFor="sp-num-nodes" className="text-gray-400 block text-[10px]">Locations</label>
                   <input
@@ -334,6 +337,7 @@ export default function ControlPanel({
                     className="w-full bg-[#26221D] border border-[#3A342E] text-gray-200 rounded px-2 py-1 outline-none focus:border-[#C6602E] font-mono text-[10px]"
                   />
                 </div>
+                )}
                 <div className="space-y-0.5">
                   <label htmlFor="sp-num-jobs" className="text-gray-400 block text-[10px]">Deliveries</label>
                   <input
@@ -356,6 +360,8 @@ export default function ControlPanel({
                     className="w-full bg-[#26221D] border border-[#3A342E] text-gray-200 rounded px-2 py-1 outline-none focus:border-[#C6602E] font-mono text-[10px]"
                   />
                 </div>
+                {networkSource === 'synthetic' && (
+                  <>
                 <div className="space-y-0.5">
                   <label htmlFor="sp-demand-min" className="text-gray-400 block text-[10px]">Demand min</label>
                   <input
@@ -383,6 +389,14 @@ export default function ControlPanel({
                 {scenarioParams.demand_min > scenarioParams.demand_max && (
                   <p className="col-span-2 text-[9px] text-[#B5613F]">
                     Demand min cannot exceed demand max.
+                  </p>
+                )}
+                  </>
+                )}
+                {networkSource === 'osm' && (
+                  <p className="col-span-2 text-[9px] text-gray-600 leading-snug">
+                    Locations come from the real map, and demand is set by the
+                    generator. Choose how many deliveries and vehicles to plan.
                   </p>
                 )}
               </div>
