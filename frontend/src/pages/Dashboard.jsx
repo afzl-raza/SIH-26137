@@ -16,6 +16,7 @@ import ExperimentE2Panel from '../components/ExperimentE2Panel';
 import ExperimentE4Panel from '../components/ExperimentE4Panel';
 import ExperimentE5Panel from '../components/ExperimentE5Panel';
 import ExperimentE7Panel from '../components/ExperimentE7Panel';
+import SustainabilityCard from '../components/SustainabilityCard';
 import SiouxFallsPanel from '../components/SiouxFallsPanel';
 import Logo from '../components/Logo';
 import Badge from '../components/ui/Badge';
@@ -1176,6 +1177,8 @@ function DashboardShell({ onExitToOverview }) {
           manifest={manifest}
           completedAt={resultCompletedAt}
         />
+
+        <SustainabilityCard scenarioId={scenarioId} result={currentResult} config={config} />
 
         {benchmarkData && (
           // scroll-mt keeps the panel's title clear of the sticky header

@@ -59,6 +59,7 @@ from optimizers.qpso import QPSOOptimizer
 from optimizers.exact import ExactOptimizer, ExactSolverTooLargeError
 from optimizers.benchmark import run_benchmark, warm_pool
 from fitness import evaluate_solution
+from sustainability import estimate_savings
 from experiments.runner import (
     run_e1_algorithm_comparison,
     run_e2_convergence,
@@ -409,6 +410,13 @@ class OptimizePayload(ScenarioRefMixin):
     config: OptimizationConfig
 
 
+class SustainabilityPayload(ScenarioRefMixin):
+    config: OptimizationConfig
+    # Total distance (km) of the plan being assessed, as already returned by
+    # /api/optimize - the baseline is computed here, on the same scenario.
+    optimized_distance_km: float
+
+
 class TrafficPayload(ScenarioRefMixin):
     updates: List[TrafficUpdate]
 
@@ -697,6 +705,22 @@ def optimize_route(payload: OptimizePayload):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Optimization error: {str(e)}")
+
+
+@app.post("/api/sustainability")
+def sustainability_estimate(payload: SustainabilityPayload):
+    """Estimated fuel and CO2 avoided versus Greedy routing on the same
+    scenario and current road conditions. A labelled estimate (assumptions are
+    returned in the response), not a measurement."""
+    scenario, _ = _resolve_scenario(payload)
+    try:
+        baseline = GreedyOptimizer().optimize(scenario, payload.config)
+        estimate = estimate_savings(baseline.total_distance, payload.optimized_distance_km)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sustainability estimate error: {str(e)}")
+    return {**estimate.as_dict(), "baseline_algorithm": baseline.algorithm}
 
 
 @app.post("/api/traffic/update")
