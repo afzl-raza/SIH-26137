@@ -36,7 +36,7 @@ import math
 import os
 import threading
 import time
-from collections import Counter
+from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -731,7 +731,8 @@ def load_osm_graph(
         trace_event("osm.network_cache_hit", provenance=SOURCE_CACHE)
         try:
             return _graph_from_payload(
-                entry.payload, location, highway_classes, SOURCE_CACHE, endpoint="cache")
+                entry.payload, location, highway_classes, SOURCE_CACHE, endpoint="cache",
+                memo_key=(canonical_key(key), entry.cached_at))
         except OsmLoaderError as exc:
             _discard_invalid_cache_entry(cache, key, exc)
             entry = None
@@ -759,7 +760,8 @@ def load_osm_graph(
             trace_event("osm.network_cache_hit_after_wait", provenance=SOURCE_CACHE)
             try:
                 return _graph_from_payload(
-                    entry.payload, location, highway_classes, SOURCE_CACHE, endpoint="cache")
+                    entry.payload, location, highway_classes, SOURCE_CACHE, endpoint="cache",
+                    memo_key=(canonical_key(key), entry.cached_at))
             except OsmLoaderError as exc:
                 _discard_invalid_cache_entry(cache, key, exc)
                 entry = None
@@ -879,13 +881,50 @@ def _discard_invalid_cache_entry(
         logger.warning("Could not remove invalid OSM cache entry: %s", exc)
 
 
+# --- parsed-extract memo --------------------------------------------------
+# Turning a cached Overpass payload into a routable graph (way splitting,
+# haversine lengths, strongly-connected-component search) is pure Python and is
+# repeated, identically, for every request that hits the same cached extract.
+# On a small hosted CPU that is a noticeable share of a "load real network"
+# click, so the parsed result is kept in memory, keyed by the cache entry it came
+# from (key fingerprint + the entry's write time, so a refreshed entry is never
+# served stale). Only cache-backed loads use it. The nodes/edges are treated as
+# read-only by every consumer (osm_scenario copies them into new models), and each
+# call still builds its own OsmRoadGraph around the caller's location.
+_PARSED_MEMO_MAX = 4
+_PARSED_MEMO: "OrderedDict[Tuple[str, float], Tuple[Dict[int, OsmNode], List[OsmEdge], Dict[str, Any]]]" = OrderedDict()
+_PARSED_MEMO_LOCK = threading.Lock()
+
+
+def clear_parsed_memo() -> None:
+    with _PARSED_MEMO_LOCK:
+        _PARSED_MEMO.clear()
+
+
 def _graph_from_payload(
     payload: Dict[str, Any],
     location: ResolvedLocation,
     highway_classes: Sequence[str],
     provenance: str,
     endpoint: str,
+    memo_key: Optional[Tuple[str, float]] = None,
 ) -> OsmRoadGraph:
+    if memo_key is not None:
+        with _PARSED_MEMO_LOCK:
+            hit = _PARSED_MEMO.get(memo_key)
+            if hit is not None:
+                _PARSED_MEMO.move_to_end(memo_key)
+        if hit is not None:
+            nodes, edges, stats = hit
+            return OsmRoadGraph(
+                nodes=nodes,
+                edges=edges,
+                location=location,
+                provenance=provenance,
+                endpoint=endpoint,
+                stats=dict(stats),
+            )
+
     try:
         nodes, edges, stats = parse_overpass_response(payload, highway_classes)
     except (AttributeError, KeyError, TypeError, ValueError, OverflowError) as exc:
@@ -913,6 +952,13 @@ def _graph_from_payload(
 
     stats.update(component_stats)
     stats["total_length_km"] = round(sum(e.length_m for e in edges) / 1000.0, 3)
+
+    if memo_key is not None:
+        with _PARSED_MEMO_LOCK:
+            _PARSED_MEMO[memo_key] = (nodes, edges, dict(stats))
+            _PARSED_MEMO.move_to_end(memo_key)
+            while len(_PARSED_MEMO) > _PARSED_MEMO_MAX:
+                _PARSED_MEMO.popitem(last=False)
 
     return OsmRoadGraph(
         nodes=nodes,

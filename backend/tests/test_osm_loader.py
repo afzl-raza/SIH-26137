@@ -871,3 +871,71 @@ def test_a_mirror_that_recovers_is_restored_to_its_configured_position():
         assert osm_loader._order_by_health(urls) == urls
     finally:
         osm_loader.reset_mirror_health()
+
+
+# --- parsed-extract memo ----------------------------------------------------
+
+def test_repeat_cache_hits_reuse_the_parsed_extract(monkeypatch):
+    from realdata import osm_loader
+
+    osm_loader.clear_parsed_memo()
+    cache = tmp_cache()
+    loc = a_location()
+    load_osm_graph(loc, cache=cache, post_overpass=lambda u, q, t: _connected_payload(),
+                   endpoints=["https://first.test"])
+
+    parses = []
+    real_parse = osm_loader.parse_overpass_response
+    monkeypatch.setattr(osm_loader, "parse_overpass_response",
+                        lambda *a, **k: (parses.append(1), real_parse(*a, **k))[1])
+
+    first = load_osm_graph(loc, cache=cache)
+    second = load_osm_graph(loc, cache=cache)
+
+    assert first.provenance == second.provenance == SOURCE_CACHE
+    assert len(parses) == 1  # parsed once, then reused
+    assert len(second.edges) == len(first.edges)
+    osm_loader.clear_parsed_memo()
+
+
+def test_memoised_graph_uses_each_callers_own_location():
+    from realdata import osm_loader
+
+    osm_loader.clear_parsed_memo()
+    cache = tmp_cache()
+    loc = a_location()
+    load_osm_graph(loc, cache=cache, post_overpass=lambda u, q, t: _connected_payload(),
+                   endpoints=["https://first.test"])
+    a = load_osm_graph(loc, cache=cache)
+    other = loc.__class__(**{**loc.__dict__, "display_name": "Somewhere else"})
+    b = load_osm_graph(other, cache=cache)
+
+    assert a.location.display_name != b.location.display_name
+    assert b.location.display_name == "Somewhere else"
+    osm_loader.clear_parsed_memo()
+
+
+def test_a_rewritten_cache_entry_is_not_served_from_the_old_memo(monkeypatch):
+    from realdata import osm_loader
+
+    osm_loader.clear_parsed_memo()
+    cache = tmp_cache()
+    loc = a_location()
+    load_osm_graph(loc, cache=cache, post_overpass=lambda u, q, t: _connected_payload(),
+                   endpoints=["https://first.test"])
+    load_osm_graph(loc, cache=cache)  # memoised against the first write
+
+    # A forced refresh rewrites the entry with a new timestamp (the sleep keeps
+    # the two writes apart even on a coarse Windows clock).
+    time.sleep(0.05)
+    load_osm_graph(loc, cache=cache, force_refresh=True,
+                   post_overpass=lambda u, q, t: _connected_payload(),
+                   endpoints=["https://first.test"])
+    parses = []
+    real_parse = osm_loader.parse_overpass_response
+    monkeypatch.setattr(osm_loader, "parse_overpass_response",
+                        lambda *a, **k: (parses.append(1), real_parse(*a, **k))[1])
+    load_osm_graph(loc, cache=cache)
+
+    assert len(parses) == 1  # new entry => parsed again, not the stale memo
+    osm_loader.clear_parsed_memo()

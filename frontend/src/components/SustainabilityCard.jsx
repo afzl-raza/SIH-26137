@@ -6,6 +6,8 @@ import { apiFetch } from '../api';
 // Every figure comes from POST /api/sustainability (backend/sustainability.py),
 // which runs a real Greedy baseline and returns the assumptions it used. This
 // component only displays them - and always labels them as an estimate.
+const SUSTAINABILITY_DELAY_MS = 1500;
+
 export default function SustainabilityCard({ scenarioId, result, config }) {
   const [estimate, setEstimate] = useState(null);
   const [failed, setFailed] = useState(false);
@@ -18,6 +20,10 @@ export default function SustainabilityCard({ scenarioId, result, config }) {
     }
     let cancelled = false;
     setFailed(false);
+    // The estimate is secondary to the routes themselves. Waiting a moment lets
+    // the road-shape request that follows an optimize finish first - on a small
+    // hosted CPU the two would otherwise compete and delay the map.
+    const timer = setTimeout(() => {
     apiFetch('/api/sustainability', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -30,7 +36,8 @@ export default function SustainabilityCard({ scenarioId, result, config }) {
       .then(res => (res.ok ? res.json() : Promise.reject(new Error('estimate failed'))))
       .then(json => { if (!cancelled) setEstimate(json); })
       .catch(() => { if (!cancelled) { setEstimate(null); setFailed(true); } });
-    return () => { cancelled = true; };
+    }, SUSTAINABILITY_DELAY_MS);
+    return () => { cancelled = true; clearTimeout(timer); };
     // A new result is the only trigger: the baseline is tied to that run.
   }, [scenarioId, result]); // eslint-disable-line react-hooks/exhaustive-deps
 
