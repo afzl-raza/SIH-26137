@@ -365,7 +365,12 @@ def test_endpoint_is_configurable(monkeypatch):
     assert overpass_endpoints() == ["https://example.test/api", "https://b.test/api"]
 
     monkeypatch.delenv("QDFRO_OVERPASS_URL")
-    assert overpass_endpoints()[0].startswith("https://")
+    assert overpass_endpoints() == [
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.openstreetmap.fr/api/interpreter",
+        "https://lz4.overpass-api.de/api/interpreter",
+    ]
 
 
 def test_http_transport_retries_405_as_get(monkeypatch):

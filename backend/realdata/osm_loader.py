@@ -63,6 +63,8 @@ from observability import trace_event
 # optional in practice - the primary instance returned 504 twice during
 # development before succeeding on retry.
 DEFAULT_OVERPASS_ENDPOINTS = (
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
     "https://overpass.openstreetmap.fr/api/interpreter",
     "https://lz4.overpass-api.de/api/interpreter",
 )
