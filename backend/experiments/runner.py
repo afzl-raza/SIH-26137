@@ -388,11 +388,107 @@ def run_e6_reproducibility(
     return summary
 
 
+def run_e7_optimality_gap(
+    solver_config: OptimizationConfig = None,
+    job_counts: Iterable[int] = (6, 8, 10),
+    seeds: Iterable[int] = (1, 2, 3, 4, 5),
+    num_nodes: int = 30,
+    num_vehicles: int = 3,
+    output_root: Optional[Path] = None,
+) -> dict:
+    """E7 - Optimality gap: every algorithm vs the exact solver's true optimum
+    on small instances (<= MAX_EXACT_JOBS jobs), so the report says how far
+    from optimal each heuristic is rather than only ranking them against
+    each other.
+
+    gap_pct = (cost - exact_cost) / exact_cost * 100 on the penalized
+    objective every algorithm minimizes. The capacity/time penalties are soft,
+    so the true optimum of that objective can overload a vehicle slightly; the
+    `exact_is_feasible` and `is_feasible` columns record that rather than hide
+    it. A negative gap is possible and is reported as-is: the exact solver
+    minimizes routing cost per subset (see optimizers/exact.py's honesty
+    note), so it is not a joint optimum over the penalty terms.
+    """
+    solver_config = solver_config or DEFAULT_SOLVER_CONFIG
+    job_counts = list(job_counts)
+    seeds = list(seeds)
+    out_dir = _resolve_output_dir(output_root, "E7_optimality_gap")
+
+    config_dict = {
+        "scenarios": {
+            "num_nodes": num_nodes,
+            "num_vehicles": num_vehicles,
+            "job_counts": job_counts,
+            "seeds": seeds,
+        },
+        "solver": solver_config.model_dump(),
+        "note": "Gap is measured against optimizers/exact.py (bitmask DP). "
+                "Scenario seed varies the instance; solver seed is fixed.",
+    }
+    _write_frozen_config(out_dir, config_dict)
+
+    rows = []
+    for num_jobs in job_counts:
+        for seed in seeds:
+            scenario = generate_synthetic_scenario(
+                num_nodes=num_nodes, num_jobs=num_jobs, num_vehicles=num_vehicles, seed=seed
+            )
+            results = run_benchmark(scenario, solver_config).results
+            exact = results.get("exact")
+            if exact is None:
+                continue  # exact solver did not run: no reference for this instance
+            for key, result in results.items():
+                gap = None
+                if exact.total_cost > 0:
+                    gap = (result.total_cost - exact.total_cost) / exact.total_cost * 100.0
+                rows.append({
+                    "num_jobs": num_jobs,
+                    "scenario_seed": seed,
+                    "algorithm_key": key,
+                    "total_cost": result.total_cost,
+                    "exact_cost": exact.total_cost,
+                    "gap_pct": None if gap is None else round(gap, 4),
+                    "runtime_ms": result.runtime_ms,
+                    "is_feasible": result.is_feasible,
+                    "exact_is_feasible": exact.is_feasible,
+                })
+
+    fieldnames = ["num_jobs", "scenario_seed", "algorithm_key", "total_cost", "exact_cost",
+                  "gap_pct", "runtime_ms", "is_feasible", "exact_is_feasible"]
+    with (out_dir / "results.csv").open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    instance_keys = {(r["num_jobs"], r["scenario_seed"]) for r in rows}
+    summary = {
+        "instances": len(instance_keys),
+        "instances_where_optimum_is_strictly_feasible": len(
+            {(r["num_jobs"], r["scenario_seed"]) for r in rows if r["exact_is_feasible"]}
+        ),
+        "algorithms": {},
+    }
+    for key in sorted({r["algorithm_key"] for r in rows}):
+        mine = [r for r in rows if r["algorithm_key"] == key]
+        gaps = [r["gap_pct"] for r in mine if r["gap_pct"] is not None]
+        summary["algorithms"][key] = {
+            "runs": len(mine),
+            "feasible_runs": sum(1 for r in mine if r["is_feasible"]),
+            "mean_gap_pct": float(np.mean(gaps)) if gaps else None,
+            "median_gap_pct": float(np.median(gaps)) if gaps else None,
+            "max_gap_pct": float(np.max(gaps)) if gaps else None,
+            # within 0.01% of the exact optimum counts as having found it
+            "found_optimum": int(sum(1 for g in gaps if abs(g) <= 0.01)),
+        }
+    (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+    return summary
+
+
 def main():
     parser = argparse.ArgumentParser(description="Q-DFRO experiment runner")
     parser.add_argument(
         "--experiment", required=True,
-        choices=["e1", "e2", "e3", "e4", "e5", "e6", "all"]
+        choices=["e1", "e2", "e3", "e4", "e5", "e6", "e7", "all"]
     )
     args = parser.parse_args()
 
@@ -427,6 +523,11 @@ def main():
         print("Running E6 - reproducibility...")
         run_e6_reproducibility()
         print("  wrote experiments/E6_reproducibility/")
+
+    if args.experiment in ("e7", "all"):
+        print("Running E7 - optimality gap vs exact solver...")
+        run_e7_optimality_gap()
+        print("  wrote experiments/E7_optimality_gap/")
 
 
 if __name__ == "__main__":

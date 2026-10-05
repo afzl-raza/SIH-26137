@@ -1,0 +1,33 @@
+{
+  "scenarios": {
+    "num_nodes": 30,
+    "num_vehicles": 3,
+    "job_counts": [
+      6,
+      8,
+      10
+    ],
+    "seeds": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  "solver": {
+    "algorithm": "qpso",
+    "population_size": 40,
+    "max_iterations": 100,
+    "seed": 42,
+    "weights": {
+      "travel_time_weight": 1.0,
+      "distance_weight": 0.5,
+      "gamma": 1.0,
+      "penalty_weight": 1000.0
+    },
+    "use_local_search": true,
+    "local_search_interval": 10
+  },
+  "note": "Gap is measured against optimizers/exact.py (bitmask DP). Scenario seed varies the instance; solver seed is fixed."
+}

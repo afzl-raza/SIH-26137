@@ -13,6 +13,7 @@ from experiments.runner import (
     run_e3_scalability,
     run_e4_traffic_disruption,
     run_e6_reproducibility,
+    run_e7_optimality_gap,
 )
 
 # Small/fast scenario + solver budget so this whole test module stays quick;
@@ -132,3 +133,27 @@ def test_experiments_endpoint_rejects_unknown_name():
     client = TestClient(main_module.app)
     response = client.get("/api/experiments/not_a_real_experiment")
     assert response.status_code == 400
+
+
+def test_e7_optimality_gap_against_exact_solver(tmp_path):
+    summary = run_e7_optimality_gap(
+        solver_config=FAST_SOLVER, job_counts=[4, 5], seeds=[1, 2],
+        num_nodes=12, num_vehicles=2, output_root=tmp_path,
+    )
+
+    out_dir = tmp_path / "E7_optimality_gap"
+    assert (out_dir / "config.json").exists()
+    assert (out_dir / "results.csv").exists()
+    assert (out_dir / "summary.json").exists()
+
+    assert summary["instances"] == 4
+    algos = summary["algorithms"]
+    # The reference solver is, by definition, zero gap from itself.
+    assert algos["exact"]["mean_gap_pct"] == 0.0
+    assert algos["exact"]["found_optimum"] == 4
+    # Greedy is a heuristic: it can tie the optimum on a tiny instance but
+    # must never be reported as beating the exact reference by more than
+    # float noise on the shared objective.
+    assert algos["greedy"]["mean_gap_pct"] >= -1e-6
+    for stats in algos.values():
+        assert stats["runs"] == 4

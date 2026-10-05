@@ -66,6 +66,7 @@ from experiments.runner import (
     run_e4_traffic_disruption,
     run_e5_traffic_severity,
     run_e6_reproducibility,
+    run_e7_optimality_gap,
 )
 from observability import reset_trace_id, set_trace_id, trace_event
 
@@ -460,6 +461,7 @@ KNOWN_EXPERIMENTS = {
     "E4_traffic_disruption",
     "E5_traffic_severity",
     "E6_reproducibility",
+    "E7_optimality_gap",
 }
 
 
@@ -1087,6 +1089,7 @@ EXPERIMENT_RUNNERS = {
     "E4_traffic_disruption": run_e4_traffic_disruption,
     "E5_traffic_severity": run_e5_traffic_severity,
     "E6_reproducibility": run_e6_reproducibility,
+    "E7_optimality_gap": run_e7_optimality_gap,
 }
 
 

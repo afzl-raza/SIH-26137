@@ -1,0 +1,62 @@
+{
+  "instances": 15,
+  "instances_where_optimum_is_strictly_feasible": 8,
+  "algorithms": {
+    "exact": {
+      "runs": 15,
+      "feasible_runs": 8,
+      "mean_gap_pct": 0.0,
+      "median_gap_pct": 0.0,
+      "max_gap_pct": 0.0,
+      "found_optimum": 15
+    },
+    "ga": {
+      "runs": 15,
+      "feasible_runs": 9,
+      "mean_gap_pct": 0.06048,
+      "median_gap_pct": 0.0,
+      "max_gap_pct": 0.9072,
+      "found_optimum": 14
+    },
+    "greedy": {
+      "runs": 15,
+      "feasible_runs": 15,
+      "mean_gap_pct": 17.43327333333333,
+      "median_gap_pct": 16.291,
+      "max_gap_pct": 38.3165,
+      "found_optimum": 0
+    },
+    "pso": {
+      "runs": 15,
+      "feasible_runs": 10,
+      "mean_gap_pct": 2.0668933333333337,
+      "median_gap_pct": 0.0,
+      "max_gap_pct": 19.167,
+      "found_optimum": 8
+    },
+    "qpso": {
+      "runs": 15,
+      "feasible_runs": 10,
+      "mean_gap_pct": 1.04522,
+      "median_gap_pct": 0.0,
+      "max_gap_pct": 5.6937,
+      "found_optimum": 11
+    },
+    "qpso_ls": {
+      "runs": 15,
+      "feasible_runs": 8,
+      "mean_gap_pct": 0.16671333333333335,
+      "median_gap_pct": 0.0,
+      "max_gap_pct": 1.534,
+      "found_optimum": 13
+    },
+    "qpso_memetic": {
+      "runs": 15,
+      "feasible_runs": 15,
+      "mean_gap_pct": 1.3218400000000001,
+      "median_gap_pct": 0.0,
+      "max_gap_pct": 10.9767,
+      "found_optimum": 8
+    }
+  }
+}

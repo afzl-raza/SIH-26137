@@ -15,6 +15,7 @@ import ExperimentE1Panel from '../components/ExperimentE1Panel';
 import ExperimentE2Panel from '../components/ExperimentE2Panel';
 import ExperimentE4Panel from '../components/ExperimentE4Panel';
 import ExperimentE5Panel from '../components/ExperimentE5Panel';
+import ExperimentE7Panel from '../components/ExperimentE7Panel';
 import SiouxFallsPanel from '../components/SiouxFallsPanel';
 import Logo from '../components/Logo';
 import Badge from '../components/ui/Badge';
@@ -1199,7 +1200,7 @@ function DashboardShell({ onExitToOverview }) {
                 the "Pre-computed evidence" label some panels show instead. */}
             <div id="experiments-section" className="clean-card p-3.5 rounded-xl border border-[#3A342E] text-xs text-gray-400 leading-relaxed scroll-mt-4">
               <span className="font-semibold text-gray-300">What is this section? </span>
-              Each card below is a real, independent experiment (E1–E6) that tests a specific claim about the
+              Each card below is a real, independent experiment (E1–E7) that tests a specific claim about the
               solver — which algorithm finds the cheapest routes, whether it actually converges, whether it
               still works as the problem grows, and whether the same answer comes back on a re-run. Every
               number is real output from the solver, generated ahead of time and saved with this project so it
@@ -1230,6 +1231,7 @@ function DashboardShell({ onExitToOverview }) {
               <ExperimentE2Panel />
               <ExperimentE4Panel />
               <ExperimentE5Panel />
+              <ExperimentE7Panel />
             </div>
           </>
         )}

@@ -1,6 +1,6 @@
 # Q-DFRO — Experiment Protocol
 
-Methodology for experiments E1–E6, implemented in `backend/experiments/runner.py`
+Methodology for experiments E1–E7, implemented in `backend/experiments/runner.py`
 and runnable via:
 
 ```bash
@@ -143,3 +143,39 @@ A ~1.5% coefficient of variation across 5 independent seeds on the same
 problem — QPSO's solution quality is stable but not perfectly deterministic
 across seeds (expected for a stochastic metaheuristic; re-running the *same*
 seed is exactly reproducible, per `test_e6_reproducibility_determinism_and_stats`).
+
+## E7 — Optimality gap vs the exact solver
+
+**Question:** on instances small enough to solve exactly, how far is each
+algorithm from the true optimum?
+
+**Config** (`experiments/E7_optimality_gap/config.json`): 30 nodes, 3
+vehicles, 6 / 8 / 10 jobs, scenario seeds `[1, 2, 3, 4, 5]` (15 instances),
+default solver budget (population 40, 100 iterations, solver seed 42). The
+reference is `optimizers/exact.py` (bitmask dynamic programming, hard-capped
+at 10 jobs). Gap = (cost − exact cost) / exact cost, on the penalized
+objective every algorithm minimizes.
+
+**Result** (`experiments/E7_optimality_gap/summary.json`, 15 instances):
+
+| Algorithm | Mean gap | Max gap | Found the optimum |
+|---|---|---|---|
+| Greedy | 17.43% | 38.32% | 0/15 |
+| Classical PSO | 2.07% | 19.17% | 8/15 |
+| Genetic Algorithm | 0.06% | 0.91% | 14/15 |
+| QPSO (no local search) | 1.05% | 5.69% | 11/15 |
+| QPSO + local search | 0.17% | 1.53% | 13/15 |
+| QPSO + local search (memetic) | 1.32% | 10.98% | 8/15 |
+
+On these small instances GA is as close to optimal as QPSO + local search
+(slightly closer on average); the gap to Greedy is the large one. The result
+supports "QPSO + local search is near-optimal where optimality can be
+checked", not "QPSO beats every metaheuristic".
+
+**Caveat:** the capacity and time penalties are soft. On
+7 of 15 instances the true optimum of the penalized objective
+overloads one vehicle slightly (about one demand unit), so those optima are
+not strictly feasible. The CSV carries `exact_is_feasible` and `is_feasible`
+for every row so this stays visible. Instances above 10 jobs have no exact
+reference; their evidence is the relative ranking in E1.
+
