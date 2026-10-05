@@ -1,5 +1,5 @@
 import networkx as nx
-from typing import Dict, Tuple, List, Any
+from typing import Dict, Tuple, Any
 from .graph_model import TrafficGraph
 from .weights import bpr_travel_time
 

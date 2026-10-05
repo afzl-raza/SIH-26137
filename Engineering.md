@@ -87,7 +87,7 @@ that comes from the backend.
 | FastAPI surface | `backend/main.py` | ✅ Implemented |
 | Map-first frontend (Plan/Disrupt/Re-optimize/Prove) | `frontend/src/*` | ✅ Implemented |
 | Unit tests | `backend/tests/*.py` (25 files) | ✅ 360/360 passing |
-| Experiment runner (E1–E6, saved to disk) | `backend/experiments/runner.py` | ✅ Implemented, run for real |
+| Experiment runner (E1–E8, saved to disk) | `backend/experiments/runner.py` | ✅ Implemented, run for real |
 | Experiment results API | `GET /api/experiments/{name}` | ✅ Implemented |
 | Live experiment trigger | `POST /api/experiments/{name}/run` — runs the real `run_eX` synchronously | ✅ Implemented |
 | Server-side objective preview (re-score without re-optimizing) | `POST /api/evaluate` → `fitness.evaluate_solution` | ✅ Implemented |
@@ -304,7 +304,7 @@ scalability, so `run_e3_scalability` scales vehicle count with job count
 reach full feasibility at 200 nodes under E3's deliberately reduced solver
 budget — reported as-is in the protocol doc, not smoothed over.
 
-**Fair-benchmark rule (satisfied everywhere, E1–E6):** every algorithm receives
+**Fair-benchmark rule (satisfied everywhere, E1–E8):** every algorithm receives
 the same `ProblemScenario` — same graph, vehicles, jobs, traffic, seed and
 objective weights — and only the algorithm (and, in E3 only, its
 runtime-appropriate reduced solver budget, always documented alongside the

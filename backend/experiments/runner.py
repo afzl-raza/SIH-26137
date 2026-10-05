@@ -1,6 +1,7 @@
 """Q-DFRO experiment runner.
 
-Implements experiments E1-E6 from Engineering.md Sec.9 / Task.md Phase 8.
+Implements experiments E1-E6 from Engineering.md Sec.9 / Task.md Phase 8, plus
+E7 (gap to the exact optimum) and E8 (warm-start re-optimization).
 Each experiment writes its own frozen config.json (so a run's parameters are
 always traceable) plus raw/processed output, under <repo_root>/experiments/.
 

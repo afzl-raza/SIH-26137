@@ -294,10 +294,6 @@ class TrafficUpdate(BaseModel):
     traffic_factor: float
 
 
-class TrafficUpdateBatch(BaseModel):
-    updates: List[TrafficUpdate]
-
-
 class BenchmarkResult(BaseModel):
     scenario_seed: int
     results: Dict[str, OptimizationResult]

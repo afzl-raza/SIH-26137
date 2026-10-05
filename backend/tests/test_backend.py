@@ -5,9 +5,8 @@ import pytest
 # Add parent directory to path so imports work smoothly
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from models import ProblemScenario, OptimizationConfig, TrafficUpdate
+from models import ProblemScenario, OptimizationConfig
 from problem_generator import generate_synthetic_scenario, compute_shortest_paths
-from fitness import evaluate_solution
 from optimizers.greedy import GreedyOptimizer
 from optimizers.pso import PSOOptimizer
 from optimizers.qpso import QPSOOptimizer

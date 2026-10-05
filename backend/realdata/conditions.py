@@ -55,7 +55,6 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from models import ConditionSummary, Edge, ProblemScenario, WeatherState, clone_scenario
 
 from .traffic_model import (
-    DEFAULT_TRAFFIC_PROVIDER,
     LEVEL_MULTIPLIERS,
     MODE_HEAVY,
     MODE_MODERATE,
@@ -64,7 +63,6 @@ from .traffic_model import (
     TRAFFIC_SOURCE_SIMULATED,
     TrafficConditions,
     TrafficProvider,
-    TrafficProviderError,
     get_traffic_provider,
     normalize_mode,
 )
@@ -80,7 +78,6 @@ from .weather import (
     CONDITION_THUNDERSTORM,
     CONDITION_UNKNOWN,
     DEFAULT_WEATHER_PROVIDER,
-    SOURCE_FALLBACK,
     WeatherObservation,
     WeatherProvider,
 )

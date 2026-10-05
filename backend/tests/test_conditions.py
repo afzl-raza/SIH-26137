@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from models import Edge, ProblemScenario
+from models import Edge
 from problem_generator import generate_synthetic_scenario
 from realdata.conditions import (
     DEFAULT_INCIDENT_MULTIPLIER,
@@ -37,7 +37,6 @@ from realdata.traffic_model import (
     MODE_MODERATE,
     MODE_NORMAL,
     MODE_SEVERE,
-    SimulatedTrafficProvider,
     TrafficProviderError,
     edge_susceptibility,
     edge_traffic_multiplier,

@@ -6,8 +6,8 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from problem_generator import generate_synthetic_scenario
-from route_cache import RouteMatrixCache, route_matrix_key
-from route_geometry import node_path_polyline, route_geometries
+from route_cache import RouteMatrixCache
+from route_geometry import route_geometries
 
 
 @pytest.fixture

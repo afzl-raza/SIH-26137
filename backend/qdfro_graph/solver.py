@@ -1,7 +1,7 @@
 import math
 import random
 import numpy as np
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
 from .schema import VehicleRoute
 from .qpso_interface import GraphQPSOInterface
 

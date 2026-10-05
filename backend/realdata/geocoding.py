@@ -309,6 +309,28 @@ def geocode_place(
         ) from exc
 
 
+def cached_location(
+    place: str,
+    radius_m: float = DEFAULT_RADIUS_M,
+    *,
+    cache: Optional[DiskCache] = None,
+) -> Optional[ResolvedLocation]:
+    """The location for `place` if a FRESH geocoding entry is already cached,
+    else None. Never touches the network - used to pre-warm things at startup,
+    where a slow or blocked provider must not matter."""
+    query = (place or "").strip()
+    if not query:
+        return None
+    cache = cache if cache is not None else DISK_CACHE
+    entry = cache.get(CACHE_NAMESPACE, {"provider": "nominatim", "q": query.lower()})
+    if entry is None or entry.is_stale(GEOCODE_TTL_SECONDS):
+        return None
+    try:
+        return _location_from_payload(entry.payload, query, clamp_radius(radius_m), SOURCE_CACHE)
+    except (GeocodingError, KeyError, TypeError, ValueError):
+        return None
+
+
 def _location_from_payload(
     payload: Dict[str, Any],
     query: str,

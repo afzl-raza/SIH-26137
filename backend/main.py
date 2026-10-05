@@ -1,5 +1,6 @@
 import csv
 import functools
+import logging
 import json
 import math
 import threading
@@ -29,15 +30,14 @@ from models import (
     OptimizationConfig,
     OptimizationResult,
     TrafficUpdate,
-    TrafficUpdateBatch,
     BenchmarkResult,
     VehicleRoute,
     ObjectiveWeights
 )
 from problem_generator import generate_synthetic_scenario, customize_scenario
 from realdata.scenario_store import SCENARIO_STORE, ScenarioNotFoundError
-from realdata.geocoding import GeocodingError, resolve_location
-from realdata.osm_loader import OsmLoaderError, load_osm_graph
+from realdata.geocoding import GeocodingError, cached_location, resolve_location
+from realdata.osm_loader import OsmLoaderError, load_osm_graph, prewarm_cached_extract
 from realdata.osm_scenario import osm_graph_to_scenario
 from realdata.conditions import (
     ConditionRequest,
@@ -75,12 +75,33 @@ from experiments.runner import (
 from observability import reset_trace_id, set_trace_id, trace_event
 
 
+# The one network the dashboard's "Load Prefetched Demo Network" button asks
+# for. Must match PREFETCHED_DEMO_LOCATION / PREFETCHED_DEMO_RADIUS_M in
+# frontend/src/pages/Dashboard.jsx - the committed cache entry is keyed on it.
+PREFETCHED_DEMO_PLACE = "Hazratganj, Lucknow"
+PREFETCHED_DEMO_RADIUS_M = 1200.0
+
+
+def _warm_demo_network() -> None:
+    """Pre-parses the cached demo network so the first demo click after a
+    (re)start does not pay for parsing it - on a small hosted CPU that is a
+    second or more. Cache only (no network) and best-effort: any problem just
+    means the first request parses as it always did."""
+    try:
+        location = cached_location(PREFETCHED_DEMO_PLACE, PREFETCHED_DEMO_RADIUS_M)
+        if location is not None and prewarm_cached_extract(location):
+            trace_event("osm.demo_network_prewarmed")
+    except Exception as exc:  # never let warm-up affect the server
+        logging.getLogger(__name__).warning("Demo network pre-warm skipped: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # Start the benchmark worker processes in the background so the first
     # /api/benchmark call doesn't pay process start-up. Non-blocking: the
     # API is available immediately either way.
     threading.Thread(target=warm_pool, daemon=True).start()
+    threading.Thread(target=_warm_demo_network, daemon=True).start()
     yield
 
 
@@ -1196,7 +1217,6 @@ from qdfro_graph import (
     ReservationTable,
     GraphQPSOInterface,
     QPSOSolver,
-    VehicleRoute as GraphVehicleRoute
 )
 
 # Global Graph Engine state

@@ -26,7 +26,6 @@ from realdata.geocoding import (
     GeocodingError,
     MAX_RADIUS_M,
     MIN_RADIUS_M,
-    ResolvedLocation,
     clamp_radius,
     geocode_place,
     resolve_location,
@@ -489,3 +488,15 @@ def test_hosted_default_radius_cap_is_lower_and_overridable():
     assert _default_max_radius_m({}) == 10000.0
     assert _default_max_radius_m({"QDFRO_ENVIRONMENT": "production"}) == 5000.0
     assert _default_max_radius_m({"QDFRO_ENVIRONMENT": "production", "QDFRO_MAX_RADIUS_M": "8000"}) == 8000.0
+
+
+def test_cached_location_is_cache_only(cache):
+    from realdata.geocoding import cached_location
+
+    assert cached_location("mumbai", 1200, cache=cache) is None  # nothing cached yet
+    geocode_place("mumbai", radius_m=1200, cache=cache, fetch_json=FakeTransport())
+
+    loc = cached_location("Mumbai", 1200, cache=cache)  # same key, any capitalisation
+    assert loc is not None
+    assert loc.provenance == SOURCE_CACHE
+    assert cached_location("", 1200, cache=cache) is None

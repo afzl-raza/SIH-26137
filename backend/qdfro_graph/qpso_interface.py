@@ -1,5 +1,5 @@
 import networkx as nx
-from typing import Dict, List, Tuple, Optional, Callable, Set
+from typing import List, Tuple, Callable, Set
 from .dynamic import CostMatrixUpdater, DynamicEvent
 from .spacetime import ReservationTable
 from .schema import VehicleRoute

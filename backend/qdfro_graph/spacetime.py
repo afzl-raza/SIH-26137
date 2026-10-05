@@ -1,4 +1,3 @@
-import math
 from typing import Dict, List, Tuple, Optional, Set
 from .schema import ReservationSlot, SpacetimeConflict, VehicleRoute
 from .graph_model import TrafficGraph

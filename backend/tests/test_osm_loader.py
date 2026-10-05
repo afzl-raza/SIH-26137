@@ -26,7 +26,7 @@ from optimizers.benchmark import run_benchmark
 from problem_generator import compute_route_matrix, terminal_nodes
 import realdata.osm_loader as osm_loader_module
 from realdata.cache import DiskCache, SOURCE_CACHE, SOURCE_CACHE_STALE, SOURCE_NETWORK
-from realdata.geocoding import BoundingBox, ResolvedLocation, resolve_location
+from realdata.geocoding import BoundingBox, resolve_location
 from realdata.osm_loader import (
     DEFAULT_HIGHWAY_CLASSES,
     MAX_BBOX_AREA_KM2,
@@ -939,3 +939,55 @@ def test_a_rewritten_cache_entry_is_not_served_from_the_old_memo(monkeypatch):
 
     assert len(parses) == 1  # new entry => parsed again, not the stale memo
     osm_loader.clear_parsed_memo()
+
+
+# --- startup pre-warm ---------------------------------------------------------
+
+def test_prewarm_parses_a_fresh_cached_extract_without_any_network():
+    from realdata import osm_loader
+
+    osm_loader.clear_parsed_memo()
+    cache = tmp_cache()
+    loc = a_location()
+    load_osm_graph(loc, cache=cache, post_overpass=lambda u, q, t: _connected_payload(),
+                   endpoints=["https://first.test"])
+    osm_loader.clear_parsed_memo()
+
+    assert osm_loader.prewarm_cached_extract(loc, cache=cache) is True
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("pre-warmed load must not use the network")
+
+    parses = []
+    real_parse = osm_loader.parse_overpass_response
+    import pytest as _pytest  # local import keeps the module header untouched
+    mp = _pytest.MonkeyPatch()
+    mp.setattr(osm_loader, "parse_overpass_response",
+               lambda *a, **k: (parses.append(1), real_parse(*a, **k))[1])
+    try:
+        graph = load_osm_graph(loc, cache=cache, post_overpass=no_network)
+    finally:
+        mp.undo()
+    assert graph.provenance == SOURCE_CACHE
+    assert parses == []  # served from the pre-warmed memo
+    osm_loader.clear_parsed_memo()
+
+
+def test_prewarm_does_nothing_when_there_is_no_cached_extract():
+    from realdata import osm_loader
+
+    osm_loader.clear_parsed_memo()
+    assert osm_loader.prewarm_cached_extract(a_location(), cache=tmp_cache()) is False
+    assert not osm_loader._PARSED_MEMO
+
+
+def test_prewarm_ignores_an_invalid_cached_extract():
+    from realdata import osm_loader
+
+    osm_loader.clear_parsed_memo()
+    cache = tmp_cache()
+    loc = a_location()
+    cache.set(osm_loader.CACHE_NAMESPACE, osm_loader._cache_key(loc.bbox, osm_loader.DEFAULT_HIGHWAY_CLASSES),
+              {"elements": []})
+    assert osm_loader.prewarm_cached_extract(loc, cache=cache) is False
+    assert not osm_loader._PARSED_MEMO

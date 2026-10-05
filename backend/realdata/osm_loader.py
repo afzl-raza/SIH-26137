@@ -39,7 +39,7 @@ import time
 from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import urlsplit
 
 import networkx as nx
@@ -866,6 +866,30 @@ def load_osm_graph(
         if acquired:
             in_flight.lock.release()
         _leave_inflight_load(fingerprint, in_flight)
+
+
+def prewarm_cached_extract(
+    location: ResolvedLocation,
+    *,
+    highway_classes: Sequence[str] = DEFAULT_HIGHWAY_CLASSES,
+    cache: Optional[DiskCache] = None,
+) -> bool:
+    """Parses the cached extract for `location` into the in-memory memo so the
+    first real request for it skips parsing. Cache only: no network, and a
+    missing, stale or invalid entry just returns False. Safe to call from a
+    background thread at startup."""
+    cache = cache if cache is not None else DISK_CACHE
+    key = _cache_key(location.bbox, highway_classes)
+    entry = cache.get(CACHE_NAMESPACE, key)
+    if entry is None or entry.is_stale(OSM_TTL_SECONDS):
+        return False
+    try:
+        _graph_from_payload(
+            entry.payload, location, highway_classes, SOURCE_CACHE, endpoint="cache",
+            memo_key=(canonical_key(key), entry.cached_at))
+    except OsmLoaderError:
+        return False
+    return True
 
 
 def _discard_invalid_cache_entry(

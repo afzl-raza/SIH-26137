@@ -13,7 +13,7 @@ and processed output to `experiments/<name>/` at the repo root. A second run
 into the same folder with different parameters raises rather than silently
 overwriting evidence (`runner.py::_write_frozen_config`).
 
-**Fair-benchmark rule, held everywhere in E1–E6:** every algorithm receives
+**Fair-benchmark rule, held everywhere in E1–E8:** every algorithm receives
 the identical graph, vehicles, jobs, traffic state, seed and objective
 weights within a given experiment; only the algorithm (and, in E3, its
 runtime-appropriate solver budget — see below) varies.

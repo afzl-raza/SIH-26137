@@ -1,5 +1,5 @@
 import networkx as nx
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Optional, Any
 from .schema import NodeAttrs, EdgeAttrs, VehicleRoute
 
 

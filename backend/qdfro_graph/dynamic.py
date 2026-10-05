@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List, Set, Tuple, Optional, Callable
+from typing import Dict, List, Set, Tuple
 from .graph_model import TrafficGraph
 from .schema import EdgeAttrs, VehicleRoute
 from .weights import composite_edge_weight
