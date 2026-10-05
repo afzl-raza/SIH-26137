@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 from models import ProblemScenario, VehicleRoute, Vehicle, Job
 from schedule import simulate_route
 
@@ -67,6 +67,54 @@ def build_route_from_job_sequence(
     )
 
 
+class RouteMemo:
+    """Per-run memory of routes already built, keyed by (vehicle, job order).
+
+    A population-based search decodes thousands of candidates, and a large
+    share of them contain a vehicle route that an earlier candidate already
+    produced (measured: 36-73% of builds are repeats). Building a route and
+    summing its congestion is deterministic in (vehicle, job order), so the
+    first result is reused instead of recomputed. The returned VehicleRoute
+    objects are therefore SHARED between candidates: treat them as read-only
+    (evaluate_solution only re-writes the same `congestion_delay` value).
+
+    Scope one memo to ONE optimize() call: it assumes a fixed scenario,
+    matrices and edge map. `congestion` is owned here (keyed by route
+    identity) so it is dropped together with the routes it refers to.
+    """
+
+    def __init__(self, max_entries: int = 50_000):
+        self._routes: Dict[Tuple[int, Tuple[int, ...], bool], VehicleRoute] = {}
+        self.congestion: Dict[int, float] = {}
+        self._max_entries = max_entries
+
+    def build(
+        self,
+        vehicle: Vehicle,
+        job_objs: List[Job],
+        depot_id: int,
+        dist_matrix: np.ndarray,
+        time_matrix: np.ndarray,
+        paths_dict: Dict[Tuple[int, int], List[int]],
+        include_stops: bool = True,
+    ) -> VehicleRoute:
+        key = (vehicle.id, tuple(j.id for j in job_objs), include_stops)
+        route = self._routes.get(key)
+        if route is None:
+            if len(self._routes) >= self._max_entries:
+                # Bound memory on very long runs. Both maps are cleared together:
+                # `congestion` is keyed by id(route), which is only meaningful
+                # while the route object is alive in `_routes`.
+                self._routes.clear()
+                self.congestion.clear()
+            route = build_route_from_job_sequence(
+                vehicle, job_objs, depot_id, dist_matrix, time_matrix, paths_dict,
+                include_stops=include_stops,
+            )
+            self._routes[key] = route
+        return route
+
+
 def decode_random_keys(
     keys: np.ndarray,
     scenario: ProblemScenario,
@@ -74,6 +122,7 @@ def decode_random_keys(
     time_matrix: np.ndarray,
     paths_dict: Dict[Tuple[int, int], List[int]],
     include_stops: bool = True,
+    memo: Optional[RouteMemo] = None,
 ) -> List[VehicleRoute]:
     """
     Decodes continuous random keys in [0, 1]^M into discrete multi-vehicle CVRP routes.
@@ -110,7 +159,8 @@ def decode_random_keys(
         assigned.sort(key=lambda item: item[0])
         v_job_objs = [item[1] for item in assigned]
 
-        routes.append(build_route_from_job_sequence(
+        build = memo.build if memo is not None else build_route_from_job_sequence
+        routes.append(build(
             v, v_job_objs, depot_id, dist_matrix, time_matrix, paths_dict,
             include_stops=include_stops,
         ))

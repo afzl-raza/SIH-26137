@@ -24,6 +24,7 @@ def evaluate_solution(
     convergence_history: List[float] = None,
     convergence_elapsed_ms: List[float] = None,
     edge_map: Optional[Dict[Tuple[int, int], Edge]] = None,
+    congestion_cache: Optional[Dict[int, float]] = None,
 ) -> OptimizationResult:
     """
     Evaluates a candidate route set using the single centralized objective function:
@@ -36,6 +37,11 @@ def evaluate_solution(
     when evaluating many candidates against the same scenario; built here
     when omitted, so single-shot callers (Greedy, /api/evaluate, tests) are
     unaffected.
+
+    `congestion_cache` ({id(route): congestion delay}) lets a caller that reuses
+    the same VehicleRoute objects across many candidates (decoder.RouteMemo)
+    skip re-walking a route's whole node path. It must live no longer than the
+    routes it is keyed by; RouteMemo owns one for exactly that reason.
     """
     if convergence_history is None:
         convergence_history = []
@@ -52,13 +58,17 @@ def evaluate_solution(
     total_congestion_delay = 0.0
 
     for r in routes:
-        route_congestion_delay = 0.0
-        path = r.node_path
-        for u, v in zip(path[:-1], path[1:]):
-            edge = edge_map.get((u, v))
-            if edge and edge.traffic_factor > 1.0:
-                extra_delay = (edge.traffic_factor - 1.0) * edge.base_travel_time
-                route_congestion_delay += extra_delay
+        route_congestion_delay = congestion_cache.get(id(r)) if congestion_cache is not None else None
+        if route_congestion_delay is None:
+            route_congestion_delay = 0.0
+            path = r.node_path
+            for u, v in zip(path[:-1], path[1:]):
+                edge = edge_map.get((u, v))
+                if edge and edge.traffic_factor > 1.0:
+                    extra_delay = (edge.traffic_factor - 1.0) * edge.base_travel_time
+                    route_congestion_delay += extra_delay
+            if congestion_cache is not None:
+                congestion_cache[id(r)] = route_congestion_delay
         r.congestion_delay = round(route_congestion_delay, 2)
         total_congestion_delay += route_congestion_delay
 

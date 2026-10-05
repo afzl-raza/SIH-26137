@@ -3,7 +3,7 @@ import numpy as np
 from typing import List
 from models import ProblemScenario, OptimizationConfig, OptimizationResult
 from route_cache import get_route_matrix
-from decoder import decode_random_keys
+from decoder import RouteMemo, decode_random_keys
 from fitness import build_edge_map, evaluate_solution
 from optimizers.base import BaseOptimizer
 
@@ -36,6 +36,7 @@ class GAOptimizer(BaseOptimizer):
         # max_iter times) was the dominant cost on real OpenStreetMap-scale
         # scenarios, since it scales with the road network's edge count.
         edge_map = build_edge_map(scenario)
+        route_memo = RouteMemo()  # per-run reuse of repeated routes (see decoder.RouteMemo)
 
         # Initialize population of continuous random key vectors in [0, 1]^num_jobs
         population = np.random.rand(pop_size, num_jobs)
@@ -53,8 +54,8 @@ class GAOptimizer(BaseOptimizer):
         # runs pop_size * max_iter times - the winning chromosome gets its
         # full stops rebuilt once at the end.
         for i in range(pop_size):
-            routes = decode_random_keys(population[i], scenario, dist_matrix, time_matrix, paths_dict, include_stops=False)
-            res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map)
+            routes = decode_random_keys(population[i], scenario, dist_matrix, time_matrix, paths_dict, include_stops=False, memo=route_memo)
+            res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map, congestion_cache=route_memo.congestion)
             fitness_costs[i] = res.total_cost
 
             if res.total_cost < best_cost:
@@ -97,8 +98,8 @@ class GAOptimizer(BaseOptimizer):
 
             # Evaluate new generation
             for i in range(pop_size):
-                routes = decode_random_keys(population[i], scenario, dist_matrix, time_matrix, paths_dict, include_stops=False)
-                res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map)
+                routes = decode_random_keys(population[i], scenario, dist_matrix, time_matrix, paths_dict, include_stops=False, memo=route_memo)
+                res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map, congestion_cache=route_memo.congestion)
                 fitness_costs[i] = res.total_cost
 
                 if res.total_cost < best_cost:

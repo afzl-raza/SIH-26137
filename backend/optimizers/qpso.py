@@ -3,7 +3,7 @@ import numpy as np
 from typing import Dict, List, Optional
 from models import ProblemScenario, OptimizationConfig, OptimizationResult
 from route_cache import get_route_matrix
-from decoder import decode_random_keys, chromosome_from_routes, chromosome_from_job_orders
+from decoder import RouteMemo, decode_random_keys, chromosome_from_routes, chromosome_from_job_orders
 from fitness import build_edge_map, evaluate_solution
 from optimizers.base import BaseOptimizer
 from optimizers.local_search import local_search_refine
@@ -43,6 +43,11 @@ class QPSOOptimizer(BaseOptimizer):
         # max_iter times) was the dominant cost on real OpenStreetMap-scale
         # scenarios, since it scales with the road network's edge count.
         edge_map = build_edge_map(scenario)
+
+        # Per-run memory of work the swarm repeats (see decoder.RouteMemo and
+        # local_search._memoized_cost). Same results, less recomputation.
+        route_memo = RouteMemo()
+        local_search_costs: dict = {}
 
         # Contraction-Expansion coefficient limits (same quantity
         # optimizers/qpso_memetic.py calls `ce_coef`; the standalone
@@ -91,8 +96,8 @@ class QPSOOptimizer(BaseOptimizer):
         # loop runs pop_size * max_iter times - the one gbest that is
         # actually returned gets its full stops rebuilt once, at the end.
         for i in range(pop_size):
-            routes = decode_random_keys(X[i], scenario, dist_matrix, time_matrix, paths_dict, include_stops=False)
-            res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map)
+            routes = decode_random_keys(X[i], scenario, dist_matrix, time_matrix, paths_dict, include_stops=False, memo=route_memo)
+            res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map, congestion_cache=route_memo.congestion)
             pbest_cost[i] = res.total_cost
 
             if res.total_cost < gbest_cost:
@@ -128,8 +133,8 @@ class QPSOOptimizer(BaseOptimizer):
 
             # 3. Fitness Evaluation & Best State Updates
             for i in range(pop_size):
-                routes = decode_random_keys(X[i], scenario, dist_matrix, time_matrix, paths_dict, include_stops=False)
-                res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map)
+                routes = decode_random_keys(X[i], scenario, dist_matrix, time_matrix, paths_dict, include_stops=False, memo=route_memo)
+                res = evaluate_solution(routes, scenario, config.weights, self.name, edge_map=edge_map, congestion_cache=route_memo.congestion)
 
                 if res.total_cost < pbest_cost[i]:
                     pbest_cost[i] = res.total_cost
@@ -177,7 +182,7 @@ class QPSOOptimizer(BaseOptimizer):
             if config.use_local_search and iteration % effective_interval == 0:
                 refined_routes = local_search_refine(
                     scenario, gbest_routes, dist_matrix, time_matrix, paths_dict,
-                    config.weights, edge_map=edge_map
+                    config.weights, edge_map=edge_map, cost_cache=local_search_costs
                 )
                 refined_res = evaluate_solution(refined_routes, scenario, config.weights, self.name, edge_map=edge_map)
                 if refined_res.total_cost < gbest_cost:
