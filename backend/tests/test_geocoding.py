@@ -274,8 +274,28 @@ def test_offline_falls_back_to_cache_and_says_so(cache):
 
 
 def test_offline_with_no_cache_raises(cache):
-    with pytest.raises(GeocodingError, match="no cached result"):
+    with pytest.raises(GeocodingError, match="no cached result") as info:
         geocode_place("delhi", cache=cache, fetch_json=FakeTransport(fail=True))
+    # The provider being down is not the caller's fault.
+    assert info.value.status_code == 503
+
+
+def test_unknown_place_stays_a_client_error(cache):
+    with pytest.raises(GeocodingError) as info:
+        geocode_place("zzzz nowhere", cache=cache, fetch_json=lambda url, params, timeout: [])
+    assert info.value.status_code == 400
+
+
+def test_provider_failure_message_does_not_leak_the_upstream_url(cache):
+    class Boom(Exception):
+        pass
+
+    def fetch(url, params, timeout):
+        raise Boom("Client error '403 Forbidden' for url 'https://nominatim.openstreetmap.org/search?q=x'")
+
+    with pytest.raises(GeocodingError) as info:
+        geocode_place("delhi", cache=cache, fetch_json=fetch)
+    assert "nominatim.openstreetmap.org" not in str(info.value)
 
 
 # ========================================================== disk cache
@@ -461,3 +481,11 @@ def test_resolved_location_serialises_with_full_provenance(cache):
     assert set(body["bbox"]) == {"min_lat", "min_lon", "max_lat", "max_lon"}
     assert body["radius_m"] == 3000.0
     assert body["retrieved_at"].endswith("+00:00")
+
+
+def test_hosted_default_radius_cap_is_lower_and_overridable():
+    from realdata.geocoding import _default_max_radius_m
+
+    assert _default_max_radius_m({}) == 10000.0
+    assert _default_max_radius_m({"QDFRO_ENVIRONMENT": "production"}) == 5000.0
+    assert _default_max_radius_m({"QDFRO_ENVIRONMENT": "production", "QDFRO_MAX_RADIUS_M": "8000"}) == 8000.0

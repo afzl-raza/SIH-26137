@@ -62,11 +62,18 @@ from observability import trace_event
 # instances return 504 under load fairly often, so a fallback list is not
 # optional in practice - the primary instance returned 504 twice during
 # development before succeeding on retry.
+#
+# Order matters: the whole operation has one deadline (TOTAL_TIMEOUT_S), so a
+# mirror that hangs until its read timeout leaves less time for the next one.
+# Verified live on 2026-10-05: overpass.kumi.systems hung until the read
+# timeout, overpass-api.de and lz4 returned 504, overpass.openstreetmap.fr
+# answered. Mirrors come and go, so this order is only the starting point -
+# see _order_by_health, which demotes a mirror that has just failed.
 DEFAULT_OVERPASS_ENDPOINTS = (
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass-api.de/api/interpreter",
     "https://overpass.openstreetmap.fr/api/interpreter",
     "https://lz4.overpass-api.de/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
 )
 
 # Drivable classes. Deliberately excludes footway, cycleway, path, steps,
@@ -421,6 +428,38 @@ def overpass_endpoints() -> List[str]:
     return list(DEFAULT_OVERPASS_ENDPOINTS)
 
 
+# --- mirror health -------------------------------------------------------
+# In-process memory of which mirrors failed recently. A mirror that failed in
+# the last MIRROR_COOLDOWN_S is tried after the others instead of first, so one
+# dead mirror costs the first request a wait, not every request. Only applied
+# to the default endpoint list; an explicit `endpoints=` argument is honoured
+# exactly as given.
+MIRROR_COOLDOWN_S = float(os.environ.get("QDFRO_OVERPASS_MIRROR_COOLDOWN_S", 300.0))
+_MIRROR_FAILED_AT: Dict[str, float] = {}
+_MIRROR_GUARD = threading.Lock()
+
+
+def _record_mirror_result(url: str, ok: bool) -> None:
+    with _MIRROR_GUARD:
+        if ok:
+            _MIRROR_FAILED_AT.pop(url, None)
+        else:
+            _MIRROR_FAILED_AT[url] = time.monotonic()
+
+
+def _order_by_health(urls: Sequence[str]) -> List[str]:
+    """Same URLs, recently-failed ones moved to the back (order otherwise kept)."""
+    now = time.monotonic()
+    with _MIRROR_GUARD:
+        recent = {u for u in urls if u in _MIRROR_FAILED_AT and now - _MIRROR_FAILED_AT[u] < MIRROR_COOLDOWN_S}
+    return [u for u in urls if u not in recent] + [u for u in urls if u in recent]
+
+
+def reset_mirror_health() -> None:
+    with _MIRROR_GUARD:
+        _MIRROR_FAILED_AT.clear()
+
+
 def _http_post_overpass(url: str, query: str, timeout_s: float) -> Any:
     """Default transport. Imported lazily so this module stays importable and
     testable without httpx present."""
@@ -728,7 +767,9 @@ def load_osm_graph(
         query = build_overpass_query(bbox, highway_classes)
         invalid_response = False
         failures: List[str] = []
-        for url in (endpoints if endpoints is not None else overpass_endpoints()):
+        ordered = list(endpoints) if endpoints is not None else _order_by_health(overpass_endpoints())
+        track_health = endpoints is None
+        for url in ordered:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 trace_event("osm.overpass_deadline_reached")
@@ -739,6 +780,8 @@ def load_osm_graph(
             try:
                 payload = post(url, query, min(timeout_s, remaining))
             except Exception as exc:
+                if track_health:
+                    _record_mirror_result(url, ok=False)
                 failure = _provider_failure_label(exc)
                 failures.append(failure)
                 trace_event(
@@ -750,6 +793,8 @@ def load_osm_graph(
                 continue
 
             if not isinstance(payload, dict) or not isinstance(payload.get("elements"), list):
+                if track_health:
+                    _record_mirror_result(url, ok=False)
                 invalid_response = True
                 failures.append("invalid response")
                 trace_event(
@@ -766,6 +811,8 @@ def load_osm_graph(
             except OsmLoaderError as exc:
                 if exc.code != "osm_upstream_invalid_response":
                     raise
+                if track_health:
+                    _record_mirror_result(url, ok=False)
                 invalid_response = True
                 failures.append("invalid response")
                 trace_event(
@@ -776,6 +823,8 @@ def load_osm_graph(
                 )
                 continue
 
+            if track_health:
+                _record_mirror_result(url, ok=True)
             cache.set(CACHE_NAMESPACE, key, payload)
             trace_event(
                 "osm.overpass_request_completed",

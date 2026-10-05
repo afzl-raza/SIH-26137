@@ -643,7 +643,9 @@ def _generate_from_openstreetmap(req: GenerateRequest):
             radius_m=req.radius_m,
         )
     except GeocodingError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # 400 for a bad request, 503 when the geocoding provider is down or
+        # refusing us (see GeocodingError.status_code).
+        raise HTTPException(status_code=e.status_code, detail=str(e))
 
     try:
         graph = load_osm_graph(location)

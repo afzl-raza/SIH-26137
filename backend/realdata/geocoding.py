@@ -54,7 +54,23 @@ DEFAULT_TIMEOUT_S = 15.0
 # Area bounds. The default is a neighbourhood-sized extract, not a city.
 DEFAULT_RADIUS_M = 3000.0
 MIN_RADIUS_M = 200.0
-MAX_RADIUS_M = float(os.environ.get("QDFRO_MAX_RADIUS_M", 10000.0))
+
+
+def _default_max_radius_m(environ=None) -> float:
+    """Largest radius a request may ask for. A 10 km extract of a dense city is
+    tens of megabytes of Overpass JSON, which then has to be parsed into
+    Python objects and shipped to the browser; on a small hosted instance
+    (Render's free tier has 512 MB) that risks an out-of-memory restart. So
+    the hosted default is 5 km; local development keeps 10 km. Either is
+    overridden by QDFRO_MAX_RADIUS_M."""
+    environ = os.environ if environ is None else environ
+    if environ.get("QDFRO_MAX_RADIUS_M"):
+        return float(environ["QDFRO_MAX_RADIUS_M"])
+    production = environ.get("QDFRO_ENVIRONMENT", "development").strip().lower() == "production"
+    return 5000.0 if production else 10000.0
+
+
+MAX_RADIUS_M = _default_max_radius_m()
 
 # Place names are stable; cache them for a good long while.
 GEOCODE_TTL_SECONDS = 30 * 24 * 60 * 60
@@ -63,7 +79,31 @@ _METERS_PER_DEG_LAT = 111_320.0
 
 
 class GeocodingError(RuntimeError):
-    """Raised when a location cannot be resolved by any available means."""
+    """Raised when a location cannot be resolved by any available means.
+
+    `status_code` is what an API should answer with: 400 when the request
+    itself is the problem (unknown place, bad coordinates), 503 when the
+    geocoding provider could not be reached or refused us (rate limit, policy
+    block, timeout) - the caller did nothing wrong and retrying later may work.
+    """
+
+    def __init__(self, message: str, *, status_code: int = 400):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _provider_failure_label(exc: Exception) -> str:
+    """Stable, URL-free reason for an upstream failure."""
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None)
+    if isinstance(status_code, int):
+        return f"HTTP {status_code}"
+    name = type(exc).__name__.lower()
+    if "timeout" in name:
+        return "timeout"
+    if "connect" in name or "network" in name or "connection" in name:
+        return "connection error"
+    return "request error"
 
 
 def _utc_now_iso() -> str:
@@ -262,7 +302,10 @@ def geocode_place(
                 entry.payload, query, radius_m, SOURCE_CACHE_STALE)
         trace_event("osm.geocode_request_failed", provider="nominatim", error_type=type(exc).__name__)
         raise GeocodingError(
-            f"Could not resolve '{query}' and no cached result is available: {exc}"
+            f"Could not resolve '{query}' and no cached result is available: "
+            f"the geocoding provider is unavailable ({_provider_failure_label(exc)}). "
+            f"Please try again later or load the prefetched demo network.",
+            status_code=503,
         ) from exc
 
 

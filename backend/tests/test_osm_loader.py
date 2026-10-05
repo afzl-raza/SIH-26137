@@ -366,10 +366,10 @@ def test_endpoint_is_configurable(monkeypatch):
 
     monkeypatch.delenv("QDFRO_OVERPASS_URL")
     assert overpass_endpoints() == [
-        "https://overpass.kumi.systems/api/interpreter",
-        "https://overpass-api.de/api/interpreter",
         "https://overpass.openstreetmap.fr/api/interpreter",
         "https://lz4.overpass-api.de/api/interpreter",
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
     ]
 
 
@@ -810,3 +810,64 @@ def test_no_city_names_or_coordinate_tables_in_osm_code(module_name):
             )
             assert not (numeric_keys >= 3 and coord_values >= 3), (
                 "dict mapping names to coordinate pairs looks like a city table")
+
+
+# --- mirror health ordering -------------------------------------------------
+
+def test_recently_failed_mirror_is_tried_last_on_the_next_request(monkeypatch):
+    """A mirror that just failed must not be first in line again, otherwise one
+    dead mirror burns the shared deadline on every request."""
+    from realdata import osm_loader
+
+    osm_loader.reset_mirror_health()
+    monkeypatch.setenv("QDFRO_OVERPASS_URL", "https://dead.test/api,https://live.test/api")
+    attempts = []
+
+    def post(url, query, timeout):
+        attempts.append(url)
+        if "dead" in url:
+            raise TimeoutError("hung")
+        return _connected_payload()
+
+    try:
+        load_osm_graph(a_location(), cache=tmp_cache(), post_overpass=post)
+        assert attempts == ["https://dead.test/api", "https://live.test/api"]
+
+        attempts.clear()
+        load_osm_graph(a_location(), cache=tmp_cache(), post_overpass=post)
+        assert attempts == ["https://live.test/api"]
+    finally:
+        osm_loader.reset_mirror_health()
+
+
+def test_explicit_endpoints_are_honoured_in_the_order_given(monkeypatch):
+    from realdata import osm_loader
+
+    osm_loader.reset_mirror_health()
+    osm_loader._record_mirror_result("https://first.test", ok=False)
+    attempts = []
+
+    def post(url, query, timeout):
+        attempts.append(url)
+        return _connected_payload()
+
+    try:
+        load_osm_graph(a_location(), cache=tmp_cache(), post_overpass=post,
+                       endpoints=["https://first.test", "https://second.test"])
+        assert attempts == ["https://first.test"]
+    finally:
+        osm_loader.reset_mirror_health()
+
+
+def test_a_mirror_that_recovers_is_restored_to_its_configured_position():
+    from realdata import osm_loader
+
+    osm_loader.reset_mirror_health()
+    urls = ["https://a.test", "https://b.test"]
+    try:
+        osm_loader._record_mirror_result("https://a.test", ok=False)
+        assert osm_loader._order_by_health(urls) == ["https://b.test", "https://a.test"]
+        osm_loader._record_mirror_result("https://a.test", ok=True)
+        assert osm_loader._order_by_health(urls) == urls
+    finally:
+        osm_loader.reset_mirror_health()
